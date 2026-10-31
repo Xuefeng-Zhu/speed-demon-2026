@@ -12,6 +12,33 @@ Every step from the reference to the current version. The board run IDs will be 
 | 3 | Unchecked word loads (one assert, then `read_unaligned`); endpoint compare by words, not a `memcmp` call | to add | about the same | parse 134 to 143 (noise) | 25 MB | | |
 | 4 | Write overlapped with summarising: workers send finished hours over `mpsc`, main writes them in order | to add | 128 ms | summarise+write 47 | 25 MB | | |
 | 5 | Selection order p50, then p95 on the right part, then p99 on its right part (about n + n/2 + n/20 values in place of about 3n) | to add | 117 to 128 ms | summarise+write 43 to 46 | 25 MB | | |
+| 6 | Line-count cut, same speed: 266 to 165 code lines (rustfmt + scc rule). See the note below | to add | same as step 5 within noise | parse slightly lower, summarise+write slightly higher, total about the same | about the same | | |
+
+## Step 6: fewer lines, same speed
+
+Goal: shrink `src/main.rs` without slowing it down, since lines weigh 0.15 and time 0.50 in K. The count is code lines after default rustfmt (comments and blank lines are free). It went from 266 to 165.
+
+What changed:
+- A small `par(n, f)` helper replaces both hand-written thread-spawn blocks.
+- The global merge table is gone. The names from all threads are sorted and deduplicated, and each thread's ids map to ranks by binary search (about 1,842 × T lookups, well under 1 ms).
+- The per-thread endpoint table is a fixed 8,192 slots. The spec has exactly 1,842 endpoints per seed, and an assert stops the program past 4,096. The grow-and-rehash path and the stored hash are gone.
+- Records are `id << 33 | latency << 1 | is_5xx`. Summarise pushes `latency << 1 | is_5xx` into per-endpoint vectors that are reused across hours. This replaces the two-pass counting sort and the separate error counters: the values still sort by latency, and errors are the sum of the low bits.
+- Hours are assigned by stride (worker t takes t, t+T, ...), not by an atomic counter. Each worker has its own channel, so the main thread reads hour h from channel h mod T and writes in order with no pending buffer. The write still overlaps the summarising.
+- The three selections no longer need guards (`v[r50..]` rather than `v[r50 + 1..]`), and the small-group sort is gone.
+- The latency parser has one path: SWAR on the first 8 digits, then a loop for a 9th and 10th digit.
+- `push_num` is a 5-line recursive formatter.
+- The mmap constants are written inline with a comment.
+
+What was tried and put back, because it cost time:
+- `writeln!` formatting cost about +15 ms CPU per run. The hand formatter stays.
+- Bounds-checked `u64::from_le_bytes(d[i..i + 8])` loads cost about +10 ms of parse CPU. The asserted `read_unaligned` load stays.
+- Plain slice `==` for endpoint compares cost about +5 to 10 ms of parse CPU. The word-wise `same` stays, in a shorter form.
+- A scalar-only latency parser cost about +6 ms. The SWAR path stays.
+- Rewriting the hash loop as `while k == 8`, or with a `u128` mask, cost +40 to 50 ms of parse CPU. The codegen is sensitive here, so the loop keeps its `loop { … if k < 8 { break } }` shape.
+- Dropping `#[inline(always)]` from `load` cost about +40 ms. It is now the only one left, and the others made no measurable difference.
+- A spin-wait "write when it is your turn" in the workers in place of channels was slower under CPU contention. It was dropped.
+
+How it was measured: the shared 2-core box was heavily loaded by other benchmarks (load average 4 to 6), so wall times swung by 2× between runs. The checks were alternating runs of old and new binaries. One was process CPU per phase with `SD_THREADS=1` (minimum of 10 to 12 runs): old 151 ms parse and 199 ms total, new 143 ms and 195 ms. The other was full 2-thread runs, alternating, in three sets of medians of 3: wall 370/358/322 ms for the old binary against 356/302/301 ms for the new, and CPU 215/214/220 against 211/215/216 ms. A 12-run set gave wall medians of 297 against 294 ms. These are the same within noise, with no sign of a slowdown. There are no board numbers yet.
 
 ## What the phases cost (step 5, 1 thread, CPU ms)
 

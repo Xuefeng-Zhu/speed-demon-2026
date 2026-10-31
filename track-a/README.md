@@ -11,18 +11,17 @@ One binary, `src/main.rs`, standard library only. It works in four steps.
    - The hour comes straight from six digits. 30 and 31 October and 1 and 2 November become day 0 to 3, so the hour index is `day*24 + HH - 18`, with no date library.
    - The method length is the first space in one 8-byte load, found without a branch.
    - The endpoint is scanned 8 bytes at a time for its closing space, and hashed on the way.
-   - The latency is read with a branch-free SWAR conversion of up to 7 digits. A plain loop handles 8 to 10 digits, which are rare.
+   - The latency is read with a branch-free SWAR conversion of the first 8 digits. A plain loop adds a 9th and 10th digit, which are rare.
    - The status counts as 5xx when its first byte is `'5'`.
 
-   Endpoints get dense ids from a small open-addressing table in each thread. A lookup checks the hash first, then compares the bytes word by word, so ids are always exact. Each line becomes one `u64` record, `id << 33 | is_5xx << 32 | latency`, added to that thread's bucket for its hour.
-3. **Merge (serial, about 0.3 ms).** The per-thread tables go into one global table. The roughly 1,842 names are sorted once by bytes, which matches the spec's order where a prefix sorts first. An endpoint's rank in that sort is its output position, and each thread gets a map from its local id to the rank.
-4. **Summarise (parallel, by hour).** Worker threads take whole hours from an atomic counter. For each hour a worker:
-   - counts the records and errors per endpoint rank over every thread's bucket for that hour;
-   - counting-sorts the latencies into a scratch array grouped by endpoint;
-   - gets the nearest-rank p50, p95 and p99 with three `select_nth_unstable` calls. Each call works only on the part to the right of the last, so they cover about n, n/2 and n/20 values. Groups of 16 or fewer are simply sorted;
+   Endpoints get dense ids from a fixed 8,192-slot open-addressing table in each thread (the spec has 1,842 endpoints; an assert stops the program past 4,096). A lookup compares the bytes word by word, so ids are always exact. Each line becomes one `u64` record, `id << 33 | latency << 1 | is_5xx`, added to that thread's bucket for its hour.
+3. **Merge (serial, well under 1 ms).** The names from all threads are sorted once by bytes and deduplicated, which matches the spec's order where a prefix sorts first. An endpoint's position in that list is its output rank, and each thread's local ids are mapped to ranks by binary search.
+4. **Summarise (parallel, by hour).** Worker t takes hours t, t+T, t+2T, ... For each hour it:
+   - pushes each record's `latency << 1 | is_5xx` into a per-endpoint scratch vector (kept across hours, so it keeps its capacity). These values sort by latency, so the error count is the sum of the low bits;
+   - gets the nearest-rank p50, p95 and p99 with three `select_nth_unstable` calls. Each call works only on the part from the last result onwards, so they cover about n, n/2 and n/20 values;
    - formats the lines with integer-only arithmetic, including `errors*1e6/count` floor.
 
-   The main thread receives the finished hours over a channel and writes them in hour order while the other hours are still being worked on.
+   Each worker sends its hours over its own channel. The main thread receives hour h from channel h mod T and writes it, so the file is written in hour order while later hours are still being worked on.
 
 Nothing depends on the disorder in the file. Any line can sit in any chunk, and every hour reads every thread's bucket. Duplicate lines are separate records.
 
@@ -31,15 +30,14 @@ Nothing depends on the disorder in the file. Any line can sit in any chunk, and 
 ## Correctness checks
 
 The output is byte-identical (sha256) to the Python reference on:
-- tiny and sample, seeds 1 and 2;
+- tiny, seed 4, and sample, seeds 2 and 3;
 - full, seed 1: `495ca096…81cd3`, as in the spec;
-- full, seed 2;
 - the spec's worked example;
 - an empty input, which gives a zero-byte output;
-- an input whose size is an exact multiple of the page size;
+- an input whose size is an exact multiple of the page size, and one that ends one byte before a page boundary;
 - a 200k-line fuzz file with 3,000 random endpoints of 1 to 125 bytes, latencies of 0, 2³²−1 and 8 to 10 digits, and every hour.
 
-These hold at 1, 2, 3, 7, 12, 64 and 200 threads.
+The fuzz, page-size, sample seed 2, worked-example and full seed 1 checks also hold at 1, 2, 3, 7, 12, 64 and 200 threads.
 
 ## Dependencies
 

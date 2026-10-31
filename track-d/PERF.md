@@ -34,3 +34,16 @@ The phase split before step 4 (one thread, load only): parsing plus degree count
 - **Considered, not done:**
   - ALT landmarks: two full Dijkstras per landmark cost more than the whole 2,000-query workload saves at this query count.
   - BFS renumbering for locality: a sequential pass over 1.74 M nodes and 5 M edges is too close to the parallel query time to be a clear win. Listed in README as next work.
+
+## Step 6: same algorithm, fewer lines (226 -> 156 code lines after rustfmt)
+
+No change to the algorithm, the data layout or memory use; only the code got shorter:
+
+- A small `parallel(threads, f)` helper replaces two hand-written `thread::scope` blocks (parsing, queries); `Csr` is now a plain `(first, adj)` tuple.
+- CSR build: blocks are now `n.div_ceil(threads)` nodes long, so `first[..n].chunks_mut` hands each thread its slice; the scatter walks each node's end offset back down to its start instead of keeping a separate cursor array (edges of a node are stored in reverse file order, which changes nothing: the seed-1 search pushes the same number of heap entries, 16.47 M, within 0.004%).
+- Search: `s == t` is handled by starting `best` at 0; the meeting check uses `saturating_add` (an unreached side reads as `u64::MAX`) instead of a branch; `touched` may now hold a node twice, which the reset tolerates; the radix heap no longer resets `last` between queries (the next query's first `top` sees a single entry and resets it).
+- Output stores `distance as i64`, so `u64::MAX` (unreachable) prints as `-1` with no special case.
+
+Checked: seed-1 full sha256 `a23dbdf0…277e`; seeds 1/2/3 `sample` and seed 4 `tiny` match the reference output; the spec's hand-written test cases pass; and a test build with the thread count forced to 1, 3, 7, 16, 20 and 64 gives the same answers.
+
+Speed, measured locally (shared 2-core sandbox, load average about 5 from other jobs, so treat these as noisy): over 7 alternating full runs each, median user+sys CPU was 6.32 s (before) vs 6.33 s (after), median wall 7.8 s vs 6.7 s, and peak RSS 202 MB for both in pinned single-core runs. Timing the load phase alone gave the same result for both. Within that noise there is no measurable slowdown, but these runs cannot resolve differences below about 5%. One shortcut was dropped because it measurably cost time: building the parse buckets without a capacity hint made the load phase about 10% slower, so the hint stayed.
