@@ -155,6 +155,75 @@ fn sync_crlf(b: &[u8], p: usize) -> usize {
     }
 }
 
+/// Compact event uses a byte offset and group; u16::MAX marks a long name.
+#[derive(Clone, Copy)]
+#[repr(C)]
+struct Event { offset: u32, len: u16, group: u16, hash: u64 }
+/// Per-owner exact table keyed by a salted full prehash. Genuine full-hash
+/// collision chains are capped and promoted to an independently salted map.
+const NONE: usize = usize::MAX;
+const PROMOTED: usize = usize::MAX - 1;
+#[derive(Default)]
+struct OwnerDict {
+    heads: HashMap<u64, usize>,
+    entries: Vec<(&'static [u8], usize)>,
+    bits: Vec<u64>,
+    promoted: HashMap<u64, HashMap<&'static [u8], usize>>,
+}
+impl OwnerDict {
+    fn add(&mut self, name: &'static [u8], next: usize, words: usize) -> usize {
+        let row = self.entries.len(); self.entries.push((name, next));
+        self.bits.resize((row + 1) * words, 0); row
+    }
+    fn row(&mut self, name: &'static [u8], hash: u64, words: usize) -> usize {
+        let head = self.heads.get(&hash).copied().unwrap_or(NONE);
+        if head == NONE { let row = self.add(name, NONE, words); self.heads.insert(hash,row); return row; }
+        if head == PROMOTED {
+            if let Some(&row) = self.promoted.get(&hash).unwrap().get(name) { return row; }
+            let row = self.add(name, NONE, words); self.promoted.get_mut(&hash).unwrap().insert(name,row); return row;
+        }
+        let (mut cur, mut count) = (head, 0);
+        while cur != NONE {
+            let (candidate, next) = self.entries[cur];
+            if candidate == name { return cur; }
+            cur = next; count += 1;
+        }
+        if count >= 8 {
+            let mut exact = HashMap::new(); let mut cur = head;
+            while cur != NONE { let (candidate, next) = self.entries[cur]; exact.insert(candidate,cur); cur=next; }
+            let row = self.add(name, NONE, words); exact.insert(name,row);
+            self.promoted.insert(hash,exact); *self.heads.get_mut(&hash).unwrap() = PROMOTED; row
+        } else {
+            let row = self.add(name, head, words); *self.heads.get_mut(&hash).unwrap() = row; row
+        }
+    }
+    fn see(&mut self, name: &'static [u8], hash: u64, g: usize, words: usize) -> i64 {
+        let row=self.row(name,hash,words); let (w,bit)=(row*words+g/64,1u64<<(g%64));
+        let new=self.bits[w]&bit==0;self.bits[w]|=bit;new as i64
+    }
+}
+const MAX_PACKED_FILE: usize = u32::MAX as usize;
+const MAX_PACKED_GROUPS: usize = u16::MAX as usize;
+#[inline]
+fn can_pack(file_len: usize, groups: usize) -> bool {
+    file_len <= MAX_PACKED_FILE && groups < MAX_PACKED_GROUPS
+}
+
+/// Reconstructs an exact encoded name. Very long names use the sentinel; they
+/// are reparsed from the mmap, including doubled quotes, with no truncation.
+fn event_name(recs: &'static [u8], event: Event) -> &'static [u8] {
+    let start = event.offset as usize;
+    if event.len != u16::MAX { return &recs[start..start + event.len as usize]; }
+    if start > 0 && recs[start - 1] == b'"' {
+        let mut at = start - 1;
+        return field(recs, &mut at).0;
+    }
+    let found = unsafe { memchr(recs.as_ptr().add(start), b',' as i32, recs.len() - start) };
+    assert!(!found.is_null(), "unterminated name");
+    let end = unsafe { found.offset_from(recs.as_ptr()) as usize };
+    &recs[start..end]
+}
+
 /// One output line: count id_sum amount_sum amount_min amount_max names_distinct name_bytes note_bytes.
 type Agg = [i64; 8];
 const EMPTY: Agg = [0, 0, 0, i64::MAX, i64::MIN, 0, 0, 0];
@@ -216,27 +285,68 @@ fn main() {
         _ if t == n => recs.len(),
         _ => sync_crlf(recs, cut(t)),
     };
-    let names: Vec<Shard> = (0..1024).map(|_| Shard::default()).collect();
-    let aggs = par(n, |t| {
-        let (mut p, end, mut agg) = (bound(t), bound(t + 1), vec![EMPTY; unmatched + 1]);
-        while p < end {
-            p += 3 * recs[p..].starts_with(b"\xEF\xBB\xBF") as usize; // a byte order mark
-            let id = positive_fast(recs, &mut p);
-            let ((name, name_len), (_, note_len)) = (field(recs, &mut p), field(recs, &mut p));
-            let rid = positive_fast(recs, &mut p) as usize;
-            let g = unmatched.min(*region.get(rid).unwrap_or(&u16::MAX) as usize);
-            let cents = number(recs, &mut p);
-            let shard = BuildHasherDefault::<Fx>::default().hash_one(name) >> 32 & 1023;
-            let new = names[shard as usize].see(name, g, words);
-            let rec = [1, id, cents, cents, cents, new, name_len, note_len];
-            merge(&mut agg[g], rec);
-        }
-        agg
-    });
+    // Choose the ordinary implementation before processing if compact fields
+    // cannot represent the mapping or group count. No output has been created.
+    let (aggs, distinct) = if can_pack(recs.len(), unmatched) {
+        let parts = n;
+        let parsed = par(n, |t| {
+            let (mut p, end, mut agg) = (bound(t), bound(t + 1), vec![EMPTY; unmatched + 1]);
+            let mut bins = vec![Vec::<Event>::new(); parts];
+            while p < end {
+                p += 3 * recs[p..].starts_with(b"\xEF\xBB\xBF") as usize;
+                let id = positive_fast(recs, &mut p);
+                let ((name, name_len), (_, note_len)) = (field(recs, &mut p), field(recs, &mut p));
+                let rid = positive_fast(recs, &mut p) as usize;
+                let g = unmatched.min(*region.get(rid).unwrap_or(&u16::MAX) as usize);
+                let cents = number(recs, &mut p);
+                let h = BuildHasherDefault::<Fx>::default().hash_one(name);
+                let bucket = ((h as u128 * parts as u128) >> 64) as usize;
+                let offset = (name.as_ptr() as usize - recs.as_ptr() as usize) as u32;
+                let len = u16::try_from(name.len()).unwrap_or(u16::MAX);
+                bins[bucket].push(Event { offset, len, group: g as u16, hash: h });
+                merge(&mut agg[g], [1, id, cents, cents, cents, 0, name_len, note_len]);
+            }
+            (agg, bins)
+        });
+        let distinct = par(n, |t| {
+            let mut counts = vec![0i64; unmatched + 1];
+            for bucket in (t..parts).step_by(n) {
+                let mut dict = OwnerDict::default();
+                for row in &parsed {
+                    for &event in &row.1[bucket] {
+                        let name = event_name(recs, event);
+                        let g = event.group as usize;
+                        counts[g] += dict.see(name, event.hash, g, words);
+                    }
+                }
+            }
+            counts
+        });
+        (parsed.into_iter().map(|row| row.0).collect::<Vec<_>>(), Some(distinct))
+    } else {
+        let names: Vec<Shard> = (0..1024).map(|_| Shard::default()).collect();
+        let aggs = par(n, |t| {
+            let (mut p, end, mut agg) = (bound(t), bound(t + 1), vec![EMPTY; unmatched + 1]);
+            while p < end {
+                p += 3 * recs[p..].starts_with(b"\xEF\xBB\xBF") as usize;
+                let id = positive_fast(recs, &mut p);
+                let ((name, name_len), (_, note_len)) = (field(recs, &mut p), field(recs, &mut p));
+                let rid = positive_fast(recs, &mut p) as usize;
+                let g = unmatched.min(*region.get(rid).unwrap_or(&u16::MAX) as usize);
+                let cents = number(recs, &mut p);
+                let shard = BuildHasherDefault::<Fx>::default().hash_one(name) >> 32 & 1023;
+                let new = names[shard as usize].see(name, g, words);
+                merge(&mut agg[g], [1, id, cents, cents, cents, new, name_len, note_len]);
+            }
+            agg
+        });
+        (aggs, None)
+    };
     let mut lines: Vec<String> = Vec::new();
     for (g, key) in countries.into_iter().enumerate() {
         let mut a = EMPTY;
         aggs.iter().for_each(|agg| merge(&mut a, agg[g as usize]));
+        if let Some(distinct) = &distinct { a[5] = distinct.iter().map(|d| d[g]).sum(); }
         if a[0] > 0 {
             let cols: String = a.iter().enumerate().map(|(i, &v)| column(i, v)).collect();
             lines.push(format!("{}{cols}\n", String::from_utf8_lossy(key)));

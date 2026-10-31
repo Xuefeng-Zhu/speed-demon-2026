@@ -1,6 +1,6 @@
 # Track C salted prehashed owner reduction — experimental, unselected
 
-This package contains the exact current selected AVX/direct-country source as `selected.rs` (SHA-256 `3f72fb04f7ecde22e60e1bbb1b84e89e6e2bd3dba3bece03a4845db01a5dc68d`), the separately proposed eight-byte compact-owner comparator `baseline.rs` (`b199855d6c1155decd0c27a329e1a0515681c54011f1b5b11df7752172a3dae4`), and this candidate (`0aa4cbccf08b05a59aadbe7eaf23a931e468a95f76463a95100a142e8221bc08`). The selected source was not changed.
+This package contains the exact current selected AVX/direct-country source as `selected.rs` (SHA-256 `3f72fb04f7ecde22e60e1bbb1b84e89e6e2bd3dba3bece03a4845db01a5dc68d`), the separately proposed eight-byte compact-owner comparator `baseline.rs` (`b199855d6c1155decd0c27a329e1a0515681c54011f1b5b11df7752172a3dae4`), and this candidate (`0aa4cbccf08b05a59aadbe7eaf23a931e468a95f76463a95100a142e8221bc08`). The candidate was later selected for a separate official practice trial.
 
 The candidate retains compact-owner's name-hash ownership, exact decoded-name reconstruction, per-owner bitmaps and pre-output fallback, but carries the 64-bit name hash with each event, increasing its `repr(C)` record from 8 to 16 bytes. The owner maps the full prehash through a standard randomized `HashMap<u64, ...>`; up to eight distinct names with the same full hash use an exact-byte chain, and the ninth promotes those row IDs to an independently randomized exact-name map. This mitigates the distinct-prehash clustering seen in the unseeded prototype while preserving exact equality and group bitsets. Randomized hashing is probabilistic, not a worst-case time guarantee: identical full Fx hashes still route to one owner and concentrated routing or long names can skew work. No data, cached answers, credentials or external dependencies are included.
 
@@ -29,3 +29,7 @@ python3 experiments/c-nameowned/compare.py --baseline /tmp/c-salted-compact --va
 ```
 
 Repeat paired batches and retain individual samples. `--avx2` tests compile the x86-64-v3 path and require hardware support. Each comparison checks the public full hash; native RSS is not official warmed-cgroup peak, and official practice gates are separate.
+
+## Dot VM x86 comparison
+
+The parent-run shared x86 VM paired batches measured 28.6–35.9% lower wall time and 6.6–7.7% lower CPU, with approximately 23.5% higher native RSS versus the exact selected baseline. Across this and A compact-record work, 276 full hashes, 16 full-size all-escape runs, 20 alternate references, collision, fallback and guard checks passed. Sparse actual 4 GiB and 4 GiB + 4,096 byte mappings selected the fallback; full parsing above 4 GiB remains untested. Native VM memory is not official cgroup peak. Official practice is pending.
