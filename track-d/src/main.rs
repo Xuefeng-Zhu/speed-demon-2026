@@ -1,7 +1,7 @@
 //! Speed Demon 2026, Track D (Traverse): exact shortest paths on a 5M-edge graph.
 //!
-//! 1. Every thread parses its own slice of the read-only mapped `graph.txt`
-//!    and buckets each edge, and its reverse, by
+//! 1. Every thread reads and parses its own slice of `graph.txt` (positioned
+//!    reads, no shared buffer) and buckets each edge, and its reverse, by
 //!    the block of node ids its tail falls in.
 //! 2. Thread j turns block j into its slice of the forward and backward CSR
 //!    arrays with a counting sort; each edge becomes one `u64`.
@@ -12,21 +12,9 @@
 //! Std only. Override the directories with `SD_DATA` and `SD_OUT`.
 
 use std::fs::{self, File};
-use std::os::fd::AsRawFd;
+use std::os::unix::fs::FileExt;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering::Relaxed};
 use std::thread;
-
-extern "C" {
-    fn mmap(addr: *mut u8, len: usize, prot: i32, flags: i32, fd: i32, offset: i64) -> *mut u8;
-}
-
-/// Read-only private mapping; the input is immutable throughout the run.
-fn map_graph(file: &File, len: usize) -> &[u8] {
-    assert!(len > 0 && len <= isize::MAX as usize);
-    let ptr = unsafe { mmap(std::ptr::null_mut(), len, 1, 2, file.as_raw_fd(), 0) };
-    assert!(ptr as isize != -1 && !ptr.is_null(), "graph mmap failed");
-    unsafe { std::slice::from_raw_parts(ptr, len) }
-}
 
 const NONE: u64 = u64::MAX;
 
@@ -59,8 +47,9 @@ impl Csr {
 fn load_graph(path: &str, threads: usize) -> [Csr; 2] {
     let file = File::open(path).unwrap();
     let len = file.metadata().unwrap().len() as usize;
-    let map = map_graph(&file, len);
-    let mut hdr = numbers(&map[..len.min(64)]);
+    let mut head = [0u8; 64];
+    let got = file.read_at(&mut head, 0).unwrap();
+    let mut hdr = numbers(&head[..got]);
     let (n, m) = (hdr.next().unwrap() as usize, hdr.next().unwrap() as usize);
     let block = |u: u32| u as usize * threads / n;
 
@@ -71,10 +60,12 @@ fn load_graph(path: &str, threads: usize) -> [Csr; 2] {
     let buckets: Vec<[Vec<Vec<Edge>>; 2]> = thread::scope(|sc| {
         let handles: Vec<_> = (0..threads)
             .map(|i| {
+                let file = &file;
                 sc.spawn(move || {
                     let start = 1 + i * (len - 1) / threads;
                     let end = 1 + (i + 1) * (len - 1) / threads;
-                    let buf = &map[start - 1..(end + 32).min(len)];
+                    let mut buf = vec![0u8; (end + 32).min(len) - (start - 1)];
+                    file.read_exact_at(&mut buf, (start - 1) as u64).unwrap();
                     let newline =
                         |from: usize| from + buf[from..].iter().position(|&b| b == b'\n').unwrap();
                     let (from, to) = (newline(0) + 1, newline(end - start));

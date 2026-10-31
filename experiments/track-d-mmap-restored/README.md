@@ -22,3 +22,5 @@ The comparator randomizes paired order, uses matching build flags, validates the
 ## Dot VM x86 comparison
 
 The parent-run native x86 paired batches reported 0.8–3.7% lower wall time with approximately 26% higher native RSS. Across this, C parser and B grouped packages, 164 full hashes, 24 alternate comparisons, Linux/AVX2 guard-page, collision, boundary and graph-oracle checks passed. These are not official scoring-box wall or cgroup-peak measurements; the selected source remains unchanged pending a controlled comparison.
+
+Official mapped batches at `a9e1d0d` and `3ee91f3` measured 0.383379 s and 0.463912 s, against the preceding positioned-read baseline batch at 0.377822 s; all gates passed. No official wall-time improvement was established, so positioned reads were restored. These are separate batches and can vary.
