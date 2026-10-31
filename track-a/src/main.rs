@@ -57,6 +57,19 @@ fn find_byte(w: u64, b: u8) -> usize {
     (zero_bytes(w ^ (ONES * b as u64)).trailing_zeros() / 8) as usize
 }
 
+/// Whether the `len` bytes at `a` and at `b` are equal, compared a word at a time.
+#[inline(always)]
+fn same(d: &[u8], a: usize, b: usize, len: usize) -> bool {
+    let mut i = 0;
+    while i + 8 <= len {
+        if load(d, a + i) != load(d, b + i) {
+            return false;
+        }
+        i += 8;
+    }
+    (load(d, a + i) ^ load(d, b + i)) & ((1 << (8 * (len - i))) - 1) == 0
+}
+
 /// Parses the decimal latency starting at `q`; returns it and the start of the next line.
 #[inline(always)]
 fn parse_latency(d: &[u8], q: usize) -> (u64, usize) {
@@ -81,7 +94,6 @@ fn parse_latency(d: &[u8], q: usize) -> (u64, usize) {
 
 #[derive(Default)]
 /// Open-addressing table from endpoint bytes (byte ranges of the mapped file) to dense ids.
-/// An endpoint is identified by its 64-bit hash and its length, not compared byte by byte.
 struct Table {
     slots: Vec<u32>,
     names: Vec<(u64, usize, usize)>, // (hash, start, end)
@@ -102,7 +114,7 @@ impl Table {
         while self.slots[i] != 0 {
             let id = self.slots[i] as usize - 1;
             let (nh, ns, ne) = self.names[id];
-            if nh == h && ne - ns == e - s {
+            if nh == h && ne - ns == e - s && same(d, ns, s, e - s) {
                 return id;
             }
             i = (i + 1) & mask;

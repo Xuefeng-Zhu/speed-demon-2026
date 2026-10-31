@@ -145,3 +145,4 @@ Result: `run-a94603610d79` at `ea12ae5`: T=0.052896 s, M=32.9 MB, S=188, K=30.23
 Round 2 at `ccbfbc0`, `run-4a52a83d2464`: per-thread MADV_DONTNEED on each chunk, sharded shared endpoint maps with their own name copies (no merge, no re-reading dropped pages), hourly records freed after summarising. T=0.034982 s, M=22.3 MB, S=310, K=37.26 (prior best 33.07). Kept.
 
 Hash-only trial: endpoint identity by 64-bit hash plus length, no byte compare (collision odds ~1e-13 per dataset); compare against `a571dce` (K 37.34).
+Result: `run-93607a10da06` at `a9f6ae3`: T=0.037754 s, M=23.2 MB, S=299, K=35.78, below `a571dce` (37.34); exact byte compare restored.
