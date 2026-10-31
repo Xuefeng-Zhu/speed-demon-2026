@@ -174,3 +174,7 @@ All tracks passed every gate; `board-8c.json` records run IDs. B's dense Boolean
 ## Official practice run for 5934716
 
 All tracks passed every gate; `board-593.json` records run IDs. C bounded batching measured T=0.134421 s, M=29,593,600 bytes, S=208, K=15.549336, compared with the preceding practice at 0.129274 s, 17,870,848 bytes, S=175, K=17.999239. Two dot VM batches had favored batching by 13.5–18.2%, so the opposite small official wall difference needs another same-code scoring-box run. Separate public-seed practices are not paired or final holdout scores.
+
+## Same-code official repeat for b1f947f
+
+All tracks passed every gate; `board-b1.json` records run IDs. C batching repeated at T=0.137428 s, M=29,286,400 bytes, S=208, K=15.410409, compared with 0.134421 s in its first run and 0.129274 s for the prior baseline. The same selected sources and Dockerfiles were used at 5934716 and b1f947f. Given two slower target runs, the speed-first selection restores the prior CRLF source; separate practices are not controlled pairs or final holdout scores.
