@@ -1,0 +1,7 @@
+# D grouped radix-heap buckets (not selected)
+
+Each isolated candidate groups two, three, four or eight binary radix levels into one bucket. When redistributing a bucket, an item may remain in the same grouped bucket; the candidate preserves those items rather than overwriting the bucket. Each frontier still pops its minimum. The baseline is the balanced-frontier selected source at 23ffdfc; no selected code changed.
+
+All candidates and the baseline matched the official full seed-1 hash on one warmup plus four randomized measured rotations per variant. Each candidate also passed 80 random directed graphs and 16,000 Dijkstra-oracle queries using `experiments/track-d-balanced-frontier/oracle.py`. Native shared-Mac ARM medians were baseline 0.2948 s, group2 0.4301 s, group3 0.5086 s, group4 0.4800 s and group8 1.0253 s. Median CPU was 1.848, 2.595, 2.995, 3.122 and 6.105 seconds respectively. Raw samples are `report.json`. These noisy local screens are not x86 or official scores; all grouped variants were slower and were not promoted.
+
+Reproduce native full-hash checks with `python3 experiments/track-d-grouped-radix/compare.py --data /path/to/full-d --report /tmp/d-grouped.json`; it compiles equal Rust release flags, randomizes order and records wait4 process RSS (not cgroup memory). Recheck target ISA and cgroup separately. The oracle test can be run on compiled candidate binaries with `python3 experiments/track-d-balanced-frontier/oracle.py /path/to/baseline /path/to/group2`. No Mac Docker was used.
