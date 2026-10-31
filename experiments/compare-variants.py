@@ -23,9 +23,9 @@ HASHES = {
 }
 VARIANTS = {
     'a': {'buffered': 'experiments/a-output-buffered.cpp', 'parallel': 'experiments/a-parallel-output.cpp'},
-    'b': {'parallel': 'experiments/b-parallel-query.cpp', 'parallel-index': 'experiments/b-parallel-index.cpp', 'zero-copy': 'experiments/b-zero-copy.cpp'},
-    'c': {'serial': 'experiments/c-serial.cpp'},
-    'd': {'sparse': 'experiments/track-d-sparse/Cargo.toml', 'seen16': 'experiments/track-d-seen16/Cargo.toml', 'packed': 'experiments/track-d-packed/Cargo.toml'},
+    'b': {'parallel': 'experiments/b-parallel-query.cpp', 'parallel-index': 'experiments/b-parallel-index.cpp', 'stream-index': 'experiments/b-stream-index.cpp', 'zero-copy': 'experiments/b-zero-copy.cpp'},
+    'c': {'serial': 'experiments/c-serial.cpp', 'hash-sort': 'experiments/c-hashsort.cpp'},
+    'd': {'sparse': 'experiments/track-d-sparse/Cargo.toml', 'seen16': 'experiments/track-d-seen16/Cargo.toml', 'packed': 'experiments/track-d-packed/Cargo.toml', 'packed-u32': 'experiments/track-d-packed-u32/Cargo.toml'},
 }
 OUTPUT = {'a': 'summary.txt', 'b': 'results.txt', 'c': 'aggregates.txt', 'd': 'distances.txt'}
 

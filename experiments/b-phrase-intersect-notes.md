@@ -1,0 +1,5 @@
+# Track B phrase-postings intersection experiment
+
+`b-phrase-intersect.cpp` starts with the existing six-worker query variant, intersects each phrase's distinct term postings in increasing cardinality order, and searches token sequences only for documents containing all phrase terms. It handles unbalanced posting lengths with lower_bound. It matched the existing 1,000-query edge fixture and every completed seed-1 full output SHA-256 (f86973c210228141bcb6f1f1b10188ad2a9b65f71e7cd7cf4590b38de4e80927).
+
+Native macOS ARM full-data benchmark was interrupted at parent request after three complete interleaved pairs and a fourth candidate run; warmup completed first. Other jobs were active. Wall seconds baseline: 3.598265, 2.722554, 3.987066; candidate: 6.309297, 3.717665, 2.517641, 2.480434. Three-pair medians are 3.598 and 3.718 seconds respectively, too noisy and short to establish improvement. Candidate still needs alternate-generator seeds, x86 comparison, and measured memory. Do not promote based on this experiment.

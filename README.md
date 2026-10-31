@@ -29,4 +29,4 @@ Paired local baseline comparisons and reproducible correctness tests are recorde
 
 - Choose tracks and a team name; replace `TEAM_NAME_REQUIRED` in each chosen track's `.speed-demon.toml` and remove unchosen track folders from a copy intended for entry.
 - Test on the official board to establish real run IDs, times, memory and scoring; document those runs and actual iterations in `PERF.md`. The board requires a GitHub App and a repository.
-- Follow the official event registration/submission and publication rules by the deadline, November 2 at 15:00 UTC. No app installation or formal submission has been performed.
+- Follow the official event registration/submission and publication rules by the deadline, November 2 at 15:00 UTC. The board app is installed with read-only code and metadata access on the selected private repository; GitHub also includes public repositories read-only. No team registration form or formal submission has been sent.
