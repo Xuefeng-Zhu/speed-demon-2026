@@ -1,0 +1,9 @@
+# Coarse search: lightest adjacency last (unselected)
+
+The isolated candidate permutes each CSR row at runtime after scatter, moving one lightest edge to the last position. The coarse queue is LIFO within its current bucket, so this might put a cheaper newly relaxed neighbor nearer the top when it falls into that bucket. Every row retains its entire edge multiset. Compact edges and their wide-weight side entries swap together, while wide adjacency swaps whole packed values. The baseline is the exact selected coarse-bucket source SHA-256 `2a2a325a1c87e4bc68c260e0d80353e0b8f1f9a7b5be81b1ffeaaede6d813f9d`; the candidate SHA-256 is `8cd08835ceb79154a126872f7cb12fe8f4ab62f5fee0dc016a5b01b95b2aa55e`.
+
+An independent static review found no concrete row range or edge/side-weight permutation defect under the input spec, and noted that changed in-bucket processing can change the amount of work and fallback frequency. It recommended targeted sentinel/row-boundary permutation and forced-capacity tests before promotion. These were not run; this is not an all-input correctness or cgroup proof.
+
+Two sequential randomized native shared-Mac ARM comparisons on full public seed 1 used one warmup followed by 9 and 15 pairs; each output matched the official SHA-256. First median candidate/baseline wall was `0.232002/0.233783 s`, CPU `1.631478/1.600929 s`. The repeat was `0.230119/0.223305 s`, CPU `1.641574/1.596978 s`. Raw data and source identities are in `arm-screen.json` and `arm-repeat.json`. The tentative first 0.8% wall improvement did not repeat: the second was about 3.1% slower, while CPU rose in both. No x86, official or parent-cgroup timing was obtained. The candidate remains unselected; no Docker ran on the Mac.
+
+Reproduction, with independent full data and no concurrent workload: `python3 experiments/track-d-coarse-minlast28/compare.py --data /path/to/full-d --build-dir /tmp/d-minlast --report /tmp/d-minlast.json --runs 15`.
