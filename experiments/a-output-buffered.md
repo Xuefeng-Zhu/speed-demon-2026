@@ -1,0 +1,5 @@
+# Track A output-buffering experiment
+
+This alternative uses `std::to_chars` and a buffered string for formatted output instead of `fprintf`. It is not the selected submission candidate. Build with `c++ -O3 -std=c++17 experiments/a-output-buffered.cpp -o /tmp/a-buffered-output` and run with input log and output path arguments.
+
+On October 31, 2026, eight native Mac full-seed-1 runs were interleaved with eight runs of the current submission candidate. Every output matched the published SHA-256 `495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3`. Current times: 0.9238, 0.2582, 0.2613, 0.2810, 0.3496, 0.3009, 0.2914, 0.2830 s. Buffered times: 0.5289, 0.2473, 0.2461, 0.2625, 0.3286, 0.2801, 0.2723, 0.2562 s. After trimming minimum and maximum, means were 0.2945 and 0.2745 s, respectively. The different variant may affect source-size scoring; performance on the judge's x86 host is unknown. Seed 999 sample matched the reference SHA-256 `04168fcd480940157d8221e2ce79e49a3e8f41d4c66cbc3634edd1cb5c91c242`. These are local exploratory measurements, not official scores.

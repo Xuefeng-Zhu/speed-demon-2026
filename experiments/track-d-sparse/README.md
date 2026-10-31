@@ -1,0 +1,7 @@
+# Track D sparse distance-map experiment
+
+This is an experimental alternative to `submission/track-d`, not the selected candidate. It replaces each worker's dense distance/epoch arrays with reusable per-direction hash maps keyed by node id. A deterministic integer mixer supports the maps. The maps are cleared on each query and do not assume anything about query distribution, weights, or node identifiers beyond the track's input contract. It uses the standard library only.
+
+On the full seed-1 dataset, the output SHA-256 matched the published `a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e` on each run. Seed 7 sample matched the official reference (`88bf36c94620505d1beafe7cd56a08dc2d261b71f9824d2f764d5ce6e5d7872e`). A warmup and three paired Mac ARM runs gave medians 1.195 s (sparse) and 1.186 s (current dense), with overlapping variability; see `../bench-d-sparse.json`. Separate native child-process measurements gave peaks 390 MB and 513 MB respectively. These are not competition-machine results; one-off peak RSS and timing measurements are noisy.
+
+Build with `cargo build --release --offline` from this directory. Run with `DATA_DIR` and `OUT_DIR` set to directories. Before considering replacement, compare both variants on x86 Linux on multiple seeds, including an independent oracle on edge cases, and measure the official cgroup memory peak and scoring machine times. No live-board run has been made.

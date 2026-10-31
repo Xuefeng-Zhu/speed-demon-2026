@@ -1,0 +1,82 @@
+{
+  "system": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+  "machine": "arm64",
+  "python": "3.14.3 (main, Feb  3 2026, 15:32:20) [Clang 17.0.0 (clang-1700.6.3.2)]",
+  "commands": {
+    "baseline": [
+      "env",
+      "DATA_DIR=/tmp/speed-d-full",
+      "OUT_DIR=/tmp/speed-bench/d-out",
+      "/tmp/speed-d-baseline"
+    ],
+    "candidate": [
+      "env",
+      "DATA_DIR=/tmp/speed-d-full",
+      "OUT_DIR=/tmp/speed-bench/d-out",
+      "/tmp/speed-d-six"
+    ]
+  },
+  "output": "/tmp/speed-bench/d-out/distances.txt",
+  "expected_sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e",
+  "warmups": 1,
+  "runs": 5,
+  "measurements": {
+    "baseline": [
+      {
+        "wall_s": 1.033233,
+        "user_s": 4.468943,
+        "system_s": 0.130928
+      },
+      {
+        "wall_s": 1.016194,
+        "user_s": 4.554491,
+        "system_s": 0.112136
+      },
+      {
+        "wall_s": 1.007015,
+        "user_s": 4.558538,
+        "system_s": 0.11421
+      },
+      {
+        "wall_s": 1.018773,
+        "user_s": 4.559473,
+        "system_s": 0.117496
+      },
+      {
+        "wall_s": 1.038919,
+        "user_s": 4.584995,
+        "system_s": 0.128189
+      }
+    ],
+    "candidate": [
+      {
+        "wall_s": 1.09773,
+        "user_s": 4.357859,
+        "system_s": 0.071778
+      },
+      {
+        "wall_s": 1.09064,
+        "user_s": 4.32932,
+        "system_s": 0.069998
+      },
+      {
+        "wall_s": 1.118299,
+        "user_s": 4.351334,
+        "system_s": 0.073924
+      },
+      {
+        "wall_s": 1.108338,
+        "user_s": 4.359763,
+        "system_s": 0.073264
+      },
+      {
+        "wall_s": 1.10214,
+        "user_s": 4.335024,
+        "system_s": 0.074378
+      }
+    ]
+  },
+  "baseline_median_wall_s": 1.018773,
+  "candidate_median_wall_s": 1.10214,
+  "median_wall_speedup": 0.9243589743589744
+}
