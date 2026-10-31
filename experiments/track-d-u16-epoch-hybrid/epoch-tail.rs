@@ -15,8 +15,8 @@ mod epoch_tests {
   let reverse:Vec<_>=edges.iter().map(|&(u,v,w)|(v as usize,u as u32,w)).collect();
   let f=csr(6,&edges);let b=csr(6,&reverse);
   let mut narrow=Search32::new(6);let mut wide=Search::new(6);
-  let mut saw_drop=false; let mut previous=0;
-  for i in 0..131_080usize {
+  let mut saw_drop=false; let mut previous=0; let mut wraps=0;
+  for i in 0..200_000usize {
    let (s,t)=match i%6 {0=>(0,5),1=>(5,0),2=>(1,0),3=>(5,4),4=>(2,2),_=>(3,1)};
    let (d,dropped)=narrow.distance([&f,&b],s,t);
    if dropped {saw_drop=true;}
@@ -24,9 +24,9 @@ mod epoch_tests {
    let expected=match (s,t) {(0,5)=>5,(5,0)=>NONE,(1,0)=>u32::MAX as u64,(5,4)=>0,(2,2)=>0,(3,1)=>NONE,_=>unreachable!()};
    assert_eq!(got,expected,"case {i} epoch {}",narrow.epoch);
    assert_eq!(narrow.heaps[0].count+narrow.heaps[1].count,0);
-   if POOL_CAP>0 && s!=t {assert!(narrow.epoch==1 || narrow.epoch==previous+1); previous=narrow.epoch;}
+   if POOL_CAP>0 && s!=t { if previous==u16::MAX && narrow.epoch==1 {wraps+=1;} assert!(narrow.epoch==1 || narrow.epoch==previous+1); previous=narrow.epoch;}
   }
   assert!(saw_drop);
-  if POOL_CAP>0 {assert!(narrow.epoch>1);}
+  if POOL_CAP>0 {assert!(narrow.epoch>1);assert!(wraps>=2,"only {wraps} wraps");}
  }
 }
