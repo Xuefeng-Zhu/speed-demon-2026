@@ -1,0 +1,5 @@
+# 256-key exact window plus radix overflow (experimental, not selected)
+
+The candidate uses 256 exact-distance bins for an aligned window and the original radix heap for later keys. Once the first overflow key establishes a window, radix buckets 0–8 contain all remaining keys in that same window; only those are drained, avoiding an out-of-window peek that could advance the monotone overflow heap before a valid smaller future insertion. Baseline is exact restored D source at `451429c`.
+
+The candidate passed 100,000 modeled monotone heap operations with debug and overflow assertions, 16,000 random-graph queries, 36,864 exhaustive small-graph queries, the maximum-size maximum-weight chain, 6,000 repeated/unreachable cases and all full seed-1 hashes. Independent proof has not been performed. Seven shared ARM native pairs (`report.json`) gave median 0.67444 s candidate vs 0.50758 s baseline, CPU 2.18828 vs 1.92309 s, peak native RSS 533,970,944 vs 535,166,976 B. This slower screen is not an x86 or official cgroup result; candidate remains unselected. No Mac Docker was used.

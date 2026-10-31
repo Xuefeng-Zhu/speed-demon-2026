@@ -1,0 +1,9 @@
+# B role-tagged tokens (not selected)
+
+These isolated variants start from the exact grouped-dictionary B source at commit `f21df30d1e9ff3c8b17d60eef772dc4a2b3f954a`. After sampling determines phrase anchors, they encode Boolean/anchor roles in the upper two bits of each short dictionary ID. The scan masks the low 30-bit ID for posting lists and anchor indexing, skipping the previous per-token role-array load. Long-token lookups apply the tag after exact lookup. MISS is explicitly preserved; the input-bound ID range is checked. During sampling IDs remain untagged. The original baseline is `baseline.rs`.
+
+`candidate.rs` keeps raw phrase sequences and masks tag bits while comparing; `encoded-phrases.rs` pre-encodes unique phrase sequences after roles are final and retains slice equality. Both preserve bounded phrase summaries and bitmap limits, and neither is selected.
+
+On shared native macOS ARM scalar fallback, 11 randomized warmed full-seed pairs for `candidate.rs` measured candidate/baseline median wall 0.310772/0.320001 s and CPU 1.588924/1.547657 s; a 15-pair repeat measured 0.303503/0.293963 s and CPU 1.603328/1.571539 s. All 56 full hashes including warmups passed. The pre-encoded-phrase variant had median wall 0.376341/0.354018 s and CPU 1.527676/1.516000 s in 11 pairs; all 24 hashes passed. These contended native results are not x86, official, or cgroup measurements; none shows a meaningful speed benefit. Raw samples are `report.json`, `repeat.json`, and `encoded-report.json`.
+
+Each candidate passed 40 mixed-reference corpora, distributed top-ten/duplicate phrase and overlap, six >1 MiB lines and 250,000-document/19,000-duplicate phrase stress. The original masking variant additionally passed 3,072 token-alignment fixtures. Dedicated forced-collision, role-transition property, AVX2 and independent source review remain outstanding; do not promote based on these tests. No Mac Docker was used.

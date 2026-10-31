@@ -1,0 +1,7 @@
+# B direct common-term bitmap experiment (not selected)
+
+Baseline is selected grouped B source SHA-256 `48d573369af70b6e63f6ee736d560d79cce1533d66238fe06a70f3b3b750cfb9`. The candidate counts each chunk's records, uses the existing sample to select up to 64 common Boolean terms, and builds their bitmaps directly during tokenization. Repeated terms in one document set the same bit. All other terms use the existing bounded stream/CSR path; phrase handling and exact query order are unchanged. Prebuilt and query-time dense bitmap payload together stay within the existing per-worker bitmap cap, with direct count reduced if needed. Candidate is an experiment, not submitted code.
+
+Against baseline on shared native macOS ARM, 11 randomized warmed pairs at cap 64 gave candidate/baseline median wall 0.281177/0.265180 s and CPU 1.642872/1.554443 s. Seven-pair cap 8 results were 0.650600/0.529486 s and CPU 1.854682/1.612448 s, and cap 32 was 0.451037/0.412210 s and CPU 1.541628/1.495779 s. Shared host contention affects wall; all 56 full-seed executions including warmups matched the published hash. These are not x86/official/cgroup results. No variant is selected. Raw samples are in `report.json`, `common8.json`, and `common32.json`.
+
+The cap-64 candidate passed 40 mixed reference corpora, distributed top-ten and duplicate/overlap tests, and 250,000-document/19,000-identical-phrase stress. Very small bitmap-cap fallback, forced worker counts and actual x86 execution remain to be tested if this is reconsidered. No Mac Docker was used.
