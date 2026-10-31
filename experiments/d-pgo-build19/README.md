@@ -26,3 +26,5 @@ python3 tools/compare.py --baseline /path/to/control --variant /path/to/pgo --da
 ```
 
 Also run full input in the official read-only, no-network sandbox, test alternate generated seeds, actual forced pool exhaustion and cutoff/fallback stress. `compare.py` reports native process RSS, not parent-cgroup peak. No performance or all-input correctness claim follows from the static checks.
+
+Parent-run native x86 dot VM PGO tests verified exact selected source, matching Rust/LLVM profile and generator; two paired rounds were 18.0–19.3% slower in wall time, 19.2–20.9% higher in CPU, with increased native RSS. Seventy-two full-seed hashes, eight alternate-reference comparisons, graph oracle, extremes and forced fallback passed. These are native VM measurements, not official cgroup results. This build remains unselected for speed; no claim of target performance is made.
