@@ -26,3 +26,7 @@ python3 experiments/b-rust-lengthhash/compare.py --baseline /tmp/b-global-baseli
 ```
 
 The benchmark checks the full hash after every execution and reports native process RSS, not official cgroup peak. Compare repeated wall/CPU, peak cgroup memory, source size and actual practice-box behavior before considering selection. Contiguous query blocks could be imbalanced if query order is skewed. No dataset, credentials or cached answers are included.
+
+## Dot VM x86 comparison
+
+The parent-run shared native x86 VM paired full-seed batches measured 4.3% faster then 0.8% slower wall time, so no stable win was established. On a stress input with expensive queries clustered together, the candidate was 45.2% slower than the original; shuffling the identical queries made it 12.5% faster than the clustered candidate. Across this and D reorder, 136 full hashes, 16 alternate references, 32 skew cases and additional stress checks passed. Contiguous query partitions remain a load-balancing risk; dynamic scheduling would need separate target validation. Baseline remains selected.
