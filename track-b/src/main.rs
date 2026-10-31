@@ -54,9 +54,46 @@ struct Plan<'q> {
     keys: Vec<Key>,
     role: Vec<u8>,
     anchors: Vec<Vec<(usize, &'q [u32], usize)>>,
+    short_slots: Vec<u32>,
 }
 
 impl Plan<'_> {
+    #[inline]
+    fn short_hash(mut x: u64) -> usize {
+        x ^= x >> 30;
+        x = x.wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        x ^= x >> 27;
+        x = x.wrapping_mul(0x94d0_49bb_1331_11eb);
+        ((x ^ (x >> 31)) >> 32) as usize
+    }
+
+    fn build_short(&mut self) {
+        let count = self.keys.iter().filter(|k| k.0[1..].iter().all(|&x| x == 0)).count();
+        self.short_slots = vec![MISS; (count * 2).max(1).next_power_of_two()];
+        let mask = self.short_slots.len() - 1;
+        for (id, k) in self.keys.iter().enumerate() {
+            if k.0[1..].iter().any(|&x| x != 0) { continue; }
+            let mut i = Self::short_hash(k.0[0]) & mask;
+            while self.short_slots[i] != MISS { i = (i + 1) & mask; }
+            self.short_slots[i] = id as u32;
+        }
+    }
+
+    #[inline]
+    fn lookup_token(&self, data: &[u8], p: usize, n: usize) -> u32 {
+        if n > 8 { return self.slot(&key(data, p, n)).1; }
+        let mut pad = [0u8; 8];
+        let src = data.get(p..p+8).unwrap_or_else(|| {pad[..n].copy_from_slice(&data[p..p+n]); &pad});
+        let x = u64::from_le_bytes(src.try_into().unwrap()) | 0x2020_2020_2020_2020;
+        let x = x & ((1u128 << (n * 8)) - 1) as u64;
+        let mask = self.short_slots.len() - 1;
+        let mut i = Self::short_hash(x) & mask;
+        loop {
+            let id = self.short_slots[i];
+            if id == MISS || self.keys[id as usize].0[0] == x { return id; }
+            i = (i + 1) & mask;
+        }
+    }
     fn slot(&self, k: &Key) -> (usize, u32) {
         let mut h = 0x9e37_79b9_7f4a_7c15u64;
         for word in k.0 { h ^= word; h = h.wrapping_mul(0xbf58_476d_1ce4_e5b9); h ^= h >> 29; }
@@ -111,7 +148,7 @@ unsafe fn classify_avx2(p: *const u8) -> u32 {
 #[inline]
 fn push_word(data: &[u8], start: usize, end: usize, plan: &Plan, tokens: &mut Vec<u32>) {
     let n = end - start;
-    tokens.push(if n <= 32 { plan.slot(&key(data, start, n)).1 } else { MISS });
+    tokens.push(if n <= 32 { plan.lookup_token(data, start, n) } else { MISS });
 }
 
 fn for_each_doc(data: &[u8], lo: usize, hi: usize, plan: &Plan, mut f: impl FnMut(&[u32])) {
@@ -375,6 +412,7 @@ fn main() {
             Query::Phrase(id)
         });
     }
+    plan.build_short();
     let data = map_file(&format!("{data_dir}/docs.txt"));
 
     // Anchor each phrase on its rarest term in a sample of the corpus.
