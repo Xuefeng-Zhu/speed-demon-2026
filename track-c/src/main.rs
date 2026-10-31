@@ -1,7 +1,7 @@
 //! Speed Demon 2026, Track C (Join): std-only Rust. README.md explains the design.
 use std::arch::asm;
 use std::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering::*};
-use std::{env, fs, os::fd::AsRawFd, sync::Barrier, sync::Mutex, thread};
+use std::{env, fs, os::fd::AsRawFd, sync::Barrier, thread};
 
 extern "C" {
     fn mmap(addr: *mut u8, len: usize, prot: i32, flags: i32, fd: i32, off: i64) -> *mut u8;
@@ -41,6 +41,14 @@ fn prefetch<T>(p: &T) {
     #[cfg(target_arch = "aarch64")]
     unsafe {
         asm!("prfm pldl1keep, [{}]", in(reg) p, options(nomem, nostack))
+    };
+}
+
+/// Like `prefetch`, but for a line about to be written.
+fn prefetchw<T>(p: &T) {
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        asm!("prefetchw [{}]", in(reg) p, options(nomem, nostack))
     };
 }
 
@@ -109,7 +117,6 @@ impl Names {
 }
 const K: u64 = 0x517cc1b727220a95; // FxHash's multiplier
 const RING: usize = 16;
-const BLOCK: usize = 1024;
 
 /// Bit i of each mask is set where byte i of the block is a quote, a comma or an LF.
 #[cfg(target_feature = "avx2")]
@@ -200,12 +207,10 @@ fn main() {
             slots,
             used: 0.into(),
         };
-        // seen_in[g * stride + id / 64] bit id % 64: name id occurs in group g. Group g is
-        // owned by thread g % n, which alone reads and writes its bits; the others hand it
-        // the (id, g) pairs they find in blocks of BLOCK, through its inbox.
-        let stride = slots.len() / 64 + 1;
-        let seen_in: &[AtomicU64] = zeroed(256 * stride, 0);
-        let inbox: Vec<Mutex<Vec<Vec<u32>>>> = (0..n).map(|_| Default::default()).collect();
+        // sets[4 * id + g / 64] bit g % 64: name id occurs in group g. Whichever thread sets
+        // a bit first counts the name for that group.
+        let sets: &[AtomicU64] = zeroed(4 * slots.len() + 5, 0);
+        sets[sets.len() - 1].store(!0, Relaxed); // a dummy that never counts
         let (next, barrier) = (AtomicUsize::new(0), Barrier::new(n));
         let aggs = par(n, |t| {
             // Every thread reads its share of the regions twice: first to note which countries
@@ -238,33 +243,24 @@ fn main() {
             // A record is finished (its group and name looked up) 16 records after it is
             // parsed, so that the cache lines it needs have time to arrive.
             let mut agg = vec![EMPTY; 256];
-            let mut out: Vec<Vec<u32>> = vec![Vec::with_capacity(BLOCK); n];
-            let mark = |agg: &mut Vec<Agg>| {
-                for v in std::mem::take(&mut *inbox[t].lock().unwrap()) {
-                    for x in v {
-                        let (g, id) = ((x & 255) as usize, (x >> 8) as usize);
-                        let (word, bit) = (&seen_in[g * stride + id / 64], 1 << (id % 64));
-                        let old = word.load(Relaxed);
-                        word.store(old | bit, Relaxed);
-                        agg[g][5] += (old & bit == 0) as i64;
-                    }
-                }
-            };
             let mut ring = [((0, 0), 0, EMPTY); RING];
-            let finish =
-                |(key, rid, rec): (_, usize, Agg), agg: &mut Vec<Agg>, out: &mut Vec<Vec<u32>>| {
+            let mut sets_ring = [(sets.len() - 1, 0); RING / 2]; // (set word, group) to mark
+            let mut finish =
+                |(key, rid, rec): (_, usize, Agg), agg: &mut Vec<Agg>, r: usize| {
+                    let (w, g) = sets_ring[r % (RING / 2)];
+                    let (word, bit) = (&sets[w], 1 << (g % 64));
+                    if word.load(Relaxed) & bit == 0 {
+                        agg[g][5] += (word.fetch_or(bit, Relaxed) & bit == 0) as i64;
+                    }
+                    sets_ring[r % (RING / 2)] = (sets.len() - 1, 0);
                     if rec[0] > 0 {
                         let (id, g) = (
                             names.id(key, cap),
                             region.get(rid).map_or(0, |r| r.load(Relaxed)) as usize,
                         );
                         merge(&mut agg[g], rec);
-                        let o = &mut out[g % n];
-                        o.push((id as u32) << 8 | g as u32);
-                        if o.len() == BLOCK {
-                            let full = std::mem::replace(o, Vec::with_capacity(BLOCK));
-                            inbox[g % n].lock().unwrap().push(full);
-                        }
+                        sets_ring[r % (RING / 2)] = (4 * id + g / 64, g);
+                        prefetchw(&sets[4 * id + g / 64]);
                     }
                 };
             let mut r = 0;
@@ -329,7 +325,7 @@ fn main() {
                             let cents = num(x, ae - f[3] - 2 - neg as usize) as i64;
                             let cents = [cents, -cents][neg as usize];
                             let rec = [1, id, cents, cents, cents, 0, len(0) as i64, len(1) as i64];
-                            finish(ring[r], &mut agg, &mut out);
+                            finish(ring[r], &mut agg, r);
                             (ring[r], r) = ((names.key(recs, s, e), rid, rec), (r + 1) % RING);
                             (rs, k) = (p + 1, 0);
                         }
@@ -340,17 +336,11 @@ fn main() {
                     // (a read past the chunk's end faults the page back in).
                     let page = bound(c) & !4095;
                     unsafe { madvise(recs.as_ptr().add(page) as _, end - page, 4) };
-                    mark(&mut agg);
                 }
-                for j in 0..RING {
-                    finish(ring[(r + j) % RING], &mut agg, &mut out);
+                for j in 0..RING + RING / 2 {
+                    finish(ring[(r + j) % RING], &mut agg, r + j);
                     ring[(r + j) % RING].2[0] = 0;
                 }
-                for (o, v) in out.into_iter().enumerate() {
-                    inbox[o].lock().unwrap().push(v);
-                }
-                barrier.wait();
-                mark(&mut agg);
             }
             agg
         });
