@@ -122,3 +122,7 @@ All four tracks passed every gate on the full public seed-1 dataset; `board-897.
 ## Official practice run for 1b2da3d
 
 All four tracks passed every gate; run IDs and measurements are in `board-1b2.json`. The checked Rust C candidate scored T=0.137394 s, M=17,235,968 bytes, S=170, K=17.662660. The preceding C++ practice run at 89795bb reported T=0.389804 s, M=80,576,512 bytes, S=213, K=7.446852. These are separate public-seed practice runs, not the final hidden-seed score. The original reported cold-cache SIGBUS remains unverified, as explained in `track-c/PERF.md`.
+
+## Official practice run for 15c6be0
+
+All four tracks passed the check, build, correctness, timeout and sandbox gates; measurements and run IDs are in `board-15c.json`. The nonlinear packed B candidate scored T=1.343342 s, M=256,245,760 bytes, S=379, K=8.038497. The preceding bounded candidate at 1b2da3d scored T=1.447820 s, M=256,856,064 bytes, S=335, K=7.883941. These are separate public-seed practice runs rather than paired or final hidden-seed scores.
