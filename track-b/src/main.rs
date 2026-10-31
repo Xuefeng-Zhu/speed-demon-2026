@@ -43,6 +43,32 @@ fn key(data: &[u8], s: usize, n: usize) -> Key {
     }))
 }
 
+// Medium (9–16 byte) CRC table; generic builds and bad trial tables retain
+// the original exact generic lookup. Portable emulation exists for testing.
+#[cfg(any(all(target_arch = "x86_64", target_feature = "sse4.2"), b_medium_crc_emulate))]
+#[inline]
+fn medium_crc(a: u64, b: u64) -> usize {
+    #[cfg(b_medium_crc_forced)]
+    { let _ = (a, b); 0 }
+    #[cfg(all(not(b_medium_crc_forced), target_arch = "x86_64", target_feature = "sse4.2"))]
+    unsafe { let c = std::arch::x86_64::_mm_crc32_u64(0, a); std::arch::x86_64::_mm_crc32_u64(c, b) as usize }
+    #[cfg(all(not(b_medium_crc_forced), not(all(target_arch = "x86_64", target_feature = "sse4.2")), b_medium_crc_emulate))]
+    {
+        const fn table() -> [u32; 256] {
+            let mut out = [0; 256]; let mut i = 0;
+            while i < 256 { let mut x = i as u32; let mut j = 0;
+                while j < 8 { x = (x >> 1) ^ (0x82f63b78 & (0u32.wrapping_sub(x & 1))); j += 1; }
+                out[i] = x; i += 1;
+            }
+            out
+        }
+        const LUT: [u32; 256] = table();
+        let mut c = 0u32;
+        for word in [a,b] { for byte in word.to_le_bytes() { c = (c >> 8) ^ LUT[((c as u8) ^ byte) as usize]; } }
+        c as usize
+    }
+}
+
 /// The queries and their terms: an open-addressing table from token to dense
 /// term id, and what the corpus scan does with each term: its roles, and the
 /// phrases it anchors as (query index, phrase, position of the term in it).
@@ -55,6 +81,10 @@ struct Plan<'q> {
     role: Vec<u8>,
     anchors: Vec<Vec<(usize, &'q [u32], usize)>>,
     short_slots: Vec<u32>,
+    #[cfg(any(all(target_arch = "x86_64", target_feature = "sse4.2"), b_medium_crc_emulate))]
+    medium_slots: Vec<u32>,
+    #[cfg(any(all(target_arch = "x86_64", target_feature = "sse4.2"), b_medium_crc_emulate))]
+    medium_mode: bool,
 }
 
 impl Plan<'_> {
@@ -79,9 +109,57 @@ impl Plan<'_> {
         }
     }
 
+    #[cfg(any(all(target_arch = "x86_64", target_feature = "sse4.2"), b_medium_crc_emulate))]
+    fn build_medium(&mut self) {
+        let medium = |k: &Key| k.0[1] != 0 && k.0[2] == 0 && k.0[3] == 0;
+        let count = self.keys.iter().filter(|k| medium(k)).count();
+        self.medium_slots = vec![MISS; (count * 2).max(1).next_power_of_two()];
+        let mask = self.medium_slots.len() - 1;
+        self.medium_mode = false;
+        let mut valid = true;
+        for (id, k) in self.keys.iter().enumerate() {
+            if !medium(k) { continue; }
+            let mut i = medium_crc(k.0[0], k.0[1]) & mask;
+            let mut extra = 0;
+            while self.medium_slots[i] != MISS {
+                i = (i + 1) & mask; extra += 1;
+                if extra > 32 { valid = false; break; }
+            }
+            if !valid { break; }
+            self.medium_slots[i] = id as u32;
+        }
+        if valid {
+            let mut run = 0usize;
+            for &slot in self.medium_slots.iter().cycle().take(self.medium_slots.len() * 2) {
+                if slot == MISS { run = 0; } else {
+                    run += 1;
+                    if run > 64 { valid = false; break; }
+                }
+            }
+        }
+        if valid { self.medium_mode = true; } else { self.medium_slots = Vec::new(); }
+    }
+
     #[inline]
     fn lookup_token(&self, data: &[u8], p: usize, n: usize) -> u32 {
-        if n > 8 { return self.slot(&key(data, p, n)).1; }
+        if n > 8 {
+            #[cfg(any(all(target_arch = "x86_64", target_feature = "sse4.2"), b_medium_crc_emulate))]
+            if n <= 16 && self.medium_mode {
+                let mut pad = [0u8; 16];
+                let src = data.get(p..p+16).unwrap_or_else(|| { pad[..n].copy_from_slice(&data[p..p+n]); &pad });
+                let a = u64::from_le_bytes(src[..8].try_into().unwrap()) | 0x2020_2020_2020_2020;
+                let b = (u64::from_le_bytes(src[8..].try_into().unwrap()) | 0x2020_2020_2020_2020)
+                    & ((1u128 << ((n - 8) * 8)) - 1) as u64;
+                let mask = self.medium_slots.len() - 1;
+                let mut i = medium_crc(a, b) & mask;
+                loop {
+                    let id = self.medium_slots[i];
+                    if id == MISS || (self.keys[id as usize].0[0] == a && self.keys[id as usize].0[1] == b) { return id; }
+                    i = (i + 1) & mask;
+                }
+            }
+            return self.slot(&key(data, p, n)).1;
+        }
         let mut pad = [0u8; 8];
         let src = data.get(p..p+8).unwrap_or_else(|| {pad[..n].copy_from_slice(&data[p..p+n]); &pad});
         let x = u64::from_le_bytes(src.try_into().unwrap()) | 0x2020_2020_2020_2020;
@@ -457,6 +535,8 @@ fn main() {
         });
     }
     plan.build_short();
+    #[cfg(any(all(target_arch = "x86_64", target_feature = "sse4.2"), b_medium_crc_emulate))]
+    plan.build_medium();
     let data = map_file(&format!("{data_dir}/docs.txt"));
 
     // Anchor each phrase on its rarest term in a sample of the corpus.

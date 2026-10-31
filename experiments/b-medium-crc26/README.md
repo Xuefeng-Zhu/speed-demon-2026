@@ -22,3 +22,5 @@ python3 experiments/b-rust-lengthhash/compare.py --baseline /tmp/b-medium26-base
 ```
 
 The selected build uses PGO; non-PGO native screens do not establish a PGO win. If the native candidate is promising, retrain matching PGO on independently generated inputs, run reference and guard suites on the final binary, and compare actual official practice. Preserve memory/collision fallback and count source size. Full input, binaries, profiles, credentials and cached answers are not included. Process RSS is not parent-cgroup memory.
+
+Parent-run dot VM compared separately trained, matched Rust/LLVM PGO builds of this exact candidate and baseline using the official seed-2 sample generator. Two paired x86 batches measured 9.8% and 8.5% lower wall and 7.6% and 8.3% lower CPU; median native RSS rose about 1–2%. Across this and D window, 216 full hashes and alternates, actual SSE4.2/AVX2 guard-page tests, natural collision fallback and queue-oracle checks passed. Native process RSS is not official parent-cgroup memory; the exact CRC+PGO build is being sent for official practice.

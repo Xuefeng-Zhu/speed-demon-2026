@@ -23,3 +23,5 @@ python3 compare.py --data /path/to/full-d --build-dir /tmp/d-window26-repeat --r
 ```
 
 Compare compiler flags, exact source checksums and every output hash. The comparator measures native process RSS, not parent-cgroup peak. A positive VM result must still receive source review and official practice. The package contains source, scripts, and public hashes only: no datasets, credentials or binaries.
+
+Parent-run dot VM x86 comparison against exact selected coarse-64 was effectively tied, with no established wall-time win. Across this and B medium CRC, 216 full hashes, alternates, actual SIMD guards, natural collision fallback and graph queue-oracle checks passed. This native observation is not an official cgroup result; retain the selected coarse-64 implementation.
