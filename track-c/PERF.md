@@ -194,3 +194,9 @@ Result: `run-f78e7fd076e8` at `b2df83b`: T=0.055621 s, M=35.1 MB, S=339, K=21.71
 Result: `run-e3f84fdfdd7d` at `feadbcc`: T=0.055285 s, M=13.5 MB, S=312, K=26.67 (was 26.30-26.39). Kept.
 
 Round-4 trial (c5h): c5 with 64-bit hash name identity (collision ~3e-10 per dataset).
+
+## Trial: 16 chunks per thread on `f9def9d` (2026-10-31)
+
+Board context: PR #8 (`9fc31a8`, per-name group sets with `fetch_or`) scored T=58.1 ms, S=315, K=27.21 in `run-6c7e81919567` and was reverted in `e21cadb`; the lean port `f9def9d` (owner routing kept) scored T=48.4 ms, M=11.8 MB, S=320, K=29.22 in `run-1cb5ef0f73e0`. The sandbox had rated the `fetch_or` path as faster, so contention-heavy changes are not predicted well by the 8-vCPU sandbox; only the board decides.
+
+This trial cuts each worker's share into 16 chunks instead of 64, which makes 4× fewer per-chunk `MADV_DONTNEED` calls. Sandbox, 8 threads, interleaved trimmed means against `f9def9d`: 59.2 / 59.8 ms vs 60.9 / 60.7 ms over two batches (about −2.5%); 8 chunks measured no gain with owner routing (61.1 ms). No line change. All reference checks pass. Board run pending; revert if K is not above 29.22.

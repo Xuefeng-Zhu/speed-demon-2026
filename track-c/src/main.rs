@@ -165,10 +165,10 @@ fn main() {
     let max = num(ld(regs, comma(last) - 8), comma(last) - last) as usize;
     let region: &[AtomicU8] = zeroed(max + 1, 14);
     let seen: Vec<AtomicU8> = (0..17577).map(|_| AtomicU8::new(0)).collect();
-    // Records are cut into 64 chunks per thread, each moved to start after a CRLF: CR only
+    // Records are cut into 16 chunks per thread, each moved to start after a CRLF: CR only
     // ever occurs in a record terminator (spec 2.2), so this needs no knowledge of quotes.
     let start = recs.iter().position(|&c| c == b'\n').unwrap() + 1;
-    let chunks = 64 * n;
+    let chunks = 16 * n;
     let bound = |c: usize| match c {
         0 => start,
         _ if c == chunks => recs.len(),
