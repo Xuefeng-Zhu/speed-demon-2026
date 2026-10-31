@@ -25,3 +25,7 @@ python3 experiments/b-rust-lengthhash/compare.py --baseline /tmp/b-batch-base --
 ```
 
 Run benchmarks serialized with the other dot VM work. Every benchmark execution checks the published full hash. Native process RSS and shared VM wall time are not official cgroup or scoring-box results. Inspect alignment, collision fallback and guard-page checks before any promotion; compare official practice results if x86 shows a meaningful and repeatable speedup.
+
+## Dot VM x86 result
+
+The parent-run native x86 comparison regressed versus the exact baseline, so this candidate was not selected. Across this and four other packages, 272 full hashes, 40 alternate comparisons, AVX2/guard, collision and graph-oracle checks passed. This supersedes the earlier statement that its Linux guard and x86 path had not run.

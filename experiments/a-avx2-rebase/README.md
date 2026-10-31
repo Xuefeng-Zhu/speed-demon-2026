@@ -23,3 +23,7 @@ python3 tests/compare.py --baseline /tmp/a-avx-dualhash --candidate /tmp/a-avx-c
 ```
 
 `test_avx2.py` compiles the **actual** AVX2 endpoint function and the source's scalar fallback together from the exact supplied source, and compares results for lengths 1–125, 32 alignments, and two page/guard layouts (8,000 cases). It has not yet been executed on x86. Guard tests cover readable bytes up to the pad's limit, not every full-program mapping condition. Test forced table collisions on x86 by generating a temporary copy with the two `endpoint` call results' hashes replaced by `0`, then run the independent reference/growth scripts; never modify the candidate in place. Run page, alignment and collision tests against actual x86 binary. Comparator randomizes order, warms binaries, checks every published full seed-1 hash and reports native process RSS and CPU; these are not official warmed cgroup scores. `official/LICENSE` covers the included official files. No datasets, credentials or binaries are included. Do not promote without x86 and official measurements, broad correctness checks and review.
+
+## Dot VM x86 result
+
+The parent-run native x86 comparison did not show a reliable speed win, so this candidate was not selected. Across this and four other packages, 272 full hashes, 40 alternate comparisons, AVX2/guard, collision and graph-oracle checks passed. This supersedes the earlier statement that its x86 path had not run.

@@ -18,3 +18,7 @@ python3 experiments/track-d-balanced-frontier/extremes.py /tmp/d-fastblock-build
 ```
 
 The randomized comparator verifies every full hash and records wall time, CPU and process RSS; Linux RSS is KiB, not cgroup memory. Run an additional repeat if results are close or noisy. No datasets, credentials, generated answers or binaries are included.
+
+## Dot VM x86 result
+
+The parent-run native x86 comparison was tied; the selected division code was retained. Across this and four other packages, 272 full hashes, 40 alternate comparisons, AVX2/guard, collision and graph-oracle checks passed.

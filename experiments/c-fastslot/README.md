@@ -22,3 +22,7 @@ python3 experiments/c-nameowned/compare.py --baseline /tmp/c-fastslot-base --var
 ```
 
 The comparator verifies the public hash every time and records wall, CPU and native process RSS; cgroup peak and official scoring remain separate. Execute repeated paired batches, record individual samples and compare cold behavior as relevant. Candidate promotion requires x86 results, full review and official practice gates. No credentials, datasets or precomputed answers are in this archive.
+
+## Dot VM x86 result
+
+The parent-run native x86 comparison regressed versus the exact baseline, so this candidate was not selected. Across this and four other packages, 272 full hashes, 40 alternate comparisons, AVX2/guard, collision and graph-oracle checks passed.

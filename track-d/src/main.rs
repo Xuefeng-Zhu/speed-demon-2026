@@ -144,8 +144,20 @@ struct Search {
 
 impl Search {
     fn new(n: usize) -> Self {
+        let dist = vec![[0; 2]; n];
+        // Linux x86-64 uses 4 KiB base pages. Restrict advice to complete pages
+        // inside the allocation so no other live allocation is directly advised.
+        #[cfg(target_os = "linux")]
+        unsafe {
+            extern "C" { fn madvise(addr: *mut std::ffi::c_void, length: usize, advice: i32) -> i32; }
+            let start = dist.as_ptr() as usize;
+            let end = start + std::mem::size_of_val(dist.as_slice());
+            let first = (start + 4095) & !4095usize;
+            let last = end & !4095usize;
+            if first < last { let _ = madvise(first as *mut _, last - first, 14); }
+        }
         Search {
-            dist: vec![[0; 2]; n],
+            dist,
             touched: Vec::new(),
             heaps: Default::default(),
         }
