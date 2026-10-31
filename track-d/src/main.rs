@@ -1,89 +1,283 @@
-use std::cmp::Reverse;
-use std::collections::BinaryHeap;
-use std::sync::atomic::{AtomicUsize, Ordering};
+//! Speed Demon 2026, Track D (Traverse): exact shortest paths on a 5M-edge graph.
+//!
+//! 1. Every thread reads and parses its own slice of `graph.txt` (positioned
+//!    reads, no shared buffer) and buckets each edge, and its reverse, by
+//!    the block of node ids its tail falls in.
+//! 2. Thread j turns block j into its slice of the forward and backward CSR
+//!    arrays with a counting sort; each edge becomes one `u64`.
+//! 3. Threads pull queries from a shared counter and answer each with a
+//!    bidirectional Dijkstra search. Its distance arrays are reused between
+//!    queries and only the touched entries are cleared.
+//!
+//! Std only. Override the directories with `SD_DATA` and `SD_OUT`.
 
-fn number(b: &[u8], p: &mut usize) -> u32 {
-    let mut x = 0u32;
-    while *p < b.len() && b[*p] > b' ' { x = x * 10 + (b[*p] - b'0') as u32; *p += 1; }
-    while *p < b.len() && b[*p] <= b' ' { *p += 1; }
-    x
+use std::fs::{self, File};
+use std::os::unix::fs::FileExt;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering::Relaxed};
+use std::thread;
+
+const NONE: u64 = u64::MAX;
+
+/// Parses whitespace-separated unsigned decimals. A trailing separator yields
+/// one extra 0, which the callers' "take three (or two) at a time" ignores.
+fn numbers(s: &[u8]) -> impl Iterator<Item = u32> + '_ {
+    s.split(|&b| b <= b' ')
+        .map(|t| t.iter().fold(0, |x, &b| x * 10 + (b - b'0') as u32))
 }
-struct Graph { offsets: Vec<usize>, edges: Vec<(u32,u32)> }
-fn make_graph(n: usize, es: &[(u32,u32,u32)], reverse: bool) -> Graph {
-    let mut offsets = vec![0usize; n+1];
-    for &(u,v,_) in es { offsets[if reverse { v } else { u } as usize + 1] += 1; }
-    for i in 1..=n { offsets[i] += offsets[i-1]; }
-    let mut next = offsets.clone();
-    let mut edges = vec![(0,0); es.len()];
-    for &(u,v,w) in es {
-        let (u,v) = if reverse {(v,u)} else {(u,v)};
-        edges[next[u as usize]] = (v,w);
-        next[u as usize] += 1;
-    }
-    Graph {offsets,edges}
+
+/// An edge as parsed: (tail, head, weight), or reversed for the backward graph.
+type Edge = (u32, u32, u32);
+
+/// Compressed sparse rows: the edges out of `u` are `adj[first[u]..first[u + 1]]`,
+/// each packed as `weight << 32 | head`.
+struct Csr {
+    first: Vec<u32>,
+    adj: Vec<u64>,
 }
-struct Search { d: [Vec<u64>;2], seen: [Vec<u16>;2], epoch: u16 }
-impl Search {
-    fn new(n:usize) -> Self { Self {d:[vec![0;n],vec![0;n]],seen:[vec![0;n],vec![0;n]],epoch:0} }
-    fn run(&mut self, gs: [&Graph;2], s:usize, t:usize) -> Option<u64> {
-        if s==t { return Some(0); }
-        if gs[0].offsets[s]==gs[0].offsets[s+1] || gs[1].offsets[t]==gs[1].offsets[t+1] { return None; }
-        if self.epoch == u16::MAX {
-            self.seen[0].fill(0);
-            self.seen[1].fill(0);
-            self.epoch = 0;
-        }
-        self.epoch += 1;
-        let epoch = self.epoch;
-        let mut q = [BinaryHeap::new(), BinaryHeap::new()];
-        for (k,v) in [s,t].into_iter().enumerate() { self.d[k][v]=0; self.seen[k][v]=epoch; q[k].push(Reverse((0u64,v))); }
-        let mut best = u64::MAX;
-        loop {
-            for (k,heap) in q.iter_mut().enumerate() {
-                while let Some(&Reverse((d,v)))=heap.peek() {
-                    if self.d[k][v] == d {break;} heap.pop();
-                }
-            }
-            if q[0].is_empty() || q[1].is_empty() { break; }
-            let a = q[0].peek().unwrap().0.0; let b = q[1].peek().unwrap().0.0;
-            if a + b >= best {break;}
-            let k = if a <= b {0} else {1};
-            let Reverse((d,v))=q[k].pop().unwrap();
-            let g=gs[k];
-            for &(to,w) in &g.edges[g.offsets[v]..g.offsets[v+1]] {
-                let to=to as usize; let nd=d+w as u64;
-                if self.seen[k][to]!=epoch || nd<self.d[k][to] {
-                    self.seen[k][to]=epoch; self.d[k][to]=nd; q[k].push(Reverse((nd,to)));
-                    if self.seen[1-k][to]==epoch { best=best.min(nd+self.d[1-k][to]); }
-                }
-            }
-        }
-        if best==u64::MAX {None} else {Some(best)}
+
+impl Csr {
+    /// `(head, weight)` of every edge out of `u`.
+    fn edges(&self, u: u32) -> impl Iterator<Item = (u32, u64)> + '_ {
+        let range = self.first[u as usize] as usize..self.first[u as usize + 1] as usize;
+        self.adj[range].iter().map(|&e| (e as u32, e >> 32))
     }
 }
-fn main() {
-    let data=std::env::var("DATA_DIR").unwrap_or_else(|_| "/data".into());
-    let out=std::env::var("OUT_DIR").unwrap_or_else(|_| "/out".into());
-    let b=std::fs::read(format!("{data}/graph.txt")).unwrap(); let mut p=0;
-    let n=number(&b,&mut p) as usize; let m=number(&b,&mut p) as usize;
-    let mut es=Vec::with_capacity(m);
-    for _ in 0..m { es.push((number(&b,&mut p),number(&b,&mut p),number(&b,&mut p))); }
-    drop(b);
-    let forward=make_graph(n,&es,false); let backward=make_graph(n,&es,true); drop(es);
-    let b=std::fs::read(format!("{data}/queries.txt")).unwrap(); let mut p=0; let mut queries=Vec::new();
-    while p<b.len() { queries.push((number(&b,&mut p) as usize,number(&b,&mut p) as usize)); }
-    let next=AtomicUsize::new(0);
-    let results: Vec<_> = (0..queries.len()).map(|_| std::sync::OnceLock::new()).collect();
-    std::thread::scope(|scope| {
-        for _ in 0..6.min(queries.len()) { scope.spawn(|| {
-            let mut search=Search::new(n);
-            loop { let i=next.fetch_add(1,Ordering::Relaxed); if i>=queries.len() {break;}
-                let (s,t)=queries[i]; results[i].set(search.run([&forward,&backward],s,t)).unwrap();
-            }
-        }); }
+
+/// Returns the forward graph and the backward graph (every edge reversed).
+fn load_graph(path: &str, threads: usize) -> [Csr; 2] {
+    let file = File::open(path).unwrap();
+    let len = file.metadata().unwrap().len() as usize;
+    let mut head = [0u8; 64];
+    let got = file.read_at(&mut head, 0).unwrap();
+    let mut hdr = numbers(&head[..got]);
+    let (n, m) = (hdr.next().unwrap() as usize, hdr.next().unwrap() as usize);
+    let block = |u: u32| u as usize * threads / n;
+
+    // Thread i parses the lines whose first byte lies in its byte range and
+    // sorts each edge into `buckets[i][dir][block of its tail]`. The ranges
+    // start at 1, so thread 0 skips the header the way every other thread
+    // skips the partial line it starts in.
+    let buckets: Vec<[Vec<Vec<Edge>>; 2]> = thread::scope(|sc| {
+        let handles: Vec<_> = (0..threads)
+            .map(|i| {
+                let file = &file;
+                sc.spawn(move || {
+                    let start = 1 + i * (len - 1) / threads;
+                    let end = 1 + (i + 1) * (len - 1) / threads;
+                    let mut buf = vec![0u8; (end + 32).min(len) - (start - 1)];
+                    file.read_exact_at(&mut buf, (start - 1) as u64).unwrap();
+                    let newline =
+                        |from: usize| from + buf[from..].iter().position(|&b| b == b'\n').unwrap();
+                    let (from, to) = (newline(0) + 1, newline(end - start));
+                    let cap = m / threads / threads * 9 / 8 + 64;
+                    let mut out = [0, 1].map(|_| {
+                        (0..threads)
+                            .map(|_| Vec::with_capacity(cap))
+                            .collect::<Vec<_>>()
+                    });
+                    let mut it = numbers(&buf[from.min(to)..to]);
+                    while let (Some(u), Some(v), Some(w)) = (it.next(), it.next(), it.next()) {
+                        out[0][block(u)].push((u, v, w));
+                        out[1][block(v)].push((v, u, w));
+                    }
+                    out
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
     });
-    use std::fmt::Write;
-    let mut output=String::new();
-    for result in results { match result.into_inner().unwrap() { Some(x)=>writeln!(output,"{x}").unwrap(),None=>writeln!(output,"-1").unwrap() } }
-    std::fs::write(format!("{out}/distances.txt"),output).unwrap();
+    let (fwd, bwd): (Vec<_>, Vec<_>) = buckets.into_iter().map(|[f, b]| (f, b)).unzip();
+    let fwd = build_csr(n, m, threads, fwd); // frees the forward buckets before
+    [fwd, build_csr(n, m, threads, bwd)] // the backward graph is allocated
+}
+
+/// Thread j owns the nodes of block j and the matching slices of `first` and
+/// `adj`, so the counting sort needs no atomics and stays within a cache-sized
+/// window of memory.
+fn build_csr(n: usize, m: usize, threads: usize, buckets: Vec<Vec<Vec<Edge>>>) -> Csr {
+    let mut first = vec![0u32; n + 1];
+    let mut adj = vec![0u64; m];
+    let (mut first_rest, mut adj_rest) = (&mut first[..n], &mut adj[..]);
+    let (buckets, mut base) = (&buckets, 0);
+    // Block j is the nodes `u` with `u * threads / n == j`.
+    let lo = |j: usize| (j * n).div_ceil(threads);
+    thread::scope(|sc| {
+        for j in 0..threads {
+            let size: usize = buckets.iter().map(|b| b[j].len()).sum();
+            let (first, f) = std::mem::take(&mut first_rest).split_at_mut(lo(j + 1) - lo(j));
+            let (adj, a) = std::mem::take(&mut adj_rest).split_at_mut(size);
+            (first_rest, adj_rest) = (f, a);
+            let block_base = base;
+            base += size as u32;
+            let lo = lo(j);
+            sc.spawn(move || {
+                let edges = || buckets.iter().flat_map(|b| &b[j]);
+                for &(u, _, _) in edges() {
+                    first[u as usize - lo] += 1;
+                }
+                let mut sum = block_base;
+                for c in first.iter_mut() {
+                    (sum, *c) = (sum + *c, sum);
+                }
+                let mut cursor = first.to_vec();
+                for &(u, v, w) in edges() {
+                    let c = &mut cursor[u as usize - lo];
+                    adj[(*c - block_base) as usize] = (w as u64) << 32 | v as u64;
+                    *c += 1;
+                }
+            });
+        }
+    });
+    first[n] = m as u32;
+    Csr { first, adj }
+}
+
+/// Per-thread search state, reused between queries. `dist[v]` holds the
+/// forward and backward tentative distances of `v` side by side (one cache
+/// line), as bitwise complements: zeroed memory means "not reached", so the
+/// array costs nothing until a search touches it.
+struct Search {
+    dist: Vec<[u64; 2]>,
+    touched: Vec<u32>,
+    heaps: [RadixHeap; 2],
+}
+
+impl Search {
+    fn new(n: usize) -> Self {
+        Search {
+            dist: vec![[0; 2]; n],
+            touched: Vec::new(),
+            heaps: Default::default(),
+        }
+    }
+
+    fn reach(&mut self, side: usize, v: u32, d: u64) {
+        let slot = &mut self.dist[v as usize];
+        if d < !slot[side] {
+            if *slot == [0; 2] {
+                self.touched.push(v);
+            }
+            slot[side] = !d;
+            self.heaps[side].push(d, v);
+        }
+    }
+
+    /// Bidirectional Dijkstra: expand the side with the smaller key, keep the
+    /// best s-t path seen where the two searches meet, and stop once no shorter
+    /// one can exist. A dead end on either side (no out-edges from `s`, no
+    /// in-edges into `t`) empties its heap at once, so those pairs are cheap.
+    fn distance(&mut self, graphs: [&Csr; 2], s: u32, t: u32) -> u64 {
+        if s == t {
+            return 0;
+        }
+        self.reach(0, s, 0);
+        self.reach(1, t, 0);
+        let mut best = NONE;
+        while let (Some(a), Some(b)) = (self.heaps[0].top(), self.heaps[1].top()) {
+            if a.saturating_add(b) >= best {
+                break;
+            }
+            let side = (a > b) as usize;
+            let (d, u) = self.heaps[side].pop();
+            if d > !self.dist[u as usize][side] {
+                continue; // stale entry
+            }
+            for (v, w) in graphs[side].edges(u) {
+                self.reach(side, v, d + w);
+                let other = self.dist[v as usize][1 - side];
+                if other != 0 {
+                    best = best.min(d + w + !other);
+                }
+            }
+        }
+        for &v in &self.touched {
+            self.dist[v as usize] = [0; 2];
+        }
+        self.touched.clear();
+        self.heaps.iter_mut().for_each(RadixHeap::clear);
+        best
+    }
+}
+
+fn main() {
+    let dir = |key, default: &str| std::env::var(key).unwrap_or(default.to_string());
+    let (data, out) = (dir("SD_DATA", "/data"), dir("SD_OUT", "/out"));
+    let threads = thread::available_parallelism().map_or(1, |n| n.get());
+    let [fwd, bwd] = load_graph(&format!("{data}/graph.txt"), threads);
+    let text = fs::read(format!("{data}/queries.txt")).unwrap();
+    let mut it = numbers(&text);
+    let mut queries = Vec::new();
+    while let (Some(s), Some(t)) = (it.next(), it.next()) {
+        queries.push((s, t));
+    }
+
+    let answers: Vec<AtomicU64> = queries.iter().map(|_| AtomicU64::new(0)).collect();
+    let next = AtomicUsize::new(0);
+    thread::scope(|sc| {
+        for _ in 0..threads {
+            sc.spawn(|| {
+                let mut search = Search::new(fwd.first.len() - 1);
+                loop {
+                    let i = next.fetch_add(1, Relaxed);
+                    let Some(&(s, t)) = queries.get(i) else { break };
+                    answers[i].store(search.distance([&fwd, &bwd], s, t), Relaxed);
+                }
+            });
+        }
+    });
+    let text: String = answers
+        .into_iter()
+        .map(|a| match a.into_inner() {
+            NONE => "-1\n".to_string(),
+            d => format!("{d}\n"),
+        })
+        .collect();
+    fs::write(format!("{out}/distances.txt"), text).unwrap();
+}
+
+/// Monotone priority queue: keys pushed are never below the last key popped.
+/// Bucket i holds keys whose highest bit differing from `last` is bit i - 1.
+struct RadixHeap {
+    last: u64,
+    buckets: [Vec<(u64, u32)>; 65],
+}
+
+impl Default for RadixHeap {
+    fn default() -> Self {
+        RadixHeap {
+            last: 0,
+            buckets: std::array::from_fn(|_| Vec::new()),
+        }
+    }
+}
+
+impl RadixHeap {
+    fn slot(&self, k: u64) -> usize {
+        64 - (k ^ self.last).leading_zeros() as usize
+    }
+    fn push(&mut self, k: u64, v: u32) {
+        let i = self.slot(k);
+        self.buckets[i].push((k, v));
+    }
+    /// The smallest key, after moving every entry with that key into bucket 0.
+    fn top(&mut self) -> Option<u64> {
+        if self.buckets[0].is_empty() {
+            let i = self.buckets.iter().position(|b| !b.is_empty())?;
+            let mut b = std::mem::take(&mut self.buckets[i]);
+            self.last = b.iter().map(|e| e.0).min().unwrap();
+            for e in b.drain(..) {
+                self.push(e.0, e.1);
+            }
+            self.buckets[i] = b;
+        }
+        Some(self.last)
+    }
+    /// Call only after `top` returned `Some`.
+    fn pop(&mut self) -> (u64, u32) {
+        self.buckets[0].pop().unwrap()
+    }
+    fn clear(&mut self) {
+        self.last = 0;
+        self.buckets.iter_mut().for_each(Vec::clear);
+    }
 }

@@ -80,3 +80,14 @@ Run `run-f2cc9af47d9d` at commit `664ba1aafb0d765427f49d5ad933b6c1a18b0f24` pass
 ## Live-board practice run at 2fc9110
 
 Run `run-0739ec66c62d` at commit `2fc9110d0c2acfc880350efbc240f5aa4620bd99` passed check, build, correctness, timeout and sandbox. The board reports T=0.227481 s, M=47534080 bytes, S=233, D=1, K=13.113766 and 55.886371 machine points. This is a single public-seed practice run, not final hidden-seed scoring. See `experiments/board-2fc.json`.
+
+
+## Selective Rust candidate at PR head f348fd7
+
+In five alternating full seed-1 pairs on the shared dot x86 VM, the Rust candidate had a 0.0516 s median versus 0.1813 s for the C++ source at 02d7b4c. All outputs matched. This is native process timing, not official board scoring or cgroup memory. The source has no third-party dependencies. Its source score and official runtime and memory have not yet been measured.
+
+Independent ARM macOS testing used a temporary source copy with only the Linux anonymous mmap flag changed for Darwin. It matched the full seed-1 output hash, the independent zero/1k/100k/100k oracle suite, 16 six-way shard split checks, nine 1 MiB boundary checks, and 84 page-end/reference combinations. The live-board run IDs above belong to earlier C++ implementations, not this candidate.
+
+The unchanged Linux candidate subsequently matched the published full seed-1 SHA-256 in a restricted offline ARM Linux container. The new target-machine source count, time and cgroup memory still require an official practice run.
+
+`track-a-verification/latency_grid_test.py` additionally checked 132,624 singleton groups across all 72 hours and 1,842 endpoints, random unsigned-32-bit latencies of every decimal width, 0 and 4294967295, and 1, 2, 6, 12 and 64 workers. This used the same Darwin-only test adaptation.

@@ -53,3 +53,11 @@ Run `run-6459b46e9e69` at commit `664ba1aafb0d765427f49d5ad933b6c1a18b0f24` pass
 ## Live-board practice run at 2fc9110
 
 Run `run-744fbf4164a5` at commit `2fc9110d0c2acfc880350efbc240f5aa4620bd99` passed check, build, correctness, timeout and sandbox. The board reports T=1.72154 s, M=333930496 bytes, S=169, D=1, K=6.442506 and 40.452742 machine points. This is a single public-seed practice run, not final hidden-seed scoring. See `experiments/board-2fc.json`.
+
+## Rust radix-heap candidate
+
+The current candidate selectively adopts the Track D design from PR commit `f348fd7227d4afabe6feaf2b7389f7ef73863178`; the PR itself was not merged. On a shared x86 dot VM, five alternating full-data pairs had native medians 1.1298 s for this candidate versus 2.2681 s for the preceding selected version, with all full hashes matching. Those times are not official cgroup scores; matched memory and pinned source counts were not supplied. The previous source is preserved in `experiments/track-d-seen16/`.
+
+An offline release build matched the full seed-1 hash. Independent oracle tests covered 80 random graphs at each of five worker configurations, and another 150 random directed graphs with default and forced 12 workers; cases included zero and maximum u32 weights, self-loops, parallel edges and disconnected nodes. A maximum-size chain with maximum weights and repeated-query tests also passed. Native Mac checks and the dot VM are not hidden-data or official Linux container verification. The official practice run at 02d7b4c for the preceding version was `run-5caa97af7b2c`: T=1.753772 s, M=334098432 bytes, S=169, K=6.382387; all gates passed. See `experiments/board-02d.json`.
+
+The unchanged Linux candidate subsequently matched the full seed-1 SHA-256 in a restricted offline ARM Linux container. The integrated A–D tree also matched the official references for tiny seeds 2 and 17 on ARM Linux. The target-machine source count, time and cgroup memory still require an official practice run.
