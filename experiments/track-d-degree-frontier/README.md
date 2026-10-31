@@ -1,0 +1,9 @@
+# Degree-aware frontier selection (not selected)
+
+`base.rs` is the selected balanced-frontier implementation at commit `073646e`, SHA-256 `1022f4d9c9956b17fd054e96a26d09551eff61936a851edf88505e12e2b1946c`. `degree.rs` chooses the heap whose next vertex has the smaller adjacency degree, breaking ties by distance. `weighted.rs` compares that degree plus one multiplied by its heap size, breaking ties by distance. Each side still pops only its own minimum and retains the existing stopping bound. This is an isolated scheduling experiment, not selected code.
+
+An instrumented native ARM full-data run showed 0.211 s parsing, 0.203 s CSR building and 3.239 s querying under severe shared-host contention, with the published output hash. Instrumentation changes timing and is not a benchmark. The initial randomized four-run three-way screen in `benchmark.json` was severely contended, and a brief overlapping oracle test further contaminated it; do not use it for performance conclusions.
+
+In a separate seven-pair randomized native ARM screen after one warmup, every full-seed hash matched. Weighted median wall was 0.6602 s versus 0.5942 s baseline, and median CPU was 2.1694 versus 2.0403 s. Maximum native process RSS was 534,790,144 versus 534,970,368 bytes. Raw samples are `paired.json`; host activity may remain, and process RSS is not cgroup memory. The weighted idea was not selected because the screen was slower and adds complexity. Both degree and weighted binaries also passed 80 independent random directed graph fixtures / 16,000 Dijkstra-oracle queries each via `experiments/track-d-balanced-frontier/oracle.py`.
+
+For reproduction compile each source with `rustc --edition 2021 -O -C lto=fat -C codegen-units=1 -C panic=abort`, supply `SD_DATA` and `SD_OUT`, verify the published full hash on every run, and alternate under controlled load. The official scoring CPU, warm cgroup memory and hidden-seed performance can differ. No Docker was used.
