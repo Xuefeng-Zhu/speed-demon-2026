@@ -237,6 +237,7 @@ impl Search {
 }
 
 
+const BUCKET_SHIFT: u32 = 6;
 const POOL_CAP: usize = 65_536;
 #[derive(Clone, Copy)]
 struct PoolNode { key: u64, vertex: u32, next: u32 }
@@ -245,7 +246,7 @@ struct PoolNode { key: u64, vertex: u32, next: u32 }
 struct FastHeap { nodes: Vec<PoolNode>, head: [u32;65], free: u32, count: usize, last: u64 }
 impl FastHeap {
     fn new() -> Self { Self { nodes: Vec::with_capacity(POOL_CAP), head:[END;65], free:END, count:0, last:0 } }
-    fn slot(&self, k:u64)->usize { debug_assert!(k>=self.last); 64-(k^self.last).leading_zeros() as usize }
+    fn slot(&self, k:u64)->usize { let bucket=k>>BUCKET_SHIFT; debug_assert!(bucket>=self.last); 64-(bucket^self.last).leading_zeros() as usize }
     fn push(&mut self,k:u64,v:u32)->bool {
         let i=self.slot(k);
         let id=if self.free!=END { let id=self.free; self.free=self.nodes[id as usize].next; id }
@@ -257,11 +258,11 @@ impl FastHeap {
         if self.head[0]==END {
             let i=self.head.iter().position(|&v|v!=END)?;
             let mut id=self.head[i];let mut low=u64::MAX;
-            while id!=END {let node=self.nodes[id as usize];low=low.min(node.key);id=node.next;}
+            while id!=END {let node=self.nodes[id as usize];low=low.min(node.key>>BUCKET_SHIFT);id=node.next;}
             self.last=low;let mut id=std::mem::replace(&mut self.head[i],END);
             while id!=END {let node=self.nodes[id as usize];let j=self.slot(node.key);self.nodes[id as usize].next=self.head[j];self.head[j]=id;id=node.next;}
         }
-        Some(self.last)
+        Some(self.last << BUCKET_SHIFT)
     }
     fn pop(&mut self)->(u64,u32) {
         let id=self.head[0];debug_assert_ne!(id,END);let node=self.nodes[id as usize];self.head[0]=node.next;
@@ -294,8 +295,9 @@ impl Search32 {
             let side=match self.heaps[0].count.cmp(&self.heaps[1].count) {
                 std::cmp::Ordering::Less=>0,std::cmp::Ordering::Greater=>1,std::cmp::Ordering::Equal=>(a>b) as usize
             };
-            // Every entry in bucket zero has this side's current minimum.
-            // Recheck scheduling and the stopping bound after a bounded batch.
+            // Bucket zero contains keys with the same coarse quotient; processing
+            // in arbitrary order is safe because every decrease is enqueued.
+            // Recheck scheduling and the conservative bound after each batch.
             for _ in 0..16 {
                 if self.heaps[side].head[0]==END {break;}
                 let (d,u)=self.heaps[side].pop();

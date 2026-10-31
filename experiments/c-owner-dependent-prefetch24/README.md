@@ -21,3 +21,5 @@ python3 experiments/c-owner-dependent-prefetch24/compare.py --baseline /tmp/c-de
 The comparison validates every published full output hash; verify the actual `prefetcht0` path is present and active (e.g. disassembly) and inspect wall, CPU and process RSS. Process RSS is not parent-cgroup peak. Review guard test's actual execution, collision cases, hidden inputs, benchmark variance and official sandbox separately before selecting. No dataset, credentials, generated output or binaries belong in the package.
 
 The portable no-prefetch path also passed the actual three packed parser sites forced to one hash, collision promotion and a long-name sentinel at 1/2/3/7/12 workers against the official reference. The original test script's final print mistakenly said five sites; its loop forced exactly the three sites in this two-lane source and the message was corrected. This test does not run x86 prefetch.
+
+Parent-run x86 dot VM paired full-seed tests showed 5.8% and 5.9% higher wall time than the exact current baseline. Keep the existing selected C. These native results are not official cgroup measurements.

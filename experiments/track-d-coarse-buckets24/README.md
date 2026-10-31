@@ -23,3 +23,5 @@ python3 compare.py --data /path/to/full-d --build-dir /tmp/d-coarse24-repeat --r
 ```
 
 The comparator checks every output against the official seed-1 hash and records wall, CPU and native process RSS; it does not measure parent-cgroup peak. Check 8 GiB behavior separately if feasible; VM RSS is not proof for hidden data. Target official build and practice require their own review. Do not run Docker on the Mac, prune images, change system limits, or use unrelated data.
+
+Parent-run dot VM paired full-seed x86 tests showed 5.9% and 8.4% lower wall and 8.9% and 9.4% lower CPU in two 17-pair batches. All 72 full hashes, seven forced-capacity variants, randomized/exhaustive/extreme cases, zero cycles and actual pool-exhaustion fallback passed. Native RSS is not official parent-cgroup memory and cannot establish the 8 GiB hidden-data bound. The candidate is sent for reversible official practice.
