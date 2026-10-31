@@ -146,3 +146,7 @@ All four tracks passed all gates; `board-d144.json` records run IDs. B's bounded
 ## Official practice run for 073646e
 
 All four tracks passed every gate; `board-073.json` records run IDs. D balanced-frontier measured T=0.383672 s, M=444,030,976 bytes, S=246, K=12.184975, versus the previous D run's T=0.701512 s, M=455,716,864 bytes, S=236, K=9.020576. A/B/C measured 0.051055/0.408505/0.146822 s respectively. These are separate public-seed practice runs, not final holdout scores.
+
+## Official practice run for 4f2d688
+
+All tracks passed every gate; see `board-4f.json`. C's CRLF synchronization measured T=0.137385 s, M=18,157,568 bytes, S=175, K=17.404341, versus 0.146822 s, 17,391,616 bytes, S=170 and K=17.055466 for the previous run. The runs are separate public-seed practice measurements, not final or controlled paired scores.
