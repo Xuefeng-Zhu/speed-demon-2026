@@ -12,3 +12,5 @@ python3 run.py /tmp/sd-c-profile28 /path/to/full-seed-1 > /tmp/sd-c-profile28-re
 ```
 
 `run.py` performs one warmup plus ten instrumented runs, verifies the published output hash every time and reports per-run and median timing. Use no competing benchmarks; save all JSON. Compare phases within each instrumented run, not with independent uninstrumented official timing or across hosts. If available without privileges or system changes, a separate sampling profile of the uninstrumented baseline may help explain hot functions. Do not change sysctls, install privileged tools, delete user data, use Mac Docker, or assume native RSS proves an 8 GiB parent-cgroup bound.
+
+Parent-run dot VM x86 instrumented diagnostic had 22 full-seed hashes pass across two batches. Median parse phases were 40.25 and 39.06 ms, reduction phases 46.57 and 36.59 ms, and total instrumented times 97.40 and 86.61 ms. Both phases were substantial and reduction varied. Timer, stderr and scheduling overhead perturb the work; overlapping worker-wall sums are not CPU time, and these numbers are neither official scoring nor a clean comparison with uninstrumented builds.
