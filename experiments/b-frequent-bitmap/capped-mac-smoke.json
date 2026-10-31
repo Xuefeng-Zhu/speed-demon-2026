@@ -1,0 +1,58 @@
+{
+  "platform": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+  "compiler": "Apple clang version 21.0.0 (clang-2100.4.1.1)",
+  "flags": [
+    "-std=c++17",
+    "-O3",
+    "-DNDEBUG",
+    "-pthread"
+  ],
+  "source_sha256": {
+    "baseline": "a47bc7aac61f03cea55337567ed1e7991aff067eddba3ddf4d3c0877a201ba2a",
+    "bitmap": "1c699d9deb863be5b955ac95272aca369d6f1999c12f5ce8923015b401a69524"
+  },
+  "input_sha256": {
+    "docs": "6cd461670d6c39f9c5211162577532d3648edeab12340c71cc7d2ab5f18e66c8",
+    "queries": "77ef7ffc59afde051006b02a2ce8e4c090fbbfbf101acd6f862d0f8e298d39f9"
+  },
+  "expected_sha256": "f86973c210228141bcb6f1f1b10188ad2a9b65f71e7cd7cf4590b38de4e80927",
+  "rss_note": "wait4 ru_maxrss: KiB on Linux, bytes on macOS; not cgroup memory",
+  "measurements": {
+    "baseline": [
+      {
+        "wall_s": 0.8452940000006492,
+        "user_s": 3.843342,
+        "system_s": 0.12598199999999998,
+        "max_rss_native_units": 271908864,
+        "output_sha256": "f86973c210228141bcb6f1f1b10188ad2a9b65f71e7cd7cf4590b38de4e80927"
+      },
+      {
+        "wall_s": 0.8492129170008411,
+        "user_s": 3.851108,
+        "system_s": 0.130552,
+        "max_rss_native_units": 271990784,
+        "output_sha256": "f86973c210228141bcb6f1f1b10188ad2a9b65f71e7cd7cf4590b38de4e80927"
+      }
+    ],
+    "bitmap": [
+      {
+        "wall_s": 0.827075833998606,
+        "user_s": 3.440167,
+        "system_s": 0.141128,
+        "max_rss_native_units": 315916288,
+        "output_sha256": "f86973c210228141bcb6f1f1b10188ad2a9b65f71e7cd7cf4590b38de4e80927"
+      },
+      {
+        "wall_s": 0.7835577500009094,
+        "user_s": 3.324459,
+        "system_s": 0.127524,
+        "max_rss_native_units": 315031552,
+        "output_sha256": "f86973c210228141bcb6f1f1b10188ad2a9b65f71e7cd7cf4590b38de4e80927"
+      }
+    ]
+  },
+  "baseline_median_wall_s": 0.8472534585007452,
+  "baseline_max_rss_native_units": 271990784,
+  "bitmap_median_wall_s": 0.8053167919997577,
+  "bitmap_max_rss_native_units": 315916288
+}

@@ -1,0 +1,5 @@
+# D zero-degree early exit (not selected)
+
+The candidate checks for zero source out-degree or zero target in-degree before initializing bidirectional search, after retaining the `s == t` check. Those conditions prove no path exists. The candidate differs from selected D at e8e828a only by this fast path. It passed 80 randomized directed graphs with 16,000 independent Dijkstra oracle queries per implementation and all 16 full seed-1 hash checks (two warmups included).
+
+Seven measured randomized native pairs on a shared macOS ARM host gave median candidate wall 0.693544 s vs baseline 0.629471 s, CPU 2.907399 s vs 2.965250 s, with wide overlapping ranges due to contention. Process RSS is not cgroup memory. In the public seed-1 dataset 6 of 2,000 queries hit the zero-degree fast path, and 6 had equal endpoints; these workload observations are not used to recognize inputs or cache answers. No speed win was established. Source, raw samples and offline comparator are retained; this is not an official target score. Run `compare.py` after copying selected source to `baseline.rs` and this `main.rs` to `meeting.rs` in a temporary directory next to the script.
