@@ -172,3 +172,5 @@ Sandbox CPU min: 2.33 s -> 1.54 s; sandbox peak RSS at 2 threads rose ~195 -> 24
 ## Round 2: packed u32 edges (2026-10-31)
 
 Edges packed as one u32 (21-bit node, 11-bit weight; large weights in a sorted side list), single parse to u64 per edge then per-block build, old graph freed before the backward graph, u32 distances with exact u64 rerun when needed, compare_exchange cluster claim. Board `run-d1fea4ee2487` at `ccbfbc0`: T=0.185344 s, M=87.7 MB, S=390, K=22.63 (was 18.94). Kept.
+
+Round-3 trial (cand1): renumbering writes renumbered rows directly (one atomic reserves ids + edge slots per cluster), zeroed rank array, parallel prefix sums, exit right after write, 8-byte heap entries (low 32 bits of key), separate forward/backward distance pools, u16 block map.
