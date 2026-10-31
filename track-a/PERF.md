@@ -70,3 +70,8 @@ The x86 full hash, five alternate references, 25 boundary cases, four synthetic 
 ## First official live-board practice run
 
 The public seed-1 practice run at commit `f45c4cf3f707123e705b930c6b1f08b8facefdc5` is `run-55a9d9b7e7df`. It passed the check, build, correctness, timeout and sandbox gates. The board reports T=0.475183 s, M=35717120 bytes, S=127, D=1, K=10.522722 and 51.106405 machine points. This is a single live-board run, not the final five-run hidden-seed score. Source and snapshot: `experiments/board-f45.json`. This measured the earlier f45 serial candidate, not the later local three-shard or checked-merge changes.
+
+
+## Live-board practice run at 664ba1a
+
+Run `run-f2cc9af47d9d` at commit `664ba1aafb0d765427f49d5ad933b6c1a18b0f24` passed check, build, correctness, timeout and sandbox. The board reports T=0.226277 s, M=47616000 bytes, S=233, D=1, K=13.144081 and 55.936511 machine points. This single public-seed practice run is not final hidden-seed scoring. See `experiments/board-664.json`.

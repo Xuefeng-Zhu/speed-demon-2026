@@ -30,3 +30,13 @@ The promoted candidate passed `python3 check.py c --data /tmp/sdc-full --expecte
 ## First official live-board practice run
 
 The public seed-1 practice run at commit `f45c4cf3f707123e705b930c6b1f08b8facefdc5` is `run-9169c3f2e878`. It passed the check, build, correctness, timeout and sandbox gates. The board reports T=0.533652 s, M=278233088 bytes, S=167, D=1, K=5.152004 and 35.598809 machine points. This is a single live-board run, not the final five-run hidden-seed score. Source and snapshot: `experiments/board-f45.json`.
+
+
+## Live-board practice run at 664ba1a
+
+Run `run-e235d1cc36ec` at commit `664ba1aafb0d765427f49d5ad933b6c1a18b0f24` passed check, build, correctness, timeout and sandbox. The board reports T=0.526909 s, M=277127168 bytes, S=167, D=1, K=5.188997 and 35.754169 machine points. This single public-seed practice run is not final hidden-seed scoring. See `experiments/board-664.json`. This measured the prior heap-copy implementation, preserved as `experiments/c-heap-664.cpp`, not the later mmap candidate.
+
+
+## Read-only input mapping
+
+The selected candidate maps records rather than copying the full input into an anonymous buffer. The full official hash passed under the restricted ARM container; tiny seeds 2, 17 and 4242 and BOM/EOF/page-boundary fixtures passed against the reference. Independent review, ASan/UBSan, sample seed 99 and the earlier native x86 full/alternate checks also passed. Three alternating warmed-cache local ARM Docker pairs gave cgroup peaks 277,241,856 / 276,971,520 / 277,200,896 B for heap versus 75,550,720 / 76,128,256 / 75,730,944 B for mmap, all hashes correct. A separate prewarmer held the data cache before the measured containers; `experiments/c-cgroup-bench.py` and `experiments/c-cgroup-report.json` preserve the method and data. The supplied x86 wall medians were 0.462 s heap and 0.415 s mmap; pinned formatted S was 167 versus 198. Together those cross-machine local figures imply about 1.33× K, not an official score. The board run above measured heap; mmap awaits its own board run.

@@ -24,7 +24,7 @@ HASHES = {
 VARIANTS = {
     'a': {'three-shard-insert': 'experiments/a-three-shard-insert.cpp', 'serial-f45': 'experiments/a-serial-f45.cpp', 'three-shard-checked': 'experiments/a-three-shard-checked.cpp', 'striped': 'experiments/a-striped.cpp', 'buffered': 'experiments/a-output-buffered.cpp', 'parallel': 'experiments/a-parallel-output.cpp'},
     'b': {'serial': 'experiments/b-serial.cpp', 'parallel': 'experiments/b-parallel-query.cpp', 'parallel-index': 'experiments/b-parallel-index.cpp', 'stream-index': 'experiments/b-stream-index.cpp', 'zero-copy': 'experiments/b-zero-copy.cpp'},
-    'c': {'mmap': 'experiments/c-mmap.cpp', 'workers-3': 'experiments/c-workers-3.cpp', 'workers-12': 'experiments/c-workers-12.cpp', 'serial': 'experiments/c-serial.cpp', 'hash-sort': 'experiments/c-hashsort.cpp'},
+    'c': {'heap-664': 'experiments/c-heap-664.cpp', 'mmap': 'experiments/c-mmap.cpp', 'workers-3': 'experiments/c-workers-3.cpp', 'workers-12': 'experiments/c-workers-12.cpp', 'serial': 'experiments/c-serial.cpp', 'hash-sort': 'experiments/c-hashsort.cpp'},
     'd': {'parallel-parse': 'experiments/track-d-parallel-parse/Cargo.toml', 'dense': 'experiments/track-d-dense/Cargo.toml', 'sparse': 'experiments/track-d-sparse/Cargo.toml', 'seen16': 'experiments/track-d-seen16/Cargo.toml', 'packed': 'experiments/track-d-packed/Cargo.toml', 'packed-u32': 'experiments/track-d-packed-u32/Cargo.toml'},
 }
 OUTPUT = {'a': 'summary.txt', 'b': 'results.txt', 'c': 'aggregates.txt', 'd': 'distances.txt'}

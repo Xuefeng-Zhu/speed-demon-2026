@@ -2,6 +2,10 @@
 #include <atomic>
 #include <thread>
 #include <cstdint>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -27,9 +31,9 @@ string readfile(const string& path) {
     if (!in.read(content.data(), content.size())) { cerr << "Cannot read " << path << '\n'; exit(1); }
     return content;
 }
-uint32_t number(const char*& p) {
+uint32_t number(const char*& p, const char* end=nullptr) {
     uint32_t n=0;
-    while (*p >= '0' && *p <= '9') n=n*10+(*p++-'0');
+    while ((!end || p<end) && *p >= '0' && *p <= '9') n=n*10+(*p++-'0');
     return n;
 }
 // Names are always quoted when nonempty. Their escaped byte sequence is a
@@ -61,7 +65,17 @@ string money(int64_t cents) {
 }
 int main(int argc,char** argv) {
     string data=argc>1?argv[1]:"/data", out=argc>2?argv[2]:"/out";
-    string lookup=readfile(data+"/regions.csv"), records=readfile(data+"/records.csv");
+    string lookup=readfile(data+"/regions.csv");
+    int fd=open((data+"/records.csv").c_str(), O_RDONLY);
+    if (fd < 0) { perror("open records"); return 1; }
+    struct stat st;
+    if (fstat(fd, &st) != 0) { perror("fstat"); close(fd); return 1; }
+    const size_t len=static_cast<size_t>(st.st_size);
+    if (!len) { close(fd); cerr << "Empty records file\n"; return 1; }
+    void* map=mmap(nullptr,len,PROT_READ,MAP_PRIVATE,fd,0); close(fd);
+    if(map==MAP_FAILED) { perror("mmap"); return 1; }
+    const char* records=static_cast<const char*>(map);
+    const char* records_end=records+len;
     vector<uint16_t> regions(1000000, 0);
     vector<Group> groups(1); groups[0].key="_UNMATCHED";
     unordered_map<string,uint16_t> country;
@@ -76,15 +90,15 @@ int main(int argc,char** argv) {
         }
         if(id<regions.size()) regions[id]=it->second;
     }
-    p=records.c_str(); while (*p++!='\n') {}
-    while (*p) {
+    p=records; while (p<records_end && *p++!='\n') {}
+    while (p < records_end) {
         if ((unsigned char)*p==0xef) p+=3;
-        uint32_t id=number(p); ++p;
+        uint32_t id=number(p,records_end); ++p;
         Field name=field(p), note=field(p);
-        uint32_t region=number(p); ++p;
+        uint32_t region=number(p,records_end); ++p;
         bool neg=*p=='-'; if (neg) ++p;
-        int64_t cents=number(p)*100; ++p; cents+=number(p); if (neg) cents=-cents;
-        if (*p=='\r') ++p; if (*p=='\n') ++p;
+        int64_t cents=number(p,records_end)*100; ++p; cents+=number(p,records_end); if (neg) cents=-cents;
+        if (p<records_end && *p=='\r') ++p; if (p<records_end && *p=='\n') ++p;
         Group& g=groups[region<regions.size()?regions[region]:0];
         ++g.count; g.ids+=id; g.sum+=cents; g.low=min(g.low,cents); g.high=max(g.high,cents);
         g.namebytes+=name.decoded_size; g.notebytes+=note.decoded_size; g.names.push_back(name.encoded);
@@ -106,4 +120,6 @@ int main(int argc,char** argv) {
     for(auto& g:groups) if(g.count) {
         result<<g.key<<' '<<g.count<<' '<<g.ids<<' '<<money(g.sum)<<' '<<money(g.low)<<' '<<money(g.high)<<' '<<g.names.size()<<' '<<g.namebytes<<' '<<g.notebytes<<'\n';
     }
+    if (!result) return 1;
+    munmap(map,len);
 }
