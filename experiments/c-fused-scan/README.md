@@ -4,6 +4,8 @@ This is a portable, source-only comparison. `baseline.rs` is byte-identical to t
 
 The candidate matched the published full output on every local run, 120 mixed reference comparisons and 357 CRLF/bare-LF/quoted-newline/boundary reference comparisons. Its numeric function is byte-identical to `numeric-property.rs`, which checked every permitted cent value and integer delimiter under overflow checks. Two shared ARM Mac screens gave median candidate vs baseline 0.2928 vs 0.3274 s (7 pairs), and 0.2526 vs 0.3750 s (15 pairs). These wall times varied widely under contention; CPU medians were 0.9527 vs 1.0117 s and 0.8762 vs 1.0693 s. This is not x86 or official evidence. See `report.json` and `repeat.json`.
 
+The subsequent dot VM x86 paired screens were inconsistent: the candidate was 7.1% faster in one batch and 7.2% slower in the other, with unchanged process RSS. Across the C/B campaign 112 full hashes, 32 alternates and stress checks passed. Exact individual samples were not supplied; the existing CRLF implementation remains selected because no stable speed gain was established.
+
 On x86-64-v3 with Rust and Python installed, generate the full input independently and execute correctness before timing:
 
 ```sh

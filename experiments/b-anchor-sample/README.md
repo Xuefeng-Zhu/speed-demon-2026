@@ -1,0 +1,7 @@
+# B phrase-anchor sample-size screen (not selected)
+
+The selected B source chooses each phrase's anchor using token frequencies in a 512 KiB prefix of the generated corpus. The isolated variants change only that sample size to 1 MiB (`sample-20.rs`) or 4 MiB (`sample-22.rs`); each still computes anchors from the current input and performs exact phrase verification. Changing anchor choice cannot change which phrases match. The baseline is the dense-summary source at commit `8c273db`.
+
+In two separate five-pair randomized native Mac ARM screens after one warmup, all 24 full seed-1 outputs matched the published hash. Sample 1 MiB vs baseline medians were 0.270599 vs 0.261531 seconds wall and 1.565983 vs 1.580583 seconds CPU. Sample 4 MiB vs baseline medians were 0.274434 vs 0.266489 seconds wall and 1.565741 vs 1.577513 seconds CPU. Raw data is `report-20.json` and `report-22.json`. Candidate wall time was slower in both local screens, although CPU was slightly lower. These noisy native results are not x86, cgroup or official scores; no variant was promoted and no additional correctness suite was run beyond the full hash.
+
+Compile each source with identical release/target flags and run `python3 experiments/b-rust-lengthhash/compare.py --baseline /path/to/base --candidate /path/to/candidate --data /path/to/full-b --runs 5 --report /tmp/b-anchor.json`; generate input independently. No Mac Docker was used.
