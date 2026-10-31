@@ -1,0 +1,5 @@
+# Custom generation-tagged sparse search table (experimental, not selected)
+
+This candidate replaces per-worker dense distances with an exact open-addressed node table containing both u64 distances and a generation tag. It grows at half load and uses a runtime-seeded 64-bit mixer; generation wrap clears tags. The old standard-HashMap sparse experiment used a different search implementation. No input-derived results persist between runs; exact keys resolve collisions. Baseline is positioned-read D.
+
+The exact table test covered 700 forced same-initial-bucket nodes, growth, repeated generations and wrap; overflow/debug-checked whole-program tests passed 16,000 random queries, 36,864 exhaustive three-node queries, max-size max-weight chain and 6,000 repeated/unreachable queries. All full hashes matched. Nine shared ARM native pairs (`report.json`) gave median 0.33165 s candidate vs 0.30461 s baseline, CPU 2.18290 vs 1.83636 s, max native RSS 340,951,040 vs 537,018,368 B. This shows lower native RSS but slower wall; it is not target x86 or official cgroup data. Candidate is unselected and has not received independent review. No Mac Docker was used.
