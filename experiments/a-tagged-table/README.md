@@ -1,0 +1,5 @@
+# A tagged endpoint slots (not selected)
+
+This isolated experiment replaces the endpoint table's 32-bit slot with a 64-bit slot containing the low 32 bits of the ID-plus-one and a 32-bit fingerprint of the hash. Probe chains check the fingerprint before loading an endpoint entry; complete hash and full-byte comparisons still determine equality. It doubles slot storage and leaves endpoint names and exact collision behavior unchanged. `baseline.rs` is the selected A source, and `candidate.rs` is the variant. The selected source was not modified.
+
+Twelve randomized full-seed native ARM pairs after one warmup all matched the published output SHA-256. On a shared Mac at 12 workers, candidate and baseline medians were 0.04982 versus 0.04973 s wall and 0.19842 versus 0.20448 s CPU. These effectively tied wall times are noisy and are not an official x86 or cgroup result; no promotion is justified. Alternate-seed and deliberate collision tests were not run because this screen showed no meaningful wall speed gain. `report.json` contains all samples. Only the test copies changed Linux MAP_ANON to the Darwin flag; no Mac Docker was used.

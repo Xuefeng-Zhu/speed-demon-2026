@@ -1,0 +1,7 @@
+# D fused distance update and meeting check (not selected)
+
+The candidate fuses the opposite-distance lookup into `reach`: after a successful tentative-distance improvement, it returns the full meeting distance or `u64::MAX`, and the caller minimizes against that. This aims to avoid re-indexing the search array. The baseline is the exact balanced-frontier selected D; source identities and all samples are in `report.json`.
+
+Seven randomized measured native ARM pairs after one warmup each matched the full seed-1 output hash. Candidate median wall was 0.402495 s versus 0.373355 s baseline, and median CPU was 1.768809 versus 1.758036 s; maximum process RSS was 534,773,760 versus 534,757,376 bytes. The host was shared and timings varied widely. The candidate and baseline also passed 80 random directed graphs / 16,000 independent Dijkstra queries each, and all 4,096 three-node directed graphs / 36,864 all-pairs Floyd–Warshall queries each. This local screen is not a target or official cgroup score, and the candidate was not promoted.
+
+Generate official data separately and reproduce using `python3 experiments/track-d-fused-reach/compare.py --data /path/to/full-d --build-dir /tmp/d-fused-build --report /tmp/d-fused.json --runs 7`, followed by `python3 experiments/track-d-fused-reach/oracle.py /tmp/d-fused-build/baseline /tmp/d-fused-build/meeting` and `python3 experiments/track-d-fused-reach/exhaustive.py /tmp/d-fused-build/baseline /tmp/d-fused-build/meeting`. No Docker was used.

@@ -1,0 +1,7 @@
+# D cumulative frontier-work balancing (not selected)
+
+The isolated `pops.rs` selects the direction with fewer cumulative popped heap entries; `edges.rs` selects the direction with fewer cumulative outgoing edges scanned. Ties use smaller minimum distance. Both retain each direction's monotone minimum queue and the existing shortest-path stopping condition. `baseline.rs` is exact selected balanced-frontier source; per-run observations are in `report.json`.
+
+One warmup and seven randomized full-seed native ARM Mac runs per version all matched the published hash. Median wall times were 0.490537 s baseline, 0.486016 s pops, and 0.510846 s edges. Median CPU times were 1.891950, 1.891431, and 2.071248 s. The host was shared; the <1% pops difference is inconclusive and edges was slower, so neither is selected. Native process memory is not cgroup memory. Both passed 80 random directed graphs / 16,000 independent Dijkstra queries and all 4,096 three-node directed graphs / 36,864 all-pairs Floyd–Warshall queries.
+
+Compile each Rust source with identical offline release flags, generate full data independently, warm inputs, randomize execution order, and hash every output. Run `python3 experiments/track-d-workbalance/oracle.py /path/to/pops /path/to/edges` and `python3 experiments/track-d-workbalance/exhaustive.py /path/to/pops /path/to/edges` for the correctness checks. Target x86 timing, cgroup memory and independent review remain outstanding. No Docker was used.

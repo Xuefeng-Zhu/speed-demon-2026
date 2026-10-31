@@ -1,0 +1,7 @@
+# D unchecked query accesses (not selected)
+
+This isolated screen replaces selected graph-row and search-distance bounds checks with unchecked access. It assumes graph endpoints and queries are within `[0,n)` and that the CSR builder's offsets are valid. These invariants follow from the documented input grammar and the implementation's construction, but unsafe memory access would require independent proof before selection. The current selected safe source is `baseline.rs`, and `meeting.rs` is the experimental variant. No data or answer shortcuts are included.
+
+On the shared ARM Mac, seven randomized measured pairs and warmups all matched the published full seed-1 hash. Candidate median wall was 0.499862 s versus baseline 0.479509 s; median CPU was 1.903430 versus 1.967833 s; maximum process RSS 534,249,472 versus 534,429,696 bytes. Ranges overlapped substantially, and other activity may have contended. These native process measurements are neither target x86 nor official cgroup scores. `report.json` contains samples and source hashes.
+
+Both optimized builds passed 80 random directed graphs and 16,000 independent Dijkstra-oracle queries. The speed screen did not support introducing additional unsafe code, so the candidate was not selected. To reproduce, generate full data separately and run `python3 experiments/track-d-unchecked-query/compare.py --data /path/to/full-d --build-dir /tmp/d-unchecked-build --report /tmp/d-unchecked.json --runs 7`. No Docker was used.
