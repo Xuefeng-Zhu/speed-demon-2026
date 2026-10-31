@@ -13,3 +13,5 @@ python3 run.py --baseline /tmp/sd-d-base29 --profile /tmp/sd-d-prof29 --data /pa
 ```
 
 The script verifies the published hash for every run and reports raw diagnostics. Inspect phase durations and sum counts across threads within each instrumented execution. Compare overhead with its paired control; do not compare these results to official timing or infer hidden-data memory bounds. Optional sampling of the exact uninstrumented binary is appropriate only if already permitted, without installing tools, changing sysctls, raising privileges or touching unrelated data. Do not run Docker on the Mac.
+
+Parent-run native x86 dot VM instrumentation measured median query phase about 424.8 ms and load about 92.8 ms (parse/bucket 60.5 ms, forward CSR 14.4 ms, reverse CSR 15.4 ms). The full input showed 8 wide fallbacks, 14 cutoff edges, no pool exhaustion, maximum live heap 2,744, approximately 8 million pops, 0.565 million stale pops and 10.94 million redistribution scans. Instrumentation overhead was about 2.8%; these diagnostic counts and phase timings are not official scoring or a hidden-data guarantee.
