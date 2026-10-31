@@ -194,3 +194,7 @@ Result: `run-f78e7fd076e8` at `b2df83b`: T=0.055621 s, M=35.1 MB, S=339, K=21.71
 Result: `run-e3f84fdfdd7d` at `feadbcc`: T=0.055285 s, M=13.5 MB, S=312, K=26.67 (was 26.30-26.39). Kept.
 
 Round-4 trial (c5h): c5 with 64-bit hash name identity (collision ~3e-10 per dataset).
+
+## Unchecked loads and one hash for every name length (2026-10-31)
+
+`ld` now reads eight bytes unaligned without a bounds check or zero-padding fallback; every caller reads where eight bytes exist (numbers end at least eight bytes into each file, and a name is followed by at least its record's note, region id and amount). Names of any length are hashed by the same eight-byte fold, so the `Mutex<HashMap>` path for names over 24 bytes is gone (seed 1 full has 28 such records in 3,320,000). Shared x86 sandbox (AMD EPYC 7R13, 8 vCPUs), full seed 1, 11-run batches against the previous source: 1 thread median 233–236 ms vs 244–246 ms; 8 threads 60.2–61.3 ms vs 62.1–64.5 ms. Full hash, tiny seeds 2/3/7/99, sample seeds 5/42 and a 20,000-record fixture of 0–200-byte names with trailing-space, last-byte and embedded-quote near-twins all match the reference. These are sandbox measurements, not board results; board run pending.

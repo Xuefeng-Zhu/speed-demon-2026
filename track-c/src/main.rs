@@ -1,7 +1,7 @@
 //! Speed Demon 2026, Track C (Join): std-only Rust. README.md explains the design.
 use std::arch::asm;
 use std::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering::*};
-use std::{collections::HashMap, env, fs, os::fd::AsRawFd, sync::Barrier, sync::Mutex, thread};
+use std::{env, fs, os::fd::AsRawFd, sync::Barrier, sync::Mutex, thread};
 
 extern "C" {
     fn mmap(addr: *mut u8, len: usize, prot: i32, flags: i32, fd: i32, off: i64) -> *mut u8;
@@ -44,12 +44,12 @@ fn prefetch<T>(p: &T) {
     };
 }
 
-/// Bytes `p..p + 8` of `b` as a little-endian word, padded with zeros past the end.
+/// Bytes `p..p + 8` of `b` as a little-endian word. Callers only read where eight bytes
+/// exist: each number ends at least eight bytes into the file, and each name before its
+/// record's region id.
 fn ld(b: &[u8], p: usize) -> u64 {
-    match b.get(p..p + 8) {
-        Some(w) => u64::from_le_bytes(w.try_into().unwrap()),
-        None => b[p..].iter().rev().fold(0, |w, &c| w << 8 | c as u64),
-    }
+    debug_assert!(p + 8 <= b.len());
+    unsafe { (b.as_ptr().add(p) as *const u64).read_unaligned() }
 }
 
 /// Bytes `s..e` of `b`, at most eight of them, as a little-endian word padded with zeros.
@@ -68,27 +68,18 @@ fn num(x: u64, n: usize) -> u64 {
 
 /// The shared name dictionary: an open-addressing table of 64-bit name hashes; a name's id
 /// is its slot. Names are not compared byte for byte: two of the ~10^5 names share a hash
-/// with probability ~3e-10. The key is the name's bytes padded with zeros, or for names
-/// over 24 bytes their number in `long` and !0.
+/// with probability ~3e-10. The hash folds the name's bytes eight at a time, zero padded
+/// (names never contain a zero byte).
 struct Names {
     slots: &'static [AtomicU64],
-    long: Mutex<HashMap<Box<[u8]>, u64>>,
     used: AtomicUsize,
 }
 impl Names {
     /// The hash of the name `b[s..e]` and its first slot, whose cache line starts loading now.
     fn key(&self, b: &[u8], s: usize, e: usize) -> (u64, usize) {
-        let key = match e - s {
-            0..=24 => [0, 8, 16].map(|o| word(b, s + o, e)),
-            _ => {
-                let mut long = self.long.lock().unwrap();
-                let id = long.len() as u64;
-                [*long.entry(b[s..e].into()).or_insert(id), 0, !0]
-            }
-        };
-        let h = key
-            .iter()
-            .fold(K, |h, &w| (h ^ w).wrapping_mul(K).rotate_left(31));
+        let h = (s..e.max(s + 1))
+            .step_by(8)
+            .fold(K, |h, o| (h ^ word(b, o, e)).wrapping_mul(K).rotate_left(31));
         let h = ((h ^ h >> 33).wrapping_mul(0xff51afd7ed558ccd) ^ h >> 29).max(1);
         let i = (h >> (64 - self.slots.len().trailing_zeros())) as usize;
         prefetch(&self.slots[i]);
@@ -207,7 +198,6 @@ fn main() {
         let cap = slots.len() / 8 * 7;
         let names = Names {
             slots,
-            long: Default::default(),
             used: 0.into(),
         };
         // seen_in[g * stride + id / 64] bit id % 64: name id occurs in group g. Group g is
