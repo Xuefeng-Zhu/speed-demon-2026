@@ -1,0 +1,16 @@
+--- a/vA.rs
++++ a/vB1.rs
+@@ -36,10 +36,9 @@
+         pad[..n.min(16)].copy_from_slice(&data[s..s + n.min(16)]);
+         &pad
+     });
+-    std::array::from_fn(|w| {
+-        let x = u64::from_le_bytes(src[w * 8..w * 8 + 8].try_into().unwrap());
+-        (x | 0x2020_2020_2020_2020) & ((1u128 << (n.saturating_sub(w * 8).min(8) * 8)) - 1) as u64
+-    })
++    let x = u128::from_le_bytes(src[..16].try_into().unwrap()) | u128::from_le_bytes([0x20; 16]);
++    let x = x & u128::MAX.checked_shr(128 - 8 * n.min(16) as u32).unwrap_or(0);
++    [x as u64, (x >> 64) as u64]
+ }
+ 
+ /// The queries and their terms: an open-addressing table from the key of a

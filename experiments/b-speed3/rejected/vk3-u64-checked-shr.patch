@@ -1,0 +1,12 @@
+--- a/vC1.rs
++++ a/vk3.rs
+@@ -38,7 +38,8 @@
+     });
+     std::array::from_fn(|w| {
+         let x = u64::from_le_bytes(src[w * 8..w * 8 + 8].try_into().unwrap());
+-        (x | 0x2020_2020_2020_2020) & ((1u128 << (n.saturating_sub(w * 8).min(8) * 8)) - 1) as u64
++        let b = (8 * n.min(16)).saturating_sub(64 * w).min(64) as u32;
++        (x | 0x2020_2020_2020_2020) & (!0u64).checked_shr(64 - b).unwrap_or(0)
+     })
+ }
+ 

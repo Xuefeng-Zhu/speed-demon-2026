@@ -1,0 +1,13 @@
+--- a/vG.rs
++++ a/vH1.rs
+@@ -342,7 +342,9 @@
+     let mut w = 0;
+     for l in 0..nl {
+         let (a, b) = (offs[l] as usize, end[l] as usize);
+-        docs.copy_within(a..b, w);
++        if w != a {
++            docs.copy_within(a..b, w);
++        }
+         offs[l] = w as u32;
+         w += b - a;
+     }
