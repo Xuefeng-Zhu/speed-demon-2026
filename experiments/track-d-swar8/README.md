@@ -1,0 +1,5 @@
+# Eight-digit SWAR graph scanner (unselected)
+
+`baseline.rs` is the exact positioned-read Track D source; `meeting.rs` changes only the graph edge-number scanner to detect delimiters in eight bytes and convert up to eight decimal digits using byte-parallel arithmetic, then finishes longer numbers scalarly. It assumes the official single-space/LF decimal grammar. The candidate is isolated and has not received independent correctness review or a comprehensive parser property suite.
+
+Both programs produced the published full seed-1 output hash for 16 warmup/measured runs. An overflow-checked candidate passed 80 random directed graphs and 16,000 independent oracle queries. Seven randomized paired full runs on a shared ARM host gave 0.48147 s candidate versus 0.44836 s baseline, CPU 1.83713 versus 1.81709 s, and maximum native process RSS 534396928 versus 535183360 bytes. Considerable host contention and sample overlap make this a noisy screen, not x86 or official evidence. There is no demonstrated speedup, so this candidate is not selected. Raw per-run results are in `report.json`. No Mac Docker was used.

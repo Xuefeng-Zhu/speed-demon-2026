@@ -1,0 +1,5 @@
+# Additional dynamically claimed owner partitions — unselected
+
+Baseline is selected salted-owner SHA-256 `0aa4cbccf08b05a59aadbe7eaf23a931e468a95f76463a95100a142e8221bc08`; candidate is `7578cf6af842528dca5f4b481bca9588cc44e814a50ee30cdf2124de88952b5b`. It creates up to four times as many independent hash-owner partitions, then lets the existing `n` reducer threads claim partitions using an atomic counter. Equal names still route to one owner and each event is reduced once. This increases parser-bin and dictionary allocation overhead; true equal-hash concentration remains in one partition.
+
+The candidate passed 24 mixed reference corpora at five worker counts. Two 15-pair shared ARM full-seed runs all produced the expected output hash. The first was heavily contended (candidate/baseline wall 0.14234/0.15001 s, CPU 0.54554/0.54104 s); the repeat was near tied (0.08028/0.08106 s wall) with candidate CPU higher (0.51476/0.48867 s). Individual results are in `arm-report.json` and `arm-repeat.json`. There is no reliable substantial win. No full adversarial suite, independent review, Linux x86 or official measurement was attempted; candidate remains unselected.

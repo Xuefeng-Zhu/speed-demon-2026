@@ -1,0 +1,5 @@
+# Owner-entry inline group bits — unselected
+
+Baseline is selected salted owner SHA-256 `0aa4cbccf08b05a59aadbe7eaf23a931e468a95f76463a95100a142e8221bc08`. Candidate `32b41b6499b66e7f7c35bed510168a288aadac70ea58aac0f346860c3758605e` stores the first four 64-bit group words inline with each name row, retaining the original separate bit vector whenever more than four words are needed. This differs from the older shared-shard inline-bit experiment: this one uses exclusive owners and no atomics. It increases each row's footprint by 32 bytes even when the separate large-group vector is used.
+
+The candidate passed 24 mixed reference corpora at five worker counts and all 32 full-seed hashes in a 15-pair ARM batch with warmup. Median candidate/baseline wall was 0.08563/0.08342 s and CPU 0.50474/0.50068 s; the raw samples were variable and are in `arm-report.json`. No speed win is shown. No full large-group adversarial tests, independent review, Linux x86 timing, or official measurement has been performed. The candidate remains unselected.
