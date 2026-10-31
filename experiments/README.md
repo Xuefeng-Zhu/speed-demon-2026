@@ -182,3 +182,7 @@ All tracks passed every gate; `board-b1.json` records run IDs. C batching repeat
 ## Official practice for restored C at ebb7061
 
 All tracks passed every gate; `board-ebb.json` records the run IDs. Restored C measured T=0.128503 s, M=17,321,984 bytes, S=175, K=18.166138. The immediately preceding two batch runs were 0.134421 and 0.137428 s, with K=15.549336 and 15.410409. This agrees with retaining the restored version for wall speed, though the public-seed practice runs are separate and not final holdout scores.
+
+## Track A x86 profile
+
+`a-x86-profile/` profiles the unchanged production Track A source on a shared 8-vCPU Xeon 8488C VM (local diagnostics, not official and not cgroup memory): user vs sys time, page faults per parse thread and the madvise cost, phase timings including the merge-to-first-write gap, a memory breakdown approximating the cgroup peak, and a parse-free probe comparing mmap with chunked pread. At 8 threads the median wall was 36.6 ms, parsing was 77% of wall and CPU, sys time about 10%, and file faults plus madvise about 5% of CPU; pread did not reduce CPU or wall, so the probe does not favour replacing mmap for speed. Every run matched the published hash; see its README and `report.json`.
