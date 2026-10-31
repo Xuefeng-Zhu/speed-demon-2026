@@ -44,9 +44,12 @@ mod displaced_tests {
             let h = Plan::short_hash64(key(w.as_bytes(), 0, w.len()).0[0]);
             if h as usize & 63 != 0 { selected.push(w); }
         }
-        for w in &selected { p.intern(w.as_bytes(), 0); }
+        for w in &selected[..4] { p.intern(w.as_bytes(), 0); }
         p.build_short();
-        assert!(p.displaced.is_empty());
+        assert!(!p.displaced.is_empty(), "first construction must succeed");
+        for w in &selected[4..] { p.intern(w.as_bytes(), 0); }
+        p.build_short();
+        assert!(p.displaced.is_empty(), "failed rebuild must discard prior state");
         for (id, w) in selected.iter().enumerate() {
             assert_eq!(p.lookup_token(w.as_bytes(), 0, w.len()), id as u32);
         }
@@ -65,11 +68,21 @@ mod displaced_tests {
     }
     #[test]
     fn count_cap_falls_back() {
-        let mut p = new_plan(2);
-        p.keys = (0..262_145u64).map(|x| Key([x + 1, 0, 0, 0])).collect();
-        p.build_short();
-        assert!(p.displaced.is_empty());
-        assert_eq!(p.short_slots.iter().filter(|&&id| id != MISS).count(), 262_145);
+        for count in [262_144usize, 262_145] {
+            let mut p = new_plan(1 << 20);
+            for i in 0..count {
+                let word = format!("t{i:06x}");
+                p.intern(word.as_bytes(), 0);
+            }
+            p.build_short();
+            if count > 262_144 { assert!(p.displaced.is_empty()); }
+            assert_eq!(p.short_slots.iter().filter(|&&id| id != MISS).count(), count);
+            for i in [0usize, 1, count / 2, count - 1] {
+                let word = format!("t{i:06x}");
+                assert_eq!(p.lookup_token(word.as_bytes(), 0, word.len()), i as u32);
+            }
+            assert_eq!(p.lookup_token(b"zzzzzzz", 0, 7), MISS);
+        }
     }
     #[cfg(target_os="linux")]
     #[test]
