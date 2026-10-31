@@ -141,3 +141,4 @@ The restored original hash passed the official practice at `c0a5426`, `run-9eea6
 ## Board trial: speed-opt source (2026-10-31)
 
 `src/main.rs` replaced with the shorter `speed-opt` version (Dockerfile and config unchanged); hash verified at 1, 2 and 12 threads on full seed 1. Compare against the prior best `2d67ab5` (`run-142f6588f59d`, T=0.038664 s, M=32.2 MB, S=303, K=33.07) and revert if K is lower.
+Result: `run-a94603610d79` at `ea12ae5`: T=0.052896 s, M=32.9 MB, S=188, K=30.23. Slower on the box despite fewer lines, so the `2d67ab5` source is restored.
