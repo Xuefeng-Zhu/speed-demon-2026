@@ -8,7 +8,7 @@ All four pinned Dockerfiles passed the official Dockerfile allowlist checker. Th
 
 | Track | Full output SHA-256 | Local container wall time |
 |---|---|---:|
-| A | `495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3` | 0.56 s |
+| A | `495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3` | 0.70 s |
 | B | `f86973c210228141bcb6f1f1b10188ad2a9b65f71e7cd7cf4590b38de4e80927` | 2.32 s |
 | C | `d8088b1cd42ba1338b1345b107b55db7b96ef1f5066f3ff64fd26a8912a0f536` | 0.84 s |
 | D | `a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e` | 1.90 s |
