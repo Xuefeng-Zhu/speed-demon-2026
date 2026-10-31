@@ -192,6 +192,10 @@ const CLUSTER: usize = 1024;
 /// use fits a u16 as long as n < 2^22 (the spec fixes n at 1,740,512).
 const BLOCK: u32 = 6;
 
+/// Search queues order nodes by `distance >> SHIFT`, not by exact distance:
+/// coarser keys mean far fewer radix-heap redistributions.
+const SHIFT: u32 = 6;
+
 /// The new id of every node (stored complemented: zero is "unclaimed"),
 /// and the forward graph with its rows in the new order but heads still in
 /// the file's ids. Thread i scans its share of the ids for unclaimed roots
@@ -357,7 +361,7 @@ impl<D: Dist> Side<D> {
             return false;
         };
         (self.pool[i], self.size) = (x, self.size + 1);
-        self.heap.push(d, v);
+        self.heap.push(d >> SHIFT, v);
         true
     }
 
@@ -378,22 +382,31 @@ impl<D: Dist> Side<D> {
 /// runs dry at once, instead of the other side exploring the whole graph
 /// below the huge key first. Returns `u64::MAX` when `t` is unreachable, and
 /// whether a distance was refused.
+///
+/// The queues are keyed by `distance >> SHIFT`, so nodes in one bucket come
+/// out in any order and a node can improve after it was expanded. Every
+/// improvement is queued again, in the current bucket or a later one, and
+/// expanded with its new distance. A bucket's start is a lower bound on any
+/// distance still to be expanded on that side, so once the two starts add
+/// up to `best`, no shorter path remains: its first unexpanded node on each
+/// side would still be queued at or above that side's start.
 fn distance<D: Dist>(sides: &mut [Side<D>; 2], net: &Net, s: u32, t: u32) -> (u64, bool) {
     let (mask, wide) = ((1 << net.bits) - 1, u32::MAX >> net.bits);
     sides[0].reach(s, 0);
     sides[1].reach(t, 0);
     let mut best = if s == t { 0 } else { u64::MAX };
     while let (Some(a), Some(b)) = (sides[0].heap.top(), sides[1].heap.top()) {
-        if a.saturating_add(b) >= best {
+        if (a + b).saturating_mul(1 << SHIFT) >= best {
             break;
         }
         let side = (sides[0].size > sides[1].size) as usize;
         let [x, y] = &mut *sides;
         let (me, other) = if side == 0 { (x, &*y) } else { (y, &*x) };
-        let (d, u) = ([a, b][side], me.heap.buckets[0].pop().unwrap().1);
+        let (key, u) = ([a, b][side], me.heap.buckets[0].pop().unwrap().1);
         me.size -= 1;
-        if d > me.get(u) {
-            continue; // stale entry
+        let d = me.get(u);
+        if d >> SHIFT < key {
+            continue; // stale: already expanded from an earlier bucket
         }
         for &e in edges(&net.graphs[side], u as usize) {
             let (v, mut w) = (e & mask, e >> net.bits);
