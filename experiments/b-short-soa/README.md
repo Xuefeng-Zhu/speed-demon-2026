@@ -1,0 +1,5 @@
+# B separate short-slot keys (not selected)
+
+The candidate stores each short query key in a parallel `u64` array indexed by hash slot; a hit reads the ID from the existing parallel `u32` slot array, and zero marks an empty key. Legal tokens are nonempty ASCII alphanumeric, so zero cannot be an actual short key. Exact key comparison, long terms and query handling remain unchanged. Baseline SHA `322cc95ee08cf6d4abc5e1b52240753f66c7eaf89ab669cb6d72b0a8487dc458`; candidate SHA `c2c0579bdb0fe5f07fe300ed711db15b73c54e9225baf7ec6150fcbcba937907`.
+
+On shared native macOS ARM, randomized warmed 11-pair medians candidate/baseline were 0.252387/0.257293 s wall and 1.553349/1.572367 s CPU; 15-pair repeat was 0.278567/0.279448 s and 1.562503/1.585471 s CPU. All 56 full hashes including warmups passed. Results are noisy and not x86 or official cgroup measurements; the small CPU change and added array do not establish a worthwhile speedup. No alternate-reference, forced-collision, or x86 tests were performed. It is unselected, and no Mac Docker was used.

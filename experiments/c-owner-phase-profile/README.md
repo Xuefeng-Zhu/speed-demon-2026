@@ -1,0 +1,3 @@
+# Selected owner phase timing (diagnostic only)
+
+`selected.rs` is salted owner SHA-256 `0aa4cbccf08b05a59aadbe7eaf23a931e468a95f76463a95100a142e8221bc08`. The instrumented version adds elapsed-time logging around parallel parsing and parallel distinct reduction; no optimized solution changes. Eight warm-cache ARM full-seed executions all produced the expected output hash. With eight reported workers the last six measured parse times were about 47.7–50.4 ms and reduction 32.0–36.6 ms; first two runs were slower. Values are shared-host wall times with instrumentation, not official, x86, CPU time or a controlled causal profile. Raw observations are in `arm-phase.txt`.
