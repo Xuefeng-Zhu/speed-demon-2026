@@ -1,0 +1,7 @@
+# C per-shard single-hash table (not selected)
+
+`baseline.rs` is the current CRLF implementation at 147d5b4, SHA-256 `3e181c76981348a96b48470844ee0f8988847d32164ff935a211024861c86ad4`. `candidate.rs` replaces each shard's standard HashMap with an open-addressed table storing borrowed input slices and hashes, so each record hashes its name once. Exact hash and byte comparisons remain. This isolated experiment is unselected; it has not been independently reviewed and has not been stress-tested for forced hash collisions.
+
+Both passed all full seed-1 output hashes in seven paired measured native runs after warmup. On the shared macOS ARM host, baseline median was 0.235427 s versus 0.336372 s candidate; median CPU was 1.021134 versus 1.063133 s. Individual times varied widely, other tasks were active, and process RSS is not official cgroup memory. The candidate also passed 24 mixed CSV corpora at each of five worker counts using `experiments/c-rust-independent.py`. These are not x86 or official scores; no Docker was used. Because the screen was slower, the candidate was not selected.
+
+Reproduce full hash-checked measurements using `experiments/c-nameowned/compare.py` with identically optimized binaries; pass `--baseline`, `--variant`, `--data` and `--report`. Run reference checks with `python3 experiments/c-rust-independent.py --source experiments/c-singlehash-table/candidate.rs --seeds 24`.

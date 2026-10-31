@@ -154,3 +154,7 @@ All tracks passed every gate; see `board-4f.json`. C's CRLF synchronization meas
 ## Official practice run for 147d5b4
 
 All tracks passed every gate; see `board-147.json`. B's eight-byte transition scanner measured T=0.381505 s, M=222,068,736 bytes, S=399, K=15.402876, versus 0.403564 s, 218,177,536 bytes, S=343 and K=15.373863 for the previous run. A/C/D measured 0.049667/0.128956/0.371431 s respectively. The runs are separate public-seed practice measurements, not final or controlled paired scores.
+
+## Official practice run for b07315c
+
+All tracks passed every gate; see `board-b073.json`. B's guarded AVX2 tokenizer measured T=0.341042 s, M=222,486,528 bytes, S=427, K=16.120054, versus the prior 0.381505 s, 222,068,736 bytes, S=399, K=15.402876. A/C/D measured 0.048257/0.127346/0.378481 s respectively. The separate public-seed practice runs are not final or controlled paired scores.

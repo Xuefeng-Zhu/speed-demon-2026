@@ -1,0 +1,9 @@
+# Track D forward-prefix experiment (not selected)
+
+`baseline.rs` is the exact balanced-frontier source at commit `147d5b4`, SHA-256 `1022f4d9c9956b17fd054e96a26d09551eff61936a851edf88505e12e2b1946c`. `prefix128.rs`, SHA-256 `bbe577d6cd5506e947e4eefcff141d42dc66200edc97a84429f86c29b51b28de`, forces the first 128 heap pops of each query to the forward side and then returns to the existing smaller-heap policy. Each side still pops its own minimum; the existing termination bound and successful-relaxation meeting checks are unchanged. A proof model for arbitrary side choices is in `experiments/track-d-balanced-frontier/proof-model.py`.
+
+Both sources matched the published full seed-1 output in all 48 native executions. Both also passed 80 random directed graphs / 16,000 independent Dijkstra queries, all 4,096 directed three-node graphs / 36,864 all-pairs Floyd–Warshall queries, a full-size maximum-weight chain, and 6,000 repeated/unreachable queries, using scripts under `experiments/track-d-balanced-frontier/`.
+
+The preliminary four-way randomized screen's five measured runs had median wall 0.5724 s for the 128-pop prefix versus 0.7398 s for baseline. A subsequent 11-pair randomized repeat reversed this: 0.7042 versus 0.6329 s, median CPU 2.117 versus 2.070 s. All raw samples, including warmups, are in `screen.json` and `repeat.json`. The shared ARM Mac had substantial contention; these native times and process RSS are neither official nor cgroup measurements. The timing evidence does not support selection.
+
+For a target comparison, run `python3 experiments/track-d-forward-prefix/compare.py --data /path/to/generated-full-d --build-dir /tmp/d-forward-build --report /tmp/d-forward-x86.json --runs 9`. It builds offline with x86-64-v3 when applicable, randomizes pairs and verifies every full output hash. Run without competing benchmark load; confirm target cgroup memory and score separately. No Mac Docker was used.

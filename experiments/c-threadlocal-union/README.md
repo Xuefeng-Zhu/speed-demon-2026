@@ -1,0 +1,7 @@
+# C thread-local dictionaries and union (not selected)
+
+The candidate replaces the shared per-record locked dictionary with one dictionary and name/group bitset array per parser worker, then partitions names among reducer workers and ORs their bitsets. Both source files calculate results from inputs; `baseline.rs` is the current CRLF implementation, SHA-256 `3e181c76981348a96b48470844ee0f8988847d32164ff935a211024861c86ad4`; `candidate.rs` SHA-256 `86da7296d8b0938d06ca471082b5a816c5a194deb66691ccd4cf4d38c8fc7151`. Dead baseline `Shard` code remains in this experimental file, producing compiler warnings. Candidate has not received independent correctness review and is not selected.
+
+After one warmup, five paired full-seed native runs all matched the published hash. On a heavily contended ARM Mac, median wall was 0.595089 s candidate versus 0.596053 s baseline, median CPU 1.451311 versus 1.095986 s, and maximum process RSS 303,726,592 versus 226,164,736 bytes. There was no meaningful wall win and significantly more CPU and memory in this screen; no target or cgroup score is claimed. Raw samples are `report.json`. No Docker was used.
+
+Reproduce with equivalent release flags and `experiments/c-nameowned/compare.py --baseline /path/to/base --variant /path/to/candidate --data /path/to/generated-full --report /tmp/c-local-union.json`. Target x86 performance, reference cases, collision testing, and memory bounds would be required before consideration.
