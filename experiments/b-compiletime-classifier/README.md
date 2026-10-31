@@ -1,0 +1,3 @@
+# B compile-time classifier dispatch (not selected)
+
+This isolated variant replaces the per-block function pointer with a direct AVX2 classifier call when `target_feature=avx2`, otherwise directly calls scalar. Eleven randomized warmed shared-Mac ARM full-data pairs matched the published hash: candidate/baseline median wall 0.31435/0.32321 s, CPU 1.6165/1.6180 s. The near-tied CPU does not establish a speedup and no alternative tests were run. It changes generic x86 runtime dispatch to scalar fallback and is not recommended as-is. Exact x86 compiler assembly and a runtime-dispatch-preserving design need review. Raw timing is `report.json`; ARM scalar is not official AVX2 or cgroup evidence. No Mac Docker was used.
