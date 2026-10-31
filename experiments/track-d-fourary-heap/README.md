@@ -1,0 +1,7 @@
+# D four-ary heap experiment (not selected)
+
+`baseline.rs` is the selected balanced-frontier radix-heap source and `meeting.rs` replaces only that queue with a reusable four-ary min heap, ordering `(distance,node)` lexicographically. Side selection by heap occupancy and the bidirectional stopping rule remain unchanged. Both candidates passed 80 random directed graph fixtures (16,000 independent Dijkstra queries each) and exhaustive all-pairs on all 4,096 three-node graphs with edge weights absent/0/1/u32-max (36,864 queries each); every full seed-1 hash including warmup matched the published output.
+
+Five randomized native ARM Mac full-data pairs after warmup had median wall **0.8631 s four-ary vs 0.4029 s radix**, median CPU 2.7279 vs 1.9564 seconds, and maximum native process RSS 531,283,968 vs 534,298,624 bytes. Individual samples are in `report.json`; other work was active, and the wall-time ranges overlap. Process RSS is not cgroup memory and this is not x86 or official scoring. The queue was not selected given the slower wall and CPU screen.
+
+To reproduce, generate full D data separately, then run `python3 experiments/track-d-fourary-heap/compare.py --data /path/to/d-full --build-dir /tmp/d-fourheap-build --report /tmp/d-fourheap-report.json --runs 7`; use `experiments/track-d-balanced-frontier/oracle.py` and `exhaustive.py` with both binaries for correctness. No Docker was used.

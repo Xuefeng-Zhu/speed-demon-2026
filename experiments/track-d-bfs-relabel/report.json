@@ -1,0 +1,98 @@
+{
+  "platform": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+  "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+  "flags": [
+    "--edition=2021",
+    "-C",
+    "opt-level=3",
+    "-C",
+    "lto=fat",
+    "-C",
+    "codegen-units=1",
+    "-C",
+    "panic=abort"
+  ],
+  "source_sha256": {
+    "baseline": "1022f4d9c9956b17fd054e96a26d09551eff61936a851edf88505e12e2b1946c",
+    "meeting": "912326921cab9f946da42df52729822d0ab8f793c42c1fcd6eee8824eae14038"
+  },
+  "runs": [
+    {
+      "iteration": -1,
+      "name": "baseline",
+      "wall_s": 1.0166202090003935,
+      "cpu_s": 2.568574,
+      "maxrss_native": 531808256,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e"
+    },
+    {
+      "iteration": -1,
+      "name": "meeting",
+      "wall_s": 1.4044246659996134,
+      "cpu_s": 1.9551669999999999,
+      "maxrss_native": 550633472,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e"
+    },
+    {
+      "iteration": 0,
+      "name": "meeting",
+      "wall_s": 1.1639519580003252,
+      "cpu_s": 1.781596,
+      "maxrss_native": 558366720,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e"
+    },
+    {
+      "iteration": 0,
+      "name": "baseline",
+      "wall_s": 0.726387833001354,
+      "cpu_s": 2.3840109999999997,
+      "maxrss_native": 532971520,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e"
+    },
+    {
+      "iteration": 1,
+      "name": "baseline",
+      "wall_s": 0.6799068329983129,
+      "cpu_s": 2.381489,
+      "maxrss_native": 533774336,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e"
+    },
+    {
+      "iteration": 1,
+      "name": "meeting",
+      "wall_s": 1.15404049999961,
+      "cpu_s": 1.9872539999999999,
+      "maxrss_native": 558055424,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e"
+    },
+    {
+      "iteration": 2,
+      "name": "baseline",
+      "wall_s": 0.5144364589996258,
+      "cpu_s": 2.406861,
+      "maxrss_native": 531922944,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e"
+    },
+    {
+      "iteration": 2,
+      "name": "meeting",
+      "wall_s": 0.8351106669997534,
+      "cpu_s": 1.778637,
+      "maxrss_native": 558841856,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e"
+    }
+  ],
+  "summary": {
+    "baseline": {
+      "median_wall_s": 0.6799068329983129,
+      "median_cpu_s": 2.3840109999999997,
+      "max_rss_native": 533774336
+    },
+    "meeting": {
+      "median_wall_s": 1.15404049999961,
+      "median_cpu_s": 1.781596,
+      "max_rss_native": 558841856
+    }
+  },
+  "rss_note": "Linux KiB, macOS bytes; process RSS is not cgroup memory"
+}

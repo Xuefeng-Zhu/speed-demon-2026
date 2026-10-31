@@ -4,6 +4,8 @@
 
 On a shared ARM Mac, seven randomized full-data measured pairs (after warmup) all matched the published SHA-256; medians were 1.6454 s candidate vs 2.1095 s baseline, CPU 2.7718 vs 3.1773 s. Heavy contention makes this a screen, not an x86 or official score. `src/length-bench.json` retains the samples. A single instrumented baseline scan (`src/phases.log`) was dominated by the parallel document scan; instrumentation affects timing.
 
+Two subsequent 11-pair dot VM x86 batches were essentially tied: candidate versus baseline 0.3955 versus 0.3943 s, then 0.3986 versus 0.4003 s. All 48 full hashes and supplied stress tests passed. CPU was slightly lower for the candidate and RSS showed no consistent benefit; these native results do not establish a wall-time win, so the baseline remains selected.
+
 For x86-64-v3, generate the official full seed-1 data separately, then run serially without other benchmarks:
 
 ```sh
