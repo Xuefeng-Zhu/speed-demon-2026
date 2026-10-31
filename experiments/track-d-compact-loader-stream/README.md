@@ -19,3 +19,5 @@ python3 experiments/track-d-compact-loader-stream/compare.py --data /path/to/ful
 ```
 
 The test archive must contain this directory plus `experiments/track-d-balanced-frontier/{oracle,exhaustive,extremes}.py` and `experiments/track-d-packed32-adj/boundaries.py`. It contains no datasets, credentials or binaries. Check actual parent-cgroup memory separately if available; the dot VM may lack the cgroup interface. No Docker was run on the Mac.
+
+Parent-run native x86 dot VM paired full-seed batches measured the candidate 1.7% slower and then 3.0% faster, with CPU essentially unchanged and median process RSS higher; this does not establish a stable wall-time gain. Across this and A two-lane packages, 200 full hashes, 16 alternate references and actual x86 guard/oracle/extreme checks passed. A separate full 5,000,000-edge all-wide and skewed loader stress passed; when every weight uses the side stream, logical staging remains 8+4=12 bytes per directed edge before allocator overhead, and worst-case cgroup memory is not proved. The candidate remains unselected.

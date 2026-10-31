@@ -28,3 +28,5 @@ python3 experiments/a-two-lane-interleaved/compare.py --baseline /tmp/a-lane-bas
 ```
 
 Both target comparisons must verify the published output SHA-256; report CPU and process RSS separately from official `memory.peak`. Test all-escape and independent adversarial references as appropriate. The stronger x86 tests and any official practice are still pending; retain the baseline until reviewed results justify a trial.
+
+Parent-run native x86 dot VM full-seed paired tests found the candidate 2.0–2.3% faster at nine workers but 2.3–5.4% slower at twelve. Across this and the D compact-loader package, 200 full hashes, 16 alternate references and actual x86 guard/oracle/extreme checks passed. The target has twelve threads; these worker-specific results do not establish a robust target win. Native VM timings are not official scoring-box or cgroup measurements. The candidate remains unselected.
