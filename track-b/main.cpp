@@ -17,6 +17,10 @@
 #include <unordered_map>
 #include <vector>
 using namespace std;
+struct alignas(32) Key { uint64_t v[4]{}; };
+static Key key_of(const char* p,size_t n) { Key k; memcpy(&k,p,n); return k; }
+static uint64_t khash(const Key& k){ uint64_t h=0x9e3779b97f4a7c15ULL; for(uint64_t word:k.v){h^=word;h*=0xbf58476d1ce4e5b9ULL;h^=h>>29;}return h; }
+struct Dict { vector<int> slots; vector<Key> keys; explicit Dict(size_t n):keys(n) { size_t cap=1; while(cap<n*2)cap*=2; slots.assign(cap,-1); } void add(const string& s,int id){Key k=key_of(s.data(),s.size());keys[id]=k;size_t i=(khash(k)>>32)&(slots.size()-1);while(slots[i]!=-1)i=(i+1)&(slots.size()-1);slots[i]=id;} int get(const char* p,size_t n) const {Key k=key_of(p,n);size_t i=(khash(k)>>32)&(slots.size()-1);while(slots[i]!=-1){int id=slots[i];if(!memcmp(&k,&keys[id],sizeof(k)))return id;i=(i+1)&(slots.size()-1);}return -1;} };
 struct Query { bool phrase; vector<int> terms; vector<string> ops; };
 struct PhraseStats { uint64_t sum=0; uint32_t count=0; int last=-1; array<int,10> first{}; };
 int main(int argc,char**argv){
@@ -30,8 +34,8 @@ int main(int argc,char**argv){
   else {in>>s;q.terms.push_back(term_id(s));while(in>>s){q.ops.push_back(s);in>>s;q.terms.push_back(term_id(s));}}
   qs.push_back(move(q));
  }
- unordered_map<string_view,int> lookup; lookup.reserve(ids.size());
- for (const auto& entry : ids) lookup.emplace(entry.first, entry.second);
+ Dict lookup(ids.size());
+ for (const auto& entry : ids) lookup.add(entry.first,entry.second);
  int fd=open(argv[1],O_RDONLY); if(fd<0){perror("open");return 1;}
  struct stat st; if(fstat(fd,&st)!=0){perror("fstat");return 1;}
  size_t bytes=st.st_size;
@@ -91,7 +95,7 @@ int main(int argc,char**argv){
     while(i<line_end){
      while(i<line_end&&!tokenchar((unsigned char)pending[i]))++i;
      if(i==line_end)break;char word[32];size_t length=0;while(i<line_end&&tokenchar((unsigned char)pending[i])){unsigned char c=pending[i++];word[length++]=c>='A'&&c<='Z'?c+32:c;}
-     auto it=immutable_lookup.find(string_view(word,length));int id=it==immutable_lookup.end()?-1:it->second;seq.push_back(id);
+     int id=immutable_lookup.get(word,length);seq.push_back(id);
      if(id>=0&&bool_terms[id]){auto& p=lists[id];if(p.empty()||p.back()!=int(doc))p.push_back(int(doc));}
     }
     for(size_t pos=1;pos<seq.size();++pos){
