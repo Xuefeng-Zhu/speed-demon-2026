@@ -82,7 +82,8 @@ fn num(x: u64, n: usize) -> u64 {
 /// with probability ~3e-10. The hash folds the name's bytes eight at a time, zero padded
 /// (names never contain a zero byte).
 struct Names {
-    slots: &'static [AtomicU64],
+    table: &'static [AtomicU64], // per slot: the name's hash, then its four set words
+    len: usize,
     used: AtomicUsize,
 }
 impl Names {
@@ -92,28 +93,28 @@ impl Names {
             .step_by(8)
             .fold(K, |h, o| (h ^ word(b, o, e)).wrapping_mul(K).rotate_left(31));
         let h = ((h ^ h >> 33).wrapping_mul(0xff51afd7ed558ccd) ^ h >> 29).max(1);
-        let i = (h >> (64 - self.slots.len().trailing_zeros())) as usize;
-        prefetch(&self.slots[i]);
+        let i = (h >> (64 - self.len.trailing_zeros())) as usize;
+        prefetchw(&self.table[5 * i]);
         (h, i)
     }
     /// The id of the name with this hash, inserting it if new; the table size once it holds
     /// `cap` names: the run then starts over with a larger one.
     fn id(&self, (h, mut i): (u64, usize), cap: usize) -> usize {
         loop {
-            let e = self.slots[i].load(Relaxed);
+            let e = self.table[5 * i].load(Relaxed);
             if e == h
                 || e == 0
-                    && self.slots[i]
+                    && self.table[5 * i]
                         .compare_exchange(0, h, Relaxed, Relaxed)
                         .is_ok()
                     && self.used.fetch_add(1, Relaxed) < cap
             {
                 return i;
             } else if e != 0 {
-                i = (i + 1) & (self.slots.len() - 1);
+                i = (i + 1) & (self.len - 1);
             }
             if self.used.load(Relaxed) >= cap {
-                return self.slots.len();
+                return self.len;
             }
         }
     }
@@ -204,16 +205,18 @@ fn main() {
     };
     let mut bits = 17; // 2^17 slots; four times as many whenever 7/8 of them fill up
     let aggs = loop {
-        let slots = zeroed(1 << bits, 14);
-        let cap = slots.len() / 8 * 7;
+        let len = 1 << bits;
+        // table[5 * id + 1 + g / 64] bit g % 64: name id occurs in group g. Whichever thread
+        // sets a bit first counts the name for that group. The last word is a dummy that
+        // never counts.
+        let sets: &[AtomicU64] = zeroed(5 * len + 5, 14);
+        sets[5 * len + 4].store(!0, Relaxed);
+        let cap = len / 8 * 7;
         let names = Names {
-            slots,
+            table: sets,
+            len,
             used: 0.into(),
         };
-        // sets[4 * id + g / 64] bit g % 64: name id occurs in group g. Whichever thread sets
-        // a bit first counts the name for that group.
-        let sets: &[AtomicU64] = zeroed(4 * slots.len() + 5, 0);
-        sets[sets.len() - 1].store(!0, Relaxed); // a dummy that never counts
         let (next, barrier) = (AtomicUsize::new(0), Barrier::new(n));
         let aggs = par(n, |t| {
             // Every thread reads its share of the regions twice: first to note which countries
@@ -262,8 +265,8 @@ fn main() {
                             region.get(rid).map_or(0, |r| r.load(Relaxed)) as usize,
                         );
                         merge(&mut agg[g], [1, n_id, c, c, c, 0, nl, tl]);
-                        sets_ring[r % (RING / 2)] = (4 * id + g / 64, g);
-                        prefetchw(&sets[4 * id + g / 64]);
+                        sets_ring[r % (RING / 2)] = (5 * id + 1 + g / 64, g);
+                        prefetchw(&sets[5 * id + 1 + g / 64]);
                     }
                 };
             let mut r = 0;
