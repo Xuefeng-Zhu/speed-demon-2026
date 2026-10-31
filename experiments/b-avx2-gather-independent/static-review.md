@@ -1,0 +1,13 @@
+# Independent static review of B four-token gather
+
+Reviewed candidate SHA-256 `ebfb413f8dc95cf9071ab9d8dd8e0d3deb0d2f303fb924d68f3c0bf1caae4ad8` against baseline `7d371fe84ce9f0fd9d3c7e6fdf02b6b37e0f1440319c654161b990cf27bb8bf3`. This is a static review, not an x86 execution or performance result.
+
+No concrete defect was found under the candidate's internal `Plan` invariants and official input contract:
+
+- `build_short` initializes a nonempty power-of-two slot table. Every populated slot was assigned from an existing `keys` index; the plan is immutable during concurrent document scanning.
+- The AVX2 path requires four spans, a nonempty key array, key count at most `i32::MAX / 4`, and short-table length at most `i32::MAX`. Slot indices are masked into the table and key indices are nonnegative and representable when scaled. Non-short and `MISS` lanes use key index zero, which is safe because keys are nonempty. A compile-time size assertion ensures each `Key` occupies 32 bytes, so the four-u64 stride targets the first key word.
+- A short-table empty slot returns `MISS`; a populated candidate requires the same normalized, zero-padded first word as the scalar lookup. A different first word invokes the original exact probing path. The table contains only query keys whose remaining words are zero, so matching the first word is sufficient for a one-to-eight-byte token under the token grammar. Non-short tokens retain the original lookup.
+- A document's completed token spans are appended in encounter order. A full batch flushes in index order, and a partial batch flushes before the document callback, so phrase matching and position-sensitive tokens see the same sequence. The batch is empty at the next document. The change does not modify query evaluation, phrase summaries, dense-cache synchronization or memory-map release order.
+- The short-token load uses a checked eight-byte slice or a bounded padded copy, as in the baseline. The gather slot and key addresses are in allocation bounds when the private table invariants hold. Each worker owns its batch and token vector; table data are read-only.
+
+This analysis does not establish behavior for externally constructed invalid `Plan` instances. It also does not execute Linux x86 AVX2, demonstrate guard-page behavior of the gathers, prove allocator/cgroup limits, or establish a speed benefit. Target tests should preflight CPU features before running v3 code, exercise both ends of slot/key allocations and token buffers against protected pages, empty query/key sets, all-MISS and all-non-short batches, collision-heavy probes, trailing partial batches, and ordered phrase references. The existing scalar ARM path cannot validate the gather instructions.
