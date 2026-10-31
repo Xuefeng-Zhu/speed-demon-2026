@@ -146,3 +146,4 @@ Round 2 at `ccbfbc0`, `run-4a52a83d2464`: per-thread MADV_DONTNEED on each chunk
 
 Hash-only trial: endpoint identity by 64-bit hash plus length, no byte compare (collision odds ~1e-13 per dataset); compare against `a571dce` (K 37.34).
 Result: `run-93607a10da06` at `a9f6ae3`: T=0.037754 s, M=23.2 MB, S=299, K=35.78, below `a571dce` (37.34); exact byte compare restored.
+Result: `run-ab14ebe4067b` at `feadbcc`: T=0.038692 s, S=316, K=35.62; fixed split ran 0.0348-0.0352 s in 3 of 4 runs, so reverted.
