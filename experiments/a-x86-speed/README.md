@@ -32,6 +32,9 @@ python3 official/generators/a_ingest.py --seed 1 --scale full --out .data/a-full
   with the official reference output (generated under `.data/` if missing). Exits non-zero on
   any failure.
 - `baseline.rs`: exact copy of `track-a/src/main.rs` at the branch point (`speed-demon`).
+- `parse-time.py`: parse-phase-only interleaved timing of patched source copies (see Parse breakdown).
+- `adversarial.py --binary BIN [--quick]`: endpoint lengths 1 to 300, equal-cheap-word families,
+  5,000 and 70,000 distinct endpoints, boundary latencies, byte-compared with the official reference.
 
 ```sh
 python3 experiments/a-x86-speed/check.py track-a/target/release/solution
@@ -134,3 +137,19 @@ The rows below are measured against `cur-1.rs`, the production source after `p2b
 
 `p4ab` correctness: `check.py`, `adversarial.py` on the AVX2 build (cargo), forced-collision
 build (`--quick`) and scalar build, and the scalar full seed-1 hash.
+
+The rows below are measured against `cur-2.rs`, the production source after `p4ab` (identical to
+`p4ab-trim.rs`). Parse-phase medians at 8 threads: `parse-p6.json` `cur` 21.15 ms, `p6` 21.60,
+`p6b` 20.27; `parse-p7.json` `cur` 20.79, `p6b` 20.14, `p7` 20.12.
+
+| Candidate | Description | 8 threads | 12 threads | Verdict | JSON |
+|---|---|---:|---:|---|---|
+| `p6-push-trim.rs` | table growth check moved to the insert path, one `len == capacity` check before the push, branch-free escape test | parse phase only: 21.60 vs 21.15 ms | | rejected (slower parse phase) | `parse-p6.json` |
+| `p6b-two-word-hash.rs` | endpoint hash from the first and last words and length only, one multiply | 0.9854 (60%), 0.9670 (73%), 0.9861 (62%) | 0.9915 (62%), 0.9779 (65%), 0.9804 (68%) | rejected under the rule: every ratio is below 1, but two of three invocations missed 0.985 by under 0.002; a candidate for stacking with another small win | `p6b-two-word-hash.json`, `-2`, `-3` |
+| `p7-cold-insert.rs` | `p6b` plus the table insert path moved to a `#[cold]` non-inlined function | parse phase only: 20.12 vs 20.14 ms for `p6b` | | rejected (no effect over `p6b`) | `parse-p7.json` |
+
+### Cumulative
+
+`parse-cumulative.json` (41 rounds, seed 71): production after FEAT-002 against `baseline.rs`,
+paired median 0.8494 at 8 threads (93% of rounds won) and 0.8303 at 12 (100%); medians 0.0375 s
+to 0.0320 s at 8 threads and 0.0464 s to 0.0387 s at 12. Local x86 VM only.
