@@ -84,16 +84,81 @@ impl Plan<'_> {
 /// Calls `f` with the term ids (MISS for a token no query uses) of each
 /// document in data[lo..hi], which must be whole lines. Pages are released
 /// as the scan passes them, so only a few of them stay resident.
+// Every vector load is guarded by a remaining-length check in for_each_doc.
+#[inline]
+unsafe fn classify_scalar(p: *const u8) -> u32 {
+    let mut mask = 0u32;
+    for j in 0..32 {
+        let c = unsafe { *p.add(j) };
+        mask |= u32::from(c.is_ascii_alphanumeric()) << j;
+    }
+    mask
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn classify_avx2(p: *const u8) -> u32 {
+    use std::arch::x86_64::*;
+    let v = _mm256_loadu_si256(p.cast());
+    let low = _mm256_or_si256(v, _mm256_set1_epi8(0x20));
+    let alpha = _mm256_and_si256(_mm256_cmpgt_epi8(low, _mm256_set1_epi8(b'a' as i8 - 1)),
+                                 _mm256_cmpgt_epi8(_mm256_set1_epi8(b'z' as i8 + 1), low));
+    let digit = _mm256_and_si256(_mm256_cmpgt_epi8(v, _mm256_set1_epi8(b'0' as i8 - 1)),
+                                 _mm256_cmpgt_epi8(_mm256_set1_epi8(b'9' as i8 + 1), v));
+    _mm256_movemask_epi8(_mm256_or_si256(alpha, digit)) as u32
+}
+
+#[inline]
+fn push_word(data: &[u8], start: usize, end: usize, plan: &Plan, tokens: &mut Vec<u32>) {
+    let n = end - start;
+    tokens.push(if n <= 32 { plan.slot(&key(data, start, n)).1 } else { MISS });
+}
+
 fn for_each_doc(data: &[u8], lo: usize, hi: usize, plan: &Plan, mut f: impl FnMut(&[u32])) {
     let (mut i, mut done, mut tokens) = (lo, lo, Vec::new());
-    // Bytes that belong to a token (spec 2.2); a table is faster than the test.
-    let tok: [bool; 256] = std::array::from_fn(|b| (b as u8).is_ascii_alphanumeric());
+    let classify: unsafe fn(*const u8) -> u32 = {
+        #[cfg(target_arch = "x86_64")]
+        { if std::is_x86_feature_detected!("avx2") { classify_avx2 } else { classify_scalar } }
+        #[cfg(not(target_arch = "x86_64"))]
+        { classify_scalar }
+    };
     while i < hi {
-        i += data[i..].iter().position(|&b| b == b'\t').unwrap() + 1;
-        let e = i + data[i..].iter().position(|&b| b == b'\n').unwrap();
-        tokenize_words(data, i, e, plan, &tok, &mut tokens);
-        i = e;
-        i += 1;
+        i += data[i..hi].iter().position(|&b| b == b'\t').unwrap() + 1;
+        let remaining = &data[i..hi];
+        let found = unsafe { memchr(remaining.as_ptr(), b'\n' as i32, remaining.len()) };
+        assert!(!found.is_null(), "unterminated input line");
+        let end = unsafe { found.offset_from(data.as_ptr()) as usize };
+        let mut pos = i;
+        let mut open = None;
+        while end - pos >= 32 {
+            let mask = unsafe { classify(data.as_ptr().add(pos)) };
+            let mut pending = mask;
+            if let Some(start) = open.take() {
+                let k = mask.trailing_ones() as usize;
+                if k == 32 { open = Some(start); pos += 32; continue; }
+                push_word(data, start, pos + k, plan, &mut tokens);
+                pending &= u32::MAX << k;
+            }
+            while pending != 0 {
+                let start = pending.trailing_zeros() as usize;
+                let len = (pending >> start).trailing_ones() as usize;
+                let stop = start + len;
+                if stop == 32 { open = Some(pos + start); break; }
+                push_word(data, pos + start, pos + stop, plan, &mut tokens);
+                pending &= u32::MAX << stop;
+            }
+            pos += 32;
+        }
+        while pos < end {
+            if data[pos].is_ascii_alphanumeric() {
+                if open.is_none() { open = Some(pos); }
+            } else if let Some(start) = open.take() {
+                push_word(data, start, pos, plan, &mut tokens);
+            }
+            pos += 1;
+        }
+        if let Some(start) = open { push_word(data, start, end, plan, &mut tokens); }
+        i = end + 1;
         f(&tokens);
         tokens.clear();
         if i - done >= SLICE || i >= hi {
@@ -101,50 +166,6 @@ fn for_each_doc(data: &[u8], lo: usize, hi: usize, plan: &Plan, mut f: impl FnMu
             done = i;
         }
     }
-}
-
-// Classify eight independent ASCII lanes, then visit only transitions into
-// and out of tokens. Line boundaries are handled before this function.
-#[inline]
-fn tokenize_words(data: &[u8], start: usize, end: usize, plan: &Plan, tok: &[bool; 256], tokens: &mut Vec<u32>) {
-    const H: u64 = 0x8080_8080_8080_8080;
-    const LOA: u64 = 0x6161_6161_6161_6161;
-    const HIA: u64 = 0x7b7b_7b7b_7b7b_7b7b;
-    const LOD: u64 = 0x3030_3030_3030_3030;
-    const HID: u64 = 0x3a3a_3a3a_3a3a_3a3a;
-    let mut i = start;
-    let mut active = false;
-    let mut begin = start;
-    let mut emit = |p:usize, q:usize| {
-        let n=q-p;
-        tokens.push(if n <= 32 { plan.slot(&key(data, p, n)).1 } else { MISS });
-    };
-    while i + 8 <= end {
-        let x = u64::from_le_bytes(data[i..i + 8].try_into().unwrap());
-        let y = x | 0x2020_2020_2020_2020;
-        let a = ((y | H).wrapping_sub(LOA) & !((y | H).wrapping_sub(HIA))) & H;
-        let d = ((x | H).wrapping_sub(LOD) & !((x | H).wrapping_sub(HID))) & H;
-        let v = (a | d) & !x & H;
-        let prior = (v << 8) | if active { 0x80 } else { 0 };
-        let opens = v & !prior;
-        let closes = !v & prior & H;
-        let mut events = opens | closes;
-        while events != 0 {
-            let bit = events.trailing_zeros() as usize;
-            let pos = i + bit / 8;
-            if (opens >> bit) & 1 != 0 { begin=pos; } else { emit(begin,pos); }
-            events &= events - 1;
-        }
-        active = v >> 63 != 0;
-        i += 8;
-    }
-    while i < end {
-        let v=tok[data[i] as usize];
-        if v && !active {begin=i;} else if !v && active {emit(begin,i);}
-        active=v;
-        i+=1;
-    }
-    if active {emit(begin,end);}
 }
 
 enum Query {
@@ -294,6 +315,7 @@ fn solve_chunk(data: &[u8], lo: usize, hi: usize, plan: &Plan, barrier: &Barrier
 extern "C" {
     fn mmap(addr: *mut u8, len: usize, prot: i32, flags: i32, fd: i32, off: i64) -> *mut u8;
     fn madvise(addr: *mut u8, len: usize, advice: i32) -> i32;
+    fn memchr(s: *const u8, c: i32, n: usize) -> *const u8;
 }
 
 /// Maps a read-only file into memory.
