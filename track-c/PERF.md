@@ -68,3 +68,7 @@ An offline native ARM Cargo build matched the full seed-1 hash. A test-only buil
 The checked Rust release image subsequently matched the full seed-1 hash in a restricted offline ARM Linux container, and the integrated A–D tree matched official reference output on tiny seeds 2 and 17. Pinned scc and host rustfmt 1.9 gave provisional S=170 versus 213 for the previous C++ code; rustfmt was not the pinned 1.10, so the board remains authoritative for S.
 
 Official public-seed practice run `run-e874cd2691bd` at commit `1b2da3d095acd09779f08205f9329f79b7ba40d7` passed every gate: T=0.137394 s, M=17,235,968 bytes, S=170, K=17.662660. The preceding C++ practice run had K=7.446852. These separate single practice runs are not final hidden-seed scoring. See `experiments/board-1b2.json`.
+
+## 1024 dictionary shards
+
+The speed-focused candidate uses 1024 independent dictionary shards instead of 256. On the shared x86 VM its native median was 0.1287 s versus 0.1347 s for 256; all full hashes and 360 independent corpus/worker checks across shard variants passed. These are not official cgroup scores, and the official run must measure time, memory and S. The prior source is `experiments/c-worker-baseline-15c/main.rs`. At 15c6be0 the 256-shard run `run-0af69c4884d5` passed every gate with T=0.136191 s, M=17,403,904 bytes, S=170, K=17.706128 (`experiments/board-15c.json`).

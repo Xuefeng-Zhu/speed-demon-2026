@@ -151,7 +151,7 @@ impl Search {
         }
     }
 
-    fn reach(&mut self, side: usize, v: u32, d: u64) {
+    fn reach(&mut self, side: usize, v: u32, d: u64) -> bool {
         let slot = &mut self.dist[v as usize];
         if d < !slot[side] {
             if *slot == [0; 2] {
@@ -159,7 +159,9 @@ impl Search {
             }
             slot[side] = !d;
             self.heaps[side].push(d, v);
+            return true;
         }
+        false
     }
 
     /// Bidirectional Dijkstra: expand the side with the smaller key, keep the
@@ -183,10 +185,11 @@ impl Search {
                 continue; // stale entry
             }
             for (v, w) in graphs[side].edges(u) {
-                self.reach(side, v, d + w);
-                let other = self.dist[v as usize][1 - side];
-                if other != 0 {
-                    best = best.min(d + w + !other);
+                if self.reach(side, v, d + w) {
+                    let other = self.dist[v as usize][1 - side];
+                    if other != 0 {
+                        best = best.min(d + w + !other);
+                    }
                 }
             }
         }

@@ -42,7 +42,7 @@ impl Hasher for Fx {
     }
 }
 
-/// One of 256 shards of the shared name dictionary: name -> row, and per row a bitset of
+/// One of 1024 shards of the shared name dictionary: name -> row, and per row a bitset of
 /// the groups the name occurs in. Aligned so that no two shard locks share a cache line.
 #[derive(Default)]
 #[repr(align(128))]
@@ -157,7 +157,7 @@ fn main() {
         _ if t == n => recs.len(),
         _ => sync(recs, cut(t), quotes[..t].iter().sum()),
     };
-    let names: Vec<Shard> = (0..256).map(|_| Shard::default()).collect();
+    let names: Vec<Shard> = (0..1024).map(|_| Shard::default()).collect();
     let aggs = par(n, |t| {
         let (mut p, end, mut agg) = (bound(t), bound(t + 1), vec![EMPTY; unmatched + 1]);
         while p < end {
@@ -167,7 +167,7 @@ fn main() {
             let rid = number(recs, &mut p) as usize;
             let g = unmatched.min(*region.get(rid).unwrap_or(&u16::MAX) as usize);
             let cents = number(recs, &mut p);
-            let shard = BuildHasherDefault::<Fx>::default().hash_one(name) >> 32 & 255;
+            let shard = BuildHasherDefault::<Fx>::default().hash_one(name) >> 32 & 1023;
             let new = names[shard as usize].see(name, g, words);
             let rec = [1, id, cents, cents, cents, new, name_len, note_len];
             merge(&mut agg[g], rec);
