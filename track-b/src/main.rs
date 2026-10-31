@@ -1,24 +1,29 @@
 //! Speed Demon 2026, Track B (Index). Standard library only.
 //!
 //! 1. Parse the queries and intern every term they use. From a small sample
-//!    of the corpus: frequent BOOL terms get a bitmap over all documents, the
-//!    others posting lists; each phrase is anchored on its rarest term.
-//! 2. Map docs.txt and cut it into chunks of whole lines, each starting at a
-//!    multiple of 64 documents, claimed by the threads in turn. A thread
-//!    tokenizes its chunk once: it sets the bitmap bits (the chunk owns whole
-//!    words of them), builds u16 posting lists local to the chunk, and checks
-//!    the phrases around each anchor occurrence.
-//! 3. The threads then answer blocks of queries. A BOOL query runs left to
-//!    right on a sorted list, switching to a bitmap when a large set is ORed in.
+//!    of the corpus: frequent BOOL terms get bitmaps, the others posting
+//!    lists; each phrase is anchored on its rarest term.
+//! 2. Map docs.txt and take it in blocks of up to 32,768 documents, so that
+//!    only one block's index is in memory. All threads work on a block, then
+//!    move on to the next together:
+//!    - they tokenize its chunks, claimed in turn: set the bitmap bits (a
+//!      chunk owns whole words of them), list the posting-list terms of each
+//!      document, and check the phrases around each anchor occurrence;
+//!    - they put the chunks' terms in the block's u16 posting lists;
+//!    - they answer the BOOL queries that can match in the block, adding the
+//!      count, id sum and first ids to each query's answer so far. A query
+//!      runs left to right on a sorted list, switching to a bitmap when a large
+//!      set is ORed in.
 
 use std::fmt::Write as _;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering::Relaxed};
+use std::sync::atomic::{AtomicU16, AtomicU64, AtomicUsize, Ordering::Relaxed, Ordering::SeqCst};
+use std::sync::{Mutex, RwLock};
 use std::{collections::HashMap, env, fs, thread};
 
 /// Bytes of corpus read up front to estimate which phrase term is rarest.
 const SAMPLE: usize = 1 << 19;
 /// Bytes of corpus a thread scans between releasing what it has read.
-const SLICE: usize = 1 << 20;
+const SLICE: usize = 1 << 18;
 /// Term roles: used by a BOOL query and gets a posting list; anchors a
 /// phrase; used by a BOOL query and common, so it gets a bitmap instead.
 const IN_BOOL: u8 = 1;
@@ -58,8 +63,6 @@ struct Plan<'q> {
     flat: Vec<u32>,
     nlist: usize,
     nbm: usize,
-    chunks: Vec<Chunk>,
-    rows: Vec<u64>,
 }
 
 impl Plan<'_> {
@@ -228,25 +231,20 @@ enum Query {
     Phrase(Vec<u32>),
 }
 
-/// A chunk's posting lists: list l has the ids first + docs[offs[l]..offs[l + 1]],
-/// and its phrase matches as (query, id).
+/// A chunk: the list-term ids of its documents, first one after the other,
+/// each document ended by u16::MAX and a term's repeats dropped; the number
+/// of documents in each list; its phrase matches as (query, id).
 struct Chunk {
     first: u32,
-    offs: Vec<u32>,
-    docs: Vec<u16>,
+    stream: Vec<u16>,
+    cnt: Vec<u16>,
     hits: Vec<(u32, u32)>,
-}
-
-impl Chunk {
-    /// The chunk-local ids of the documents in list l.
-    fn post(&self, l: usize) -> &[u16] {
-        &self.docs[self.offs[l] as usize..self.offs[l + 1] as usize]
-    }
 }
 
 /// Indexes the whole lines in data[lo..hi]; their first id is a multiple of 64,
 /// so the chunk owns whole words of the shared bitmap rows.
-fn scan_chunk(data: &[u8], lo: usize, hi: usize, plan: &Plan, rows: &[AtomicU64]) -> Chunk {
+fn scan_chunk(data: &[u8], lo: usize, hi: usize, plan: &Plan, blk: &Block) -> Chunk {
+    let (rows, base) = (&blk.rows, blk.base);
     let first = id_at(data, lo);
     let (nl, words) = (plan.nlist, rows.len() / plan.nbm.max(1));
     // The list-term ids of each document, each document ended by u16::MAX.
@@ -256,7 +254,7 @@ fn scan_chunk(data: &[u8], lo: usize, hi: usize, plan: &Plan, rows: &[AtomicU64]
     let mut group = vec![0u64; plan.nbm];
     let flush = |group: &mut [u64], doc: u32| {
         for (b, x) in group.iter_mut().enumerate() {
-            rows[b * words + doc as usize / 64].store(std::mem::take(x), Relaxed);
+            rows[b * words + (doc - base) as usize / 64].store(std::mem::take(x), Relaxed);
         }
     };
     for_each_doc(data, lo, hi, plan, |tokens| {
@@ -299,35 +297,21 @@ fn scan_chunk(data: &[u8], lo: usize, hi: usize, plan: &Plan, rows: &[AtomicU64]
         flush(&mut group, doc - 1);
     }
     assert!(doc - first <= 1 << 16, "chunk too large");
-    // Counting sort of the stream, dropping a term's repeats within a document.
-    let mut offs = vec![0u32; nl + 1];
-    stream
-        .iter()
-        .filter(|&&l| l != u16::MAX)
-        .for_each(|&l| offs[l as usize + 1] += 1);
-    (1..=nl).for_each(|l| offs[l] += offs[l - 1]);
-    let (mut end, mut docs, mut d) = (offs.clone(), vec![0u16; offs[nl] as usize], 0u16);
-    for l in stream {
-        if l == u16::MAX {
+    // Drop a term's repeats within a document (stamp[l] is the last document
+    // of list l) and count the documents of each list.
+    let (mut stamp, mut cnt, mut d, mut w) = (vec![u16::MAX; nl], vec![0u16; nl], 0u16, 0);
+    for r in 0..stream.len() {
+        let l = stream[r] as usize;
+        if l == u16::MAX as usize {
             d = d.wrapping_add(1);
+        } else if stamp[l] != d {
+            (stamp[l], cnt[l]) = (d, cnt[l] + 1);
         } else {
-            let e = &mut end[l as usize];
-            if *e == offs[l as usize] || docs[*e as usize - 1] != d {
-                docs[*e as usize] = d;
-                *e += 1;
-            }
+            continue;
         }
+        (stream[w], w) = (l as u16, w + 1);
     }
-    // Close the gaps the repeats left.
-    let mut w = 0;
-    for l in 0..nl {
-        let (a, b) = (offs[l] as usize, end[l] as usize);
-        docs.copy_within(a..b, w);
-        offs[l] = w as u32;
-        w += b - a;
-    }
-    offs[nl] = w as u32;
-    Chunk { first, offs, docs, hits }
+    Chunk { first: first.wrapping_sub(base), stream: stream[..w].to_vec(), cnt, hits }
 }
 
 /// Appends a query's answer line: the count, the id sum and the first ten ids.
@@ -340,8 +324,8 @@ fn line(out: &mut String, n: usize, sum: u64, top: impl Iterator<Item = u32>) {
 /// Answers a BOOL query strictly left to right. The running result is a sorted
 /// list `r` until a large set is ORed in, then the bitmap `bm`, which is all
 /// zero whenever it is not in use.
-fn boolean(q: &[(u8, u32)], plan: &Plan, s: &mut Scratch, out: &mut String) {
-    let (chunks, rows) = (&plan.chunks, &plan.rows);
+fn boolean(q: &[(u8, u32)], plan: &Plan, blk: &Block, s: &mut Scratch, acc: &mut Sum) {
+    let (rows, post, base) = (blk.rows(), |t| blk.post(t), blk.base);
     let words = s.bm.len();
     let (mut is_bm, r, bm, tl) = (false, &mut s.list, &mut s.bm, &mut s.tmp);
     r.clear();
@@ -365,21 +349,16 @@ fn boolean(q: &[(u8, u32)], plan: &Plan, s: &mut Scratch, out: &mut String) {
             }
             continue;
         }
-        let df: usize = chunks.iter().map(|c| c.post(t).len()).sum();
+        let df = post(t).len();
         let and = op == b'A';
         if !is_bm && (and || op == b'N') && r.len() * 16 < df {
             // Look the few ids of r up in the term's lists.
-            let has = |d: u32| {
-                let c = &chunks[chunks.partition_point(|c| c.first <= d) - 1];
-                c.post(t).binary_search(&((d - c.first) as u16)).is_ok()
-            };
+            let has = |d: u32| post(t).binary_search(&(d as u16)).is_ok();
             r.retain(|&d| has(d) == and);
             continue;
         }
         tl.clear();
-        for c in chunks {
-            tl.extend(c.post(t).iter().map(|&d| c.first + d as u32));
-        }
+        tl.extend(post(t).iter().map(|&d| d as u32));
         if !is_bm && op == b'O' && r.len() + tl.len() > words / 4 {
             r.drain(..).for_each(|d| set(bm, d));
             is_bm = true;
@@ -418,8 +397,7 @@ fn boolean(q: &[(u8, u32)], plan: &Plan, s: &mut Scratch, out: &mut String) {
         }
     }
     if !is_bm {
-        let sum = r.iter().map(|&d| d as u64).sum();
-        return line(out, r.len(), sum, r.iter().copied());
+        return add(acc, base, r.len(), r.iter().map(|&d| d as u64).sum(), r.iter().copied());
     }
     // Count, id sum and the first ten ids. The positions of the set bits of x
     // sum to the sum over k of 2^k times the count of those with bit k.
@@ -431,11 +409,55 @@ fn boolean(q: &[(u8, u32)], plan: &Plan, s: &mut Scratch, out: &mut String) {
     }
     let ids = bm.iter().enumerate().filter(|(_, &x)| x != 0);
     let ids = ids.flat_map(|(i, &x)| (0..64).filter(move |b| x >> b & 1 != 0).map(move |b| (i * 64 + b) as u32));
-    line(out, n, sum, ids);
+    add(acc, base, n, sum, ids);
     bm.fill(0);
 }
 
+/// A BOOL query's answer so far: the count, the id sum and the first ids.
+type Sum = (usize, u64, [u32; 10]);
+
+/// Adds a query's answer within the block from `base` on, after the blocks before.
+fn add(acc: &mut Sum, base: u32, n: usize, sum: u64, ids: impl Iterator<Item = u32>) {
+    (acc.0..10).zip(ids).for_each(|(i, d)| acc.2[i] = d + base);
+    (acc.0, acc.1) = (acc.0 + n, acc.1 + sum + base as u64 * n as u64);
+}
+
+/// The block being indexed and queried: its first id, its bitmap rows of
+/// `words` words each, and its lists, list l being docs[offs[l]..offs[l + 1]].
+/// Threads fill the rows and lists in place, so they are atomics.
+#[derive(Default)]
+struct Block {
+    base: u32,
+    rows: Vec<AtomicU64>,
+    offs: Vec<u32>,
+    docs: Vec<AtomicU16>,
+    cuts: Vec<usize>,
+}
+
+/// n zeros of type T viewed as its atomic A: zeroed pages straight from the OS.
+fn zeros<T: Clone + Default, A>(n: usize) -> Vec<A> {
+    let mut v = std::mem::ManuallyDrop::new(vec![T::default(); n]);
+    // SAFETY: used for u64 and u16 with their atomics, of the same layout.
+    unsafe { Vec::from_raw_parts(v.as_mut_ptr().cast(), n, v.capacity()) }
+}
+
+impl Block {
+    /// The bitmap rows, once filled.
+    fn rows(&self) -> &[u64] {
+        // SAFETY: AtomicU64 has the layout of u64, and nothing writes them now.
+        unsafe { std::slice::from_raw_parts(self.rows.as_ptr().cast(), self.rows.len()) }
+    }
+
+    /// List l, once filled.
+    fn post(&self, l: usize) -> &[u16] {
+        // SAFETY: as for rows.
+        let docs: &[u16] = unsafe { std::slice::from_raw_parts(self.docs.as_ptr().cast(), self.docs.len()) };
+        &docs[self.offs[l] as usize..self.offs[l + 1] as usize]
+    }
+}
+
 /// Per-thread buffers for answering queries.
+#[derive(Default)]
 struct Scratch {
     list: Vec<u32>,
     tmp: Vec<u32>,
@@ -456,6 +478,7 @@ fn id_at(data: &[u8], i: usize) -> u32 {
 extern "C" {
     fn mmap(addr: *mut u8, len: usize, prot: i32, flags: i32, fd: i32, off: i64) -> *mut u8;
     fn madvise(addr: *mut u8, len: usize, advice: i32) -> i32;
+    fn mallopt(param: i32, value: i32) -> i32;
 }
 
 /// Maps a read-only file into memory.
@@ -499,6 +522,9 @@ fn main() {
     let nthreads = env::var("SD_THREADS").ok().and_then(|s| s.parse().ok());
     let nthreads = nthreads.unwrap_or_else(|| thread::available_parallelism().map_or(4, |n| n.get()));
 
+    // One malloc arena, and big blocks mapped and unmapped: memory freed
+    // after a block goes back to the OS. M_ARENA_MAX = -8, M_MMAP_THRESHOLD = -3.
+    unsafe { (mallopt(-8, 1), mallopt(-3, 1 << 18)) };
     let qtext = fs::read(format!("{data_dir}/queries.txt")).expect("read queries.txt");
     let mut plan = Plan::default();
     plan.grow(1 << 12);
@@ -514,6 +540,7 @@ fn main() {
             Query::Phrase(terms.map(|w| plan.intern(w, 0)).collect())
         });
     }
+    drop(qtext);
     let data = map_file(&format!("{data_dir}/docs.txt"));
 
     // Anchor each phrase on its rarest term in a sample of the corpus.
@@ -544,6 +571,7 @@ fn main() {
     plan.role = order.iter().map(|&t| plan.role[t]).collect();
     let freq: Vec<u32> = order.iter().map(|&t| freq[t]).collect();
     remap(&mut queries, &new);
+    drop((last, order, new, bools));
     plan.queries = &queries;
     let mut list = Vec::new();
     for (qi, q) in queries.iter().enumerate() {
@@ -564,51 +592,161 @@ fn main() {
         plan.flat.extend_from_slice(p);
     }
 
-    // Equal byte ranges, each moved to the next line whose id is a multiple
-    // of 64; at most 65,536 lines per chunk.
-    let ndocs = data.len().checked_sub(1).map_or(0, |e| id_at(data, line_start(data, data[..e].iter().rposition(|&b| b == b'\n').map_or(0, |p| p + 1))) as usize + 1);
-    let words = ndocs.div_ceil(64);
-    // Zeroed pages straight from the OS, touched first by the scanning threads.
-    let mut rows = std::mem::ManuallyDrop::new(vec![0u64; plan.nbm * words]);
-    // SAFETY: AtomicU64 has the size, alignment and bit validity of u64.
-    let rows: Vec<AtomicU64> = unsafe { Vec::from_raw_parts(rows.as_mut_ptr().cast(), rows.len(), rows.capacity()) };
-    let nchunks = nthreads * data.len().div_ceil(nthreads << 24).max(1);
-    let cut = |k| {
-        let mut i = line_start(data, k * data.len() / nchunks);
-        while i < data.len() && id_at(data, i) % 64 != 0 {
-            i = line_start(data, i + 1);
+    // Each BOOL query's cover, terms one of which every match contains: its
+    // first term, joined by the term of each OR and replaced by the term of
+    // an AND when that is rarer in the sample.
+    let (mut cover, mut coff) = (Vec::new(), vec![0u32]);
+    for q in &queries {
+        if let Query::Bool(v) = q {
+            let (mut c, mut f) = (Vec::new(), 0);
+            for &(op, t) in v {
+                match op {
+                    b'A' if freq[t as usize] < f => (c, f) = (vec![t], freq[t as usize]),
+                    b'A' | b'N' => {}
+                    _ => (c.push(t), f += freq[t as usize]).1,
+                }
+            }
+            cover.extend(c);
         }
-        i
+        coff.push(cover.len() as u32);
+    }
+
+    // Blocks of equal bytes, at most 65,536 lines, cut where an id is a
+    // multiple of 64, are indexed and queried one after the other. Each is
+    // cut into chunks claimed by the threads in turn.
+    let last = data[..data.len().saturating_sub(1)].iter().rposition(|&b| b == b'\n').map_or(0, |p| p + 1);
+    let ndocs = if data.is_empty() { 0 } else { id_at(data, last) as usize + 1 };
+    let id = |i: usize| id_at(data, i) as usize; // u32::MAX at the end
+    // The first line at or after byte i whose id is a multiple of 64.
+    let align = |mut i| {
+        while i < data.len() && id(line_start(data, i)) % 64 != 0 {
+            i = line_start(data, i) + 1;
+        }
+        line_start(data, i)
     };
+    // The start of line t, at or after byte a: steps doubling ahead, then
+    // bisection, so it reads only pages the scan has not yet passed.
+    let below = |m: usize, t: usize| id(line_start(data, m)) < t;
+    let pos = |t: usize, mut a: usize| {
+        let mut b = a + 1;
+        while b < data.len() && below(b, t) {
+            (a, b) = (b, 3 * b - 2 * a);
+        }
+        let mut b = b.min(data.len());
+        while a < b {
+            let m = (a + b) / 2;
+            (a, b) = if below(m, t) { (m + 1, b) } else { (a, m) };
+        }
+        line_start(data, a)
+    };
+    // Blocks of equal numbers of lines, at most 32,768 and a multiple of 64.
+    let bdocs = ndocs.div_ceil(ndocs.div_ceil(1 << 15).max(1)).next_multiple_of(64).max(64);
+    let nsub = 2 * nthreads;
+    let sums: Vec<Mutex<Sum>> = (0..queries.len()).map(|_| Default::default()).collect();
+    let (hits, blk, chunks) = (Mutex::new(Vec::new()), RwLock::new(Block::default()), Mutex::new(Vec::new()));
     let next = AtomicUsize::new(0);
     let claim = |n| (0..).map(|_| next.fetch_add(1, Relaxed)).take_while(move |&k| k < n);
-    let mut chunks: Vec<_> = par(nthreads, |_| {
-        claim(nchunks).map(|k| (k, scan_chunk(data, cut(k), cut(k + 1), &plan, &rows))).collect::<Vec<_>>()
-    })
-    .into_iter()
-    .flatten()
-    .collect();
-    chunks.sort_unstable_by_key(|c| c.0);
-    plan.chunks = chunks.into_iter().map(|c| c.1).collect();
-    plan.rows = rows.into_iter().map(AtomicU64::into_inner).collect();
+    let (qblock, nl) = (64, plan.nlist);
+    // A barrier that spins (yielding): the last thread to arrive runs f first.
+    let (count, round) = (AtomicUsize::new(0), AtomicUsize::new(0));
+    let wait = |f: &dyn Fn()| {
+        let r = round.load(SeqCst);
+        if count.fetch_add(1, SeqCst) + 1 == nthreads {
+            (f(), count.store(0, SeqCst), round.fetch_add(1, SeqCst));
+        } else {
+            while round.load(SeqCst) == r {
+                thread::yield_now();
+            }
+        }
+    };
+    // The threads go through the blocks together, waiting for each other
+    // between the steps.
+    par(nthreads, |_| {
+        let mut s = Scratch::default();
+        for base in (0..ndocs).step_by(bdocs) {
+            let n = bdocs.min(ndocs - base);
+            let words = n.div_ceil(64);
+            wait(&|| {
+                let mut b = blk.write().unwrap();
+                let lo = b.cuts.last().copied().unwrap_or(0);
+                let hi = pos(base + n, lo);
+                // Chunks of about equal bytes.
+                let cuts = (0..=nsub).map(|k| align(lo + k * (hi - lo) / nsub).min(hi));
+                *b = Block { base: base as u32, rows: zeros::<u64, _>(plan.nbm * words), cuts: cuts.collect(), ..Default::default() };
+                *chunks.lock().unwrap() = (0..nsub).map(|_| None).collect();
+                next.store(0, Relaxed);
+            });
+            {
+                let b = blk.read().unwrap();
+                for k in claim(nsub) {
+                    let c = scan_chunk(data, b.cuts[k], b.cuts[k + 1], &plan, &b);
+                    chunks.lock().unwrap()[k] = Some(c);
+                }
+            }
+            // The block's lists: a chunk's ids of list l go cnt[l] places
+            // after its start, cnt[l] counting the ids of l in the chunks before it.
+            wait(&|| {
+                let (mut b, mut offs) = (blk.write().unwrap(), vec![0u32; nl + 1]);
+                for c in chunks.lock().unwrap().iter_mut().flatten() {
+                    c.cnt.iter_mut().zip(&mut offs[1..]).for_each(|(x, o)| (*x, *o) = (*o as u16, *o + *x as u32));
+                }
+                (1..=nl).for_each(|t| offs[t] += offs[t - 1]);
+                (b.docs, b.offs) = (zeros::<u16, _>(offs[nl] as usize), offs);
+                next.store(0, Relaxed);
+            });
+            {
+                let b = blk.read().unwrap();
+                for k in claim(nsub) {
+                    let mut c = chunks.lock().unwrap()[k].take().unwrap();
+                    let mut d = c.first as u16;
+                    for &l in &c.stream {
+                        let l = l as usize;
+                        if l == u16::MAX as usize {
+                            d = d.wrapping_add(1);
+                        } else {
+                            b.docs[(b.offs[l] + c.cnt[l] as u32) as usize].store(d, Relaxed);
+                            c.cnt[l] += 1;
+                        }
+                    }
+                    hits.lock().unwrap().extend(c.hits);
+                }
+            }
+            // Answer the BOOL queries that can match in this block.
+            wait(&|| next.store(0, Relaxed));
+            let b = blk.read().unwrap();
+            s.bm.resize(words, 0);
+            for qb in claim(queries.len().div_ceil(qblock)) {
+                for qi in qb * qblock..((qb + 1) * qblock).min(queries.len()) {
+                    // Only if a term of its cover occurs in the block.
+                    let mut cover = cover[coff[qi] as usize..coff[qi + 1] as usize].iter().map(|&t| t as usize);
+                    if let Query::Bool(q) = &queries[qi] {
+                        if cover.any(|t| plan.role[t] & BITMAP != 0 || !b.post(t).is_empty()) {
+                            boolean(q, &plan, &b, &mut s, &mut sums[qi].lock().unwrap());
+                        }
+                    }
+                }
+            }
+        }
+    });
+    let mut hits = hits.into_inner().unwrap();
     // Phrase matches by query, each in ascending id order.
-    let mut hits: Vec<(u32, u32)> = plan.chunks.iter().flat_map(|c| c.hits.iter().copied()).collect();
-    hits.sort_by_key(|h| h.0);
+    hits.sort_unstable();
     let mut hoff = vec![0usize; queries.len() + 1];
     hits.iter().for_each(|h| hoff[h.0 as usize + 1] += 1);
     (1..hoff.len()).for_each(|i| hoff[i] += hoff[i - 1]);
 
-    // Answer blocks of queries, claimed by the threads in turn.
+    // Format blocks of answers, claimed by the threads in turn.
     next.store(0, Relaxed);
-    let block = 64;
     let mut outs: Vec<(usize, String)> = par(nthreads, |_| {
-        let mut s = Scratch { list: vec![], tmp: vec![], out: vec![], bm: vec![0; words] };
-        claim(queries.len().div_ceil(block))
+        claim(queries.len().div_ceil(qblock))
             .map(|b| {
                 let mut out = String::new();
-                for qi in b * block..((b + 1) * block).min(queries.len()) {
+                for qi in b * qblock..((b + 1) * qblock).min(queries.len()) {
                     match &queries[qi] {
-                        Query::Bool(q) => boolean(q, &plan, &mut s, &mut out),
+                        Query::Bool(_) => {
+                            let s = sums[qi].lock().unwrap();
+                            line(&mut out, s.0, s.1, s.2[..s.0.min(10)].iter().copied());
+                        }
                         Query::Phrase(_) => {
                             let mut d: Vec<u32> = hits[hoff[qi]..hoff[qi + 1]].iter().map(|h| h.1).collect();
                             d.dedup(); // a phrase can occur twice in a document
