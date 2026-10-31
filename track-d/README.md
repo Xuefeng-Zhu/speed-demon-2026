@@ -4,4 +4,4 @@ An independent Rust implementation using a compressed sparse row graph and its r
 
 Build offline: `cargo build --release --offline`. The executable reads `/data/graph.txt` and `/data/queries.txt` and writes `/out/distances.txt`. `DATA_DIR` and `OUT_DIR` can override these for local checks. The container uses the official pinned build and runtime images.
 
-Before entering, set the team name and record actual live-board run IDs in PERF.md. Timings on the scoring machine determine competitiveness.
+Record actual live-board run IDs in PERF.md. Timings on the scoring machine determine competitiveness.

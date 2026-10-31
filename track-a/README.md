@@ -8,4 +8,4 @@ The candidate matched the published full-data hash in the restricted ARM Linux D
 
 GCC 14 emits a `-Wstringop-overflow` diagnostic in the standard-library vector insertion used to merge shard groups. Independent review found the source and destination vectors disjoint and their combined length bounded by the 3.1 million input lines; native x86 ASan/UBSan and the boundary and full-hash checks found no issue. This suggests a compiler false positive, but is not proof of a compiler defect. A checked resize-and-copy alternative that suppresses the warning and passes the local checks is saved as `experiments/a-three-shard-checked.cpp`; its x86 performance and formatted source-size effect remain unmeasured.
 
-Set the team name before entering, and obtain real board time, cgroup memory and run IDs before claiming a score.
+Obtain real board time, cgroup memory and run IDs before claiming a score.

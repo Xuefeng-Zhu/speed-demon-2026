@@ -27,6 +27,6 @@ Paired local baseline comparisons and reproducible correctness tests are recorde
 
 ## Before entering
 
-- Choose tracks and a team name; replace `TEAM_NAME_REQUIRED` in each chosen track's `.speed-demon.toml` and remove unchosen track folders from a copy intended for entry.
+- Team name is set to `PeppaPig` in all four track manifests; registration is being handled separately.
 - Test on the official board to establish real run IDs, times, memory and scoring; document those runs and actual iterations in `PERF.md`. The board requires a GitHub App and a repository.
 - Follow the official event registration/submission and publication rules by the deadline, November 2 at 15:00 UTC. The board app is installed with read-only code and metadata access on the selected private repository; GitHub also includes public repositories read-only. No team registration form or formal submission has been sent.

@@ -22,4 +22,4 @@ The parallel candidate built offline and passed the restricted ARM Linux Docker 
 
 ## Remaining checks
 
-The current candidate has not been measured by the official board. Before entering, set the actual team name in `.speed-demon.toml`, run additional generated seeds through the container and record real board run IDs in `PERF.md`. Verify any change against the reference and measure on the board.
+The current candidate has not been measured by the official board. Run additional generated seeds through the container and record real board run IDs in `PERF.md`. Verify any change against the reference and measure on the board.
