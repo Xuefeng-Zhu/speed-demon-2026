@@ -11,6 +11,10 @@ Local revision after step 1: keep canonical name byte views into the input buffe
 
 ## Controlled local comparison
 
-Five interleaved full-data pairs after warmup on macOS ARM: original median 2.636044 s, current median 1.499528 s (1.76×). Every output matched the full hash. Details: `../../experiments/bench-c.json`. These are local measurements, not board scores.
+Five interleaved full-data pairs after warmup on macOS ARM: original median 2.636044 s, current median 1.499528 s (1.76×). Every output matched the full hash. Details: `experiments/bench-c.json`. These are local measurements, not board scores.
 
 Local revision after the hash-set variant: append name views to per-country vectors, then sort and deduplicate. Two interleaved full-data pairs produced 2.641/1.938 s and 352.0/354.6 MB peak RSS for the hash-set version versus 1.142/0.709 s and 293.5/293.0 MB for this variant. All outputs matched the published SHA-256. Other work ran concurrently. The final candidate also passed the restricted ARM Linux Docker full-data check in 1.27 s including startup; these figures are not board measurements.
+
+## Native x86 dot VM
+
+The candidate and original were tested on the full seed-1 dataset with GCC 14. See `experiments/dot-vm.md` for the five-run medians and limitations. This was not a board run.

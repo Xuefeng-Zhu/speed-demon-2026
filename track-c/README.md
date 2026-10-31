@@ -18,8 +18,8 @@ The optional arguments are input and output directories; the defaults are `/data
 
 A two-pair interleaved local comparison on macOS ARM used the full seed-1 data. The prior name hash-set variant took 2.641 and 1.938 s with 352.0 and 354.6 MB peak RSS; the current sort-and-deduplicate variant took 1.142 and 0.709 s with 293.5 and 293.0 MB peak RSS. Other work was active, so these are exploratory measurements, not board scores. All four outputs matched the published full-data hash.
 
-The current variant built offline and passed the restricted ARM Linux Docker check on seed 1 full in 1.27 s including container startup. The x86 check cited in the workspace experiment log applied to the previous variant, not this one.
+The current variant built offline and passed the restricted ARM Linux Docker check on seed 1 full in 1.27 s including container startup. An earlier emulated x86 sample check applied to the previous variant. The current candidate subsequently matched the published full-data hash in a native x86 dot VM; see `experiments/dot-vm.md`.
 
 ## Remaining checks
 
-The current candidate has not yet been checked on x86 or measured by the official board. Before entering, set the actual team name in `.speed-demon.toml`, run additional generated seeds through the container and record real board run IDs in `PERF.md`. Verify any change against the reference and measure on the board.
+The current candidate has not been measured by the official board. Before entering, set the actual team name in `.speed-demon.toml`, run additional generated seeds through the container and record real board run IDs in `PERF.md`. Verify any change against the reference and measure on the board.

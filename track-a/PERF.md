@@ -1,6 +1,6 @@
 # Performance and correctness log
 
-No live-board runs have been made; timings below are local, not official scores or run IDs. The board requires a connected GitHub repository and app, which have not been authorized.
+No live-board runs have been made; timings below are local, not official scores or run IDs. The board requires the GitHub app, which has not been installed.
 
 - Replaced general timestamp parsing and per-line split with direct fixed-field parsing, endpoint interning, and a compact collection of uint32 latencies per hour and endpoint. All latencies are retained; exact percentiles are obtained by sorting each group. This is the initial candidate, not a measured comparison of individual optimizations.
 - Official generator seed 1, full: input SHA-256 `7ec80ba45bceef51ac7f79d3a14521fc6187b2dcb87b5e5542d08063fe5d962a`; output SHA-256 `495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3`, matching the published expected digest. Five consecutive native runs took 0.496, 0.411, 0.553, 0.411 and 0.411 seconds on this Mac, with peak child RSS 26,689,536 bytes. Other processes were active; these are not official measurements, and Linux cgroup memory accounting may differ.
@@ -18,7 +18,7 @@ From the workspace root, rebuild the preserved baseline and final candidate with
 
 ```sh
 c++ -O3 -std=c++17 -o /tmp/track-a-baseline track-a-agent/main.cpp
-c++ -O3 -std=c++17 -o /tmp/track-a-final submission/track-a/main.cpp
+c++ -O3 -std=c++17 -o /tmp/track-a-final track-a/main.cpp
 python3 official/generators/a_ingest.py --seed 1 --scale full --out /tmp/speed-demon-a-full
 python3 - <<'PYBENCH'
 import hashlib, subprocess, time
@@ -44,4 +44,8 @@ Additional generator sample seeds 2 and 98 matched the official reference byte f
 
 ## Controlled local comparison
 
-Five interleaved full-data pairs after warmup on macOS ARM: original median 0.365936 s, current median 0.244733 s (1.50×). Every output matched the full hash. Also passed nine deliberately positioned 1 MiB chunk boundaries. Details: `../../experiments/bench-a.json` and `../../experiments/a_chunk_boundaries.py`. These are local measurements, not board scores.
+Five interleaved full-data pairs after warmup on macOS ARM: original median 0.365936 s, current median 0.244733 s (1.50×). Every output matched the full hash. Also passed nine deliberately positioned 1 MiB chunk boundaries. Details: `experiments/bench-a.json` and `experiments/a_chunk_boundaries.py`. These are local measurements, not board scores.
+
+## Native x86 dot VM
+
+The candidate and original were tested on the full seed-1 dataset with GCC 14. See `experiments/dot-vm.md` for the five-run medians and limitations. This was not a board run.

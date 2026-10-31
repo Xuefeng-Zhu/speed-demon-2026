@@ -23,3 +23,12 @@ python3 experiments/benchmark.py --baseline '/tmp/speed-bench/a-old /tmp/speed-d
 ## Additional experiments
 
 `a-output-buffered.cpp` matched full seed 1, seed 999 sample, and independent synthetic tests; an eight-pair native Mac experiment suggested a roughly 7% trimmed-mean improvement. `b-zero-copy.cpp` matched full seed 1 and alternate-seed/randomized tests, with a roughly 17% native median improvement in three contended paired runs. `track-d-sparse/src/main.rs` matched full seed 1, with similar local speed and lower observed memory in three pairs. These are experimental alternatives, not the selected submissions; their x86 and competition-container performance and scoring effects remain unverified. See the accompanying reports where present.
+
+The subsequent native x86 dot VM comparison of A–C is recorded in `dot-vm.md`.
+
+
+## October 31 follow-up variants
+
+`c-parallel.cpp` is an experimental C variant that sorts and deduplicates independent country groups with six worker threads. It matched the full seed-1 output hash in five benchmark runs and in a restricted ARM Linux Docker run; sample seed 42 and tiny seeds 2, 3, 17, 99 and 12345 matched freshly generated official reference outputs. Five interleaved native Mac runs produced median wall times of 0.794665 s for `track-c/main.cpp` and 0.408305 s for the variant; other processes were active. Full samples are in `bench-c-parallel.json`. Compile both with `c++ -std=c++17 -O3 -DNDEBUG -pthread`. The variant has not been tested on x86, and memory and source-size scoring effects have not been measured. The selected candidate remains the x86-verified serial version pending that comparison.
+
+The selected dense Track D and experimental sparse variant both passed 16,000 queries over 80 randomized directed graphs against an independent Python Dijkstra oracle, including zero and uint32-max weights and unreachable paths. `d_random_review.py` accepts one or more compiled executable paths to reproduce this check. Five interleaved full seed-1 native Mac runs produced medians of 2.336 s dense and 2.441 s sparse, with substantial concurrent system activity; every hash matched the published answer. See `bench-d-review.json`. The sparse variant's x86 and cgroup memory measurements remain outstanding, so the selected implementation is unchanged.

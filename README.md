@@ -21,9 +21,9 @@ To repeat, generate inputs using `official/generators/<track>.py` and run, for e
 python3 check.py a --data /absolute/path/to/a-full --expected 495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3
 ```
 
-Use the corresponding hash from the table for each full seed-1 dataset. The full datasets and local container outputs are generated artifacts, not included in this candidate directory. An earlier version of each track also built for x86-64 and matched published sample hashes under emulation, using temporary Dockerfiles pinned to the official images' amd64 child manifests. The current Track C was changed afterward and has not yet been checked on x86. The submission Dockerfiles still use the required allowlisted index digests. See `experiments/x86.md` for commands and limits; the x86 checks were not an official timed harness run.
+Use the corresponding hash from the table for each full seed-1 dataset. The full datasets and local container outputs are generated artifacts, not included in this candidate directory. An earlier version of each track also built for x86-64 and matched published sample hashes under emulation, using temporary Dockerfiles pinned to the official images' amd64 child manifests. The current A–C candidates subsequently matched the published full-data hashes in a native x86 dot VM; see `experiments/dot-vm.md`. Track D did not run there because Rust was unavailable. The submission Dockerfiles still use the required allowlisted index digests. See `experiments/x86.md` for commands and limits; the x86 checks were not an official timed harness run.
 
-Paired local baseline comparisons and reproducible correctness tests are recorded in `experiments/README.md`. They support the current optimization choices but do not establish performance on the scoring machine.
+Paired local baseline comparisons and reproducible correctness tests are recorded in `experiments/README.md`; the native x86 results are in `experiments/dot-vm.md`. They support the current optimization choices but do not establish performance on the scoring machine.
 
 ## Before entering
 
