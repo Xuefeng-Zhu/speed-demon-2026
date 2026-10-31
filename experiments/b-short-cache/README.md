@@ -1,0 +1,7 @@
+# Short-token direct cache (not selected)
+
+The candidate adds a private 4,096-entry direct-mapped cache to each corpus scan. For tokens of at most eight bytes, the cached zero-padded key must match exactly; otherwise the existing exact short-token table is queried and the result, including an absent term, is cached. Longer tokens, bounded phrase summaries, Boolean evaluation and bitmap limits are unchanged. The zero-initialized key is safe as an empty marker for the documented nonempty ASCII-alphanumeric tokens. `baseline.rs` is exact selected B at commit `e88ee2c`, SHA-256 `d0f0d79f3f646275d2e33ef34659eba5bca56fb2bb16504025f10a800e88cc49`; `candidate.rs` SHA-256 is `2cdc5a7f8ff3190dec6dcca2d78b9ed183c35e07f6fb8eeea9dea30def0c4933`.
+
+Seven randomized interleaved full-seed native ARM pairs after one warmup each matched the published output SHA-256. Median wall was 0.540698 s candidate versus 0.518723 s baseline; median CPU was 1.847002 versus 1.676096 s. Samples are in `report.json`. The ARM scalar tokenizer path ran, other activity may have affected the shared host, and native RSS is not cgroup memory. This was a negative local screen; x86 AVX2 timing and alternate-input correctness have not been established, so the candidate was not promoted.
+
+To reproduce, compile both files with identical release flags, then run `python3 experiments/b-rust-lengthhash/compare.py --baseline /path/to/base --candidate /path/to/candidate --data /path/to/full-b --runs 7 --report /tmp/b-short-cache.json`. No Docker was used.

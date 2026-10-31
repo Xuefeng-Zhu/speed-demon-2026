@@ -162,3 +162,7 @@ All tracks passed every gate; see `board-b073.json`. B's guarded AVX2 tokenizer 
 ## Official practice run for 23ffdfc
 
 All tracks passed every gate; see `board-23f.json`. B's exact short-token table measured T=0.346703 s, M=223,195,136 bytes, S=478, K=15.709610, compared with the previous run's T=0.341042 s, M=222,486,528 bytes, S=427, K=16.120054. Two prior dot VM paired passes favored the candidate by 7.8–9.3% wall; the official single-run difference is small and opposite, so a repeat on the scoring box is warranted before deciding. These are separate public-seed practices, not final holdout scores.
+
+## Same-code official repeat for e88ee2c
+
+The e88ee2c push changed experiment records and B performance notes, not selected source or Dockerfiles. All tracks passed every gate; see `board-e88.json`. B repeated at T=0.315290 s, M=224,714,752 bytes, S=478, K=16.451282. The same candidate's previous run was 0.346703 s, and the earlier AVX2 baseline run was 0.341042 s. Separate board runs are not paired and exhibit variation; the repeat and two dot VM paired batches support retaining the short-token candidate for speed. These are public-seed practices, not final hidden-seed scores.
