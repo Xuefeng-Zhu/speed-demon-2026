@@ -170,3 +170,7 @@ The e88ee2c push changed experiment records and B performance notes, not selecte
 ## Official practice run for 8c273db
 
 All tracks passed every gate; `board-8c.json` records run IDs. B's dense Boolean summary measured T=0.303369 s, M=223,789,056 bytes, S=496, K=16.692436, versus 0.315290 s, 224,714,752 bytes, S=478, K=16.451282 for the preceding practice. A/C/D measured 0.050286/0.129274/0.384428 s. Separate public-seed runs are not paired or final holdout scores.
+
+## Official practice run for 5934716
+
+All tracks passed every gate; `board-593.json` records run IDs. C bounded batching measured T=0.134421 s, M=29,593,600 bytes, S=208, K=15.549336, compared with the preceding practice at 0.129274 s, 17,870,848 bytes, S=175, K=17.999239. Two dot VM batches had favored batching by 13.5–18.2%, so the opposite small official wall difference needs another same-code scoring-box run. Separate public-seed practices are not paired or final holdout scores.
