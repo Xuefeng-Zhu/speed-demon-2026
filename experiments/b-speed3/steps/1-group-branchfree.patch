@@ -1,0 +1,25 @@
+--- a/baseline.rs
++++ a/vA.rs
+@@ -272,9 +272,9 @@
+     let mut stream = Vec::with_capacity((hi - lo) / 16);
+     let (mut hits, mut doc, mut new, mut anch) = (Vec::new(), first, Vec::new(), Vec::new());
+     // The bitmap words of the current 64 documents, stored when they are done.
+-    let mut group = vec![0u64; plan.nbm];
++    let mut group = vec![0u64; plan.nbm + 1]; // and one for all other terms
+     let flush = |group: &mut [u64], doc: u32| {
+-        for (b, x) in group.iter_mut().enumerate() {
++        for (b, x) in group[..plan.nbm].iter_mut().enumerate() {
+             rows[b * words + doc as usize / 64].store(std::mem::take(x), Relaxed);
+         }
+     };
+@@ -291,9 +291,7 @@
+             (new[n], anch[m]) = (t as u16, p);
+             n += ((t as usize) < nl) as usize;
+             m += (plan.role[t as usize] & ANCHOR != 0) as usize;
+-            if let Some(g) = group.get_mut((t as usize).wrapping_sub(nl)) {
+-                *g |= bit;
+-            }
++            group[(t as usize).wrapping_sub(nl).min(plan.nbm)] |= bit;
+         }
+         stream.extend_from_slice(&new[..n]);
+         stream.push(u16::MAX);

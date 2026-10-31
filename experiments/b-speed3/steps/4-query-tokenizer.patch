@@ -1,0 +1,139 @@
+--- a/vG.rs
++++ a/vL.rs
+@@ -86,8 +86,8 @@
+     }
+ 
+     /// The id of the term w, added if new, after adding `role` to its roles.
+-    fn intern(&mut self, w: &[u8], role: u8) -> u32 {
+-        let (k, t) = (key(w, 0, w.len()), self.role.len() as u32);
++    fn intern(&mut self, data: &[u8], s: usize, e: usize, role: u8) -> u32 {
++        let (w, k, t) = (&data[s..e], key(data, s, e - s), self.role.len() as u32);
+         let t = if w.len() > 16 {
+             *self.long.entry(w.to_vec()).or_insert(t)
+         } else {
+@@ -124,44 +124,20 @@
+     let (mut i, mut done, mut tokens, mut keys) = (lo, lo, Vec::new(), Vec::new());
+     while i < hi {
+         i += data[i..].iter().position(|&b| b == b'\t').unwrap() + 1;
+-        // Where the tokens of the document start and end, from masks of 64
+-        // bytes at a time up to its LF. Bit p of `after`: byte p - 1 is in a
+-        // token. Key every token and prefetch its slot, then look them all
+-        // up, so that many cache misses are in flight at once. A short token
+-        // whose filter bit is clear is no query term: it is looked up as the
+-        // empty key at an empty slot, which matches at once (measured faster
+-        // than probing that slot with the real key).
+-        let (mut carry, mut open) = (0, 0);
+-        loop {
+-            let (m, lf) = masks(data, i);
+-            let m = m & (lf & lf.wrapping_neg()).wrapping_sub(1);
+-            let after = m << 1 | carry;
+-            let (mut starts, mut ends) = (m & !after, !m & after);
+-            while ends != 0 {
+-                let e = i + ends.trailing_zeros() as usize;
+-                let start = i + starts.trailing_zeros() as usize;
+-                let s = if carry != 0 { open } else { start };
+-                carry = 0;
+-                starts &= starts.wrapping_sub((s >= i) as u64);
+-                ends &= ends - 1;
+-                let k = key(data, s, e - s);
+-                let f = Plan::hash(k) % FILTER;
+-                let miss = ((e - s <= 16) as u64 & !plan.filter[f / 64] >> f % 64 & 1).wrapping_neg();
+-                let h = if e - s <= 16 { plan.home(k) } else { !(e - s) };
+-                let (k, h) = (k.map(|x| x & !miss), h ^ (h ^ plan.empty) & miss as usize);
+-                _ = plan.keys.get(h).map(prefetch);
+-                keys.push((k, h, s));
+-            }
+-            // A token that runs on into the next 64 bytes.
+-            if starts != 0 {
+-                open = i + starts.trailing_zeros() as usize;
+-            }
+-            carry = m >> 63;
+-            i += (lf.trailing_zeros() as usize + 1).min(64);
+-            if lf != 0 {
+-                break;
+-            }
+-        }
++        // Key every token and prefetch its slot, then look them all up, so
++        // that many cache misses are in flight at once. A short token whose
++        // filter bit is clear is no query term: it is looked up as the empty
++        // key at an empty slot, which matches at once (measured faster than
++        // probing that slot with the real key).
++        i = each_token(data, i, |s, e| {
++            let k = key(data, s, e - s);
++            let f = Plan::hash(k) % FILTER;
++            let miss = ((e - s <= 16) as u64 & !plan.filter[f / 64] >> f % 64 & 1).wrapping_neg();
++            let h = if e - s <= 16 { plan.home(k) } else { !(e - s) };
++            let (k, h) = (k.map(|x| x & !miss), h ^ (h ^ plan.empty) & miss as usize);
++            _ = plan.keys.get(h).map(prefetch);
++            keys.push((k, h, s));
++        });
+         let none = plan.role.len() as u32 - 1;
+         let long = |w: &[u8]| *plan.long.get(&w.to_ascii_lowercase()).unwrap_or(&none);
+         tokens.extend(keys.iter().map(|&(k, h, s)| match plan.keys.get(h) {
+@@ -178,6 +154,37 @@
+     }
+ }
+ 
++/// Calls f(s, e) for each token data[s..e] of the line from byte i, and returns
++/// the start of the next line (or a position past the end of data). The bounds
++/// come from masks of 64 bytes at a time; bit p of `after`: byte p - 1 is in a token.
++fn each_token(data: &[u8], mut i: usize, mut f: impl FnMut(usize, usize)) -> usize {
++    let (mut carry, mut open) = (0, 0);
++    loop {
++        let (m, lf) = masks(data, i);
++        let m = m & (lf & lf.wrapping_neg()).wrapping_sub(1);
++        let after = m << 1 | carry;
++        let (mut starts, mut ends) = (m & !after, !m & after);
++        while ends != 0 {
++            let e = i + ends.trailing_zeros() as usize;
++            let start = i + starts.trailing_zeros() as usize;
++            let s = if carry != 0 { open } else { start };
++            carry = 0;
++            starts &= starts.wrapping_sub((s >= i) as u64);
++            ends &= ends - 1;
++            f(s, e);
++        }
++        // A token that runs on into the next 64 bytes.
++        if starts != 0 {
++            open = i + starts.trailing_zeros() as usize;
++        }
++        carry = m >> 63;
++        i += (lf.trailing_zeros() as usize + 1).min(64);
++        if lf != 0 || i >= data.len() {
++            return i;
++        }
++    }
++}
++
+ /// Bit masks of the token bytes (spec 2.2) and of the LFs in data[i..i + 64].
+ fn masks(data: &[u8], i: usize) -> (u64, u64) {
+     let mut pad = [0u8; 64];
+@@ -528,16 +535,18 @@
+     let qtext = fs::read(format!("{data_dir}/queries.txt")).expect("read queries.txt");
+     let mut plan = Plan::default();
+     plan.grow((qtext.len() / 16 | 64).next_power_of_two()); // rarely grows
+-    let mut queries = Vec::new();
+-    for line in qtext.split(|&b| b == b'\n').filter(|l| !l.is_empty()) {
+-        let mut w = line.split(|&b| b == b' ');
+-        queries.push(if line.starts_with(b"BOOL") {
+-            // (operator, term) pairs; the leading "BOOL" acts as OR on the empty set.
+-            let mut pair = || Some((w.next()?[0], plan.intern(w.next()?, IN_BOOL)));
+-            Query::Bool(std::iter::from_fn(&mut pair).collect())
+-        } else {
+-            let terms = line[b"PHRASE \"".len()..line.len() - 1].split(|&b| b == b' ');
+-            Query::Phrase(terms.map(|w| plan.intern(w, 0)).collect())
++    // Query words: BOOL and PHRASE start a query, AND, OR and NOT are
++    // operators and terms are lowercase. A BOOL query is (operator, term)
++    // pairs; the first term has operator 0, OR on the empty set.
++    let (mut queries, mut i, mut op) = (Vec::new(), 0, 0);
++    while i < qtext.len() {
++        i = each_token(&qtext, i, |s, e| match (qtext[s], queries.last_mut()) {
++            (b'B', _) => queries.push(Query::Bool(Vec::new())),
++            (b'P', _) => queries.push(Query::Phrase(Vec::new())),
++            (b'A' | b'O' | b'N', _) => op = qtext[s],
++            (_, Some(Query::Bool(v))) => v.push((std::mem::take(&mut op), plan.intern(&qtext, s, e, IN_BOOL))),
++            (_, Some(Query::Phrase(v))) => v.push(plan.intern(&qtext, s, e, 0)),
++            _ => {}
+         });
+     }
+     let data = map_file(&format!("{data_dir}/docs.txt"));

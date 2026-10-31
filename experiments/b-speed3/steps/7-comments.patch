@@ -1,0 +1,56 @@
+--- a/vO.rs
++++ a/final.rs
+@@ -27,10 +27,12 @@
+ const ANCHOR: u8 = 2;
+ const BITMAP: u8 = 4;
+ 
++/// ONES[16 - n..32 - n] masks the first n of 16 bytes.
++const ONES: [u8; 32] = *b"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
++
+ /// The first 16 bytes of the n-byte token at data[s..], zero-padded; tokens
+ /// never contain a zero byte. Token bytes are ASCII letters and digits, so
+ /// OR-ing 0x20 lowercases letters and leaves digits alone.
+-const ONES: [u8; 32] = *b"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
+ fn key(data: &[u8], s: usize, n: usize) -> [u64; 2] {
+     let mut pad = [0u8; 16];
+     let src = data.get(s..s + 16).unwrap_or_else(|| {
+@@ -84,7 +86,7 @@
+         (h..).map(|i| i & mask).find(hit).unwrap()
+     }
+ 
+-    /// The id of the term w, added if new, after adding `role` to its roles.
++    /// The id of the term w = data[s..e], added if new, after adding `role` to its roles.
+     fn intern(&mut self, data: &[u8], s: usize, e: usize, role: u8) -> u32 {
+         let (w, k, t) = (&data[s..e], key(data, s, e - s), self.role.len() as u32);
+         let t = if w.len() > 16 {
+@@ -127,7 +129,8 @@
+         // that many cache misses are in flight at once. A short token whose
+         // filter bit is clear is no query term: it is looked up as the empty
+         // key at an empty slot, which matches at once (measured faster than
+-        // probing that slot with the real key).
++        // probing that slot with the real key). Branch-free: `miss` is all ones
++        // for such a token.
+         i = each_token(data, i, |s, e| {
+             let k = key(data, s, e - s);
+             let f = Plan::hash(k) % FILTER;
+@@ -273,7 +276,8 @@
+         if doc % 64 == 0 && doc != first {
+             flush(&mut group, doc - 1);
+         }
+-        // Branch-free: write every term, keep the list terms and note the anchors.
++        // Branch-free: write every term, keep the list terms and note the
++        // anchors; a term without a bitmap sets a bit in the spare group word.
+         new.resize(tokens.len(), 0);
+         anch.resize(tokens.len(), 0);
+         let (mut n, mut m) = (0, 0);
+@@ -582,8 +586,8 @@
+     terms.iter_mut().for_each(|e| e.1 = new[e.1 as usize]);
+     let query = |i: usize| (qs[i].0, &terms[qs[i].1..qs[i + 1].1]);
+     let mut list = Vec::new();
+-    for (qi, p) in (0..nq).map(query).enumerate().filter(|q| q.1 .0 == b'P') {
+-        let p = p.1;
++    for qi in (0..nq).filter(|&i| qs[i].0 == b'P') {
++        let p = query(qi).1;
+         let j = (0..p.len()).min_by_key(|&j| freq[p[j].1 as usize]).unwrap();
+         plan.role[p[j].1 as usize] |= ANCHOR;
+         list.push((p[j].1, qi, p, j));

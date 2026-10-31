@@ -1,0 +1,128 @@
+--- a/vL.rs
++++ a/vN.rs
+@@ -51,8 +51,7 @@
+ /// BITMAP terms follow, term nlist + i with bitmap i of nbm. Bit h % FILTER
+ /// of `filter` is set for each hash h of a short term in the table.
+ #[derive(Default)]
+-struct Plan<'q> {
+-    queries: &'q [Query],
++struct Plan {
+     keys: Vec<[u64; 3]>,
+     filter: Vec<u64>,
+     empty: usize,
+@@ -67,7 +66,7 @@
+     rows: Vec<u64>,
+ }
+ 
+-impl Plan<'_> {
++impl Plan {
+     /// The 24-bit hash of the key k; its low bits are the home slot.
+     fn hash(k: [u64; 2]) -> usize {
+         ((k[0] ^ k[1].rotate_left(29)).wrapping_mul(0x9e37_79b9_7f4a_7c15) >> 40) as usize
+@@ -239,21 +238,6 @@
+     };
+ }
+ 
+-/// Replaces each term t of the queries by new[t].
+-fn remap(queries: &mut [Query], new: &[u32]) {
+-    for q in queries {
+-        match q {
+-            Query::Bool(v) => v.iter_mut().for_each(|(_, t)| *t = new[*t as usize]),
+-            Query::Phrase(p) => p.iter_mut().for_each(|t| *t = new[*t as usize]),
+-        }
+-    }
+-}
+-
+-enum Query {
+-    Bool(Vec<(u8, u32)>), // (first byte of the operator: AND, NOT, else OR; term)
+-    Phrase(Vec<u32>),
+-}
+-
+ /// A chunk's posting lists: list l has the ids first + docs[offs[l]..offs[l + 1]],
+ /// and its phrase matches as (query, id).
+ struct Chunk {
+@@ -536,19 +520,23 @@
+     let mut plan = Plan::default();
+     plan.grow((qtext.len() / 16 | 64).next_power_of_two()); // rarely grows
+     // Query words: BOOL and PHRASE start a query, AND, OR and NOT are
+-    // operators and terms are lowercase. A BOOL query is (operator, term)
+-    // pairs; the first term has operator 0, OR on the empty set.
+-    let (mut queries, mut i, mut op) = (Vec::new(), 0, 0);
++    // operators and terms are lowercase. Query i is (b'B' or b'P', its first
++    // term), its terms terms[qs[i].1..qs[i + 1].1] as (first byte of the
++    // operator: AND, NOT, else OR; term); the first term of a BOOL query has
++    // operator 0, OR on the empty set.
++    let (mut qs, mut terms, mut i, mut op) = (Vec::new(), Vec::new(), 0, 0);
+     while i < qtext.len() {
+-        i = each_token(&qtext, i, |s, e| match (qtext[s], queries.last_mut()) {
+-            (b'B', _) => queries.push(Query::Bool(Vec::new())),
+-            (b'P', _) => queries.push(Query::Phrase(Vec::new())),
+-            (b'A' | b'O' | b'N', _) => op = qtext[s],
+-            (_, Some(Query::Bool(v))) => v.push((std::mem::take(&mut op), plan.intern(&qtext, s, e, IN_BOOL))),
+-            (_, Some(Query::Phrase(v))) => v.push(plan.intern(&qtext, s, e, 0)),
+-            _ => {}
++        i = each_token(&qtext, i, |s, e| match qtext[s] {
++            b'B' | b'P' => qs.push((qtext[s], terms.len())),
++            b'A' | b'O' | b'N' => op = qtext[s],
++            _ => {
++                let role = IN_BOOL * (qs[qs.len() - 1].0 == b'B') as u8;
++                terms.push((std::mem::take(&mut op), plan.intern(&qtext, s, e, role)));
++            }
+         });
+     }
++    let nq = qs.len();
++    qs.push((0, terms.len()));
+     let data = map_file(&format!("{data_dir}/docs.txt"));
+ 
+     // Anchor each phrase on its rarest term in a sample of the corpus.
+@@ -591,15 +579,14 @@
+     plan.long.values_mut().for_each(|t| *t = new[*t as usize]);
+     plan.role = order.iter().map(|&t| plan.role[t]).collect();
+     let freq: Vec<u32> = order.iter().map(|&t| freq[t].0).collect();
+-    remap(&mut queries, &new);
+-    plan.queries = &queries;
++    terms.iter_mut().for_each(|e| e.1 = new[e.1 as usize]);
++    let query = |i: usize| (qs[i].0, &terms[qs[i].1..qs[i + 1].1]);
+     let mut list = Vec::new();
+-    for (qi, q) in queries.iter().enumerate() {
+-        if let Query::Phrase(p) = q {
+-            let j = (0..p.len()).min_by_key(|&j| freq[p[j] as usize]).unwrap();
+-            plan.role[p[j] as usize] |= ANCHOR;
+-            list.push((p[j], qi, &p[..], j));
+-        }
++    for (qi, p) in (0..nq).map(query).enumerate().filter(|q| q.1 .0 == b'P') {
++        let p = p.1;
++        let j = (0..p.len()).min_by_key(|&j| freq[p[j].1 as usize]).unwrap();
++        plan.role[p[j].1 as usize] |= ANCHOR;
++        list.push((p[j].1, qi, p, j));
+     }
+     // One flat list of anchors, grouped by term, with copies of the phrases.
+     list.sort_unstable_by_key(|a| a.0);
+@@ -609,7 +596,7 @@
+     for (_, qi, p, j) in list {
+         plan.anchors
+             .push((qi as u32, plan.flat.len() as u32, p.len() as u32, j as u32));
+-        plan.flat.extend_from_slice(p);
++        plan.flat.extend(p.iter().map(|e| e.1));
+     }
+ 
+     // Equal byte ranges, each moved to the next line whose id is a multiple
+@@ -653,13 +640,13 @@
+     let mut outs: Vec<(usize, String)> = par(nthreads, |_| {
+         let mut s = Scratch::default();
+         s.bm = vec![0; words];
+-        claim(queries.len().div_ceil(block))
++        claim(nq.div_ceil(block))
+             .map(|b| {
+                 let mut out = String::new();
+-                for qi in b * block..((b + 1) * block).min(queries.len()) {
+-                    match &queries[qi] {
+-                        Query::Bool(q) => boolean(q, &plan, &mut s, &mut out),
+-                        Query::Phrase(_) => {
++                for qi in b * block..((b + 1) * block).min(nq) {
++                    match query(qi) {
++                        (b'B', q) => boolean(q, &plan, &mut s, &mut out),
++                        _ => {
+                             let q = |h: &(u32, u32)| h.0 as usize;
+                             let d = &hits[hits.partition_point(|h| q(h) < qi)..hits.partition_point(|h| q(h) <= qi)];
+                             sorted_line(&mut out, d.iter().map(|h| h.1));
