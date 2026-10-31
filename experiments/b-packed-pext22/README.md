@@ -25,3 +25,5 @@ python3 experiments/b-rust-lengthhash/compare.py --baseline /tmp/b-pext22-base -
 ```
 
 `--x86-v3` refuses a non-x86/absent BMI2 host and executes both normal and forced-hash property suites, including a Linux guard-page test. Additionally verify actual `pext` instruction execution and packed-mode activation on the full seed by temporarily inserting an stderr diagnostic after `plan.build_short()`; the diagnostic build must not be used for timing. Run x86 AVX2 classifier guards from the separately reviewed repository suite and compare PGO-trained variants if native measurements warrant further work. Process RSS reported by the comparator is not official parent-cgroup peak. If this experiment is slower or tied, keep the current B build.
+
+Parent-run dot VM actual x86 BMI2 paired screens regressed 5.0% and 3.2% wall time versus the exact selected baseline. Across this and C four-lane, 144 full hashes, actual BMI2/AVX2 guard-page and stress checks passed. These are native VM measurements, not official cgroup results; keep the original selected B.

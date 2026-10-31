@@ -25,3 +25,5 @@ python3 experiments/c-two-lane-parse/compare.py --baseline /tmp/c-fourlane-base 
 ```
 
 The comparator checks every run against the published hash and records wall, CPU and native RSS. Confirm actual x86-v3 ISA support first. Review the four-lane loop independently and measure official parent-cgroup behavior separately before promotion; no target, cgroup or final hidden-data result is claimed. The archive contains no datasets, credentials or precomputed scoring answers.
+
+Parent-run dot VM actual x86 paired screens were 1.9% and 1.1% slower than the exact selected two-lane baseline. Across this and B packed-slot, 144 full hashes, actual ISA guard-page and stress checks passed. These are native VM measurements, not official cgroup results; keep the original selected C.
