@@ -218,3 +218,9 @@ Each dictionary slot is now five consecutive words, the name hash followed by it
 ## Line trims (2026-10-31)
 
 No behaviour change: the aarch64 prefetch branch is gone (prefetch is a no-op off x86-64), the quoted-length arithmetic takes one shared difference, a redundant block scope is removed, and the file is now rustfmt-clean. Formatted code lines by the local count fall from 318 to 308 (about +0.5% K from the size term). Sandbox 8-thread timing is identical (59.72 vs 59.72 ms, 25 interleaved rounds). A carry-less-multiply prefix XOR (`pclmulqdq`) for the in-quotes mask was also tried and made no difference, so it was not kept.
+
+## Sixteen chunks per thread (2026-10-31)
+
+Each worker's share of `records.csv` is now cut into 16 chunks instead of 64. Sandbox, 8 threads, interleaved trimmed means against the previous commit: 64 chunks 59.9–60.5 ms; 4 chunks 56.9; 8 chunks 55.9–56.4; 16 chunks 56.4–56.7; 256 chunks 70.2. Without the per-chunk `MADV_DONTNEED`, 8, 16 and 64 chunks all measure 59.6–60.0 ms, so the gain comes from making fewer of those calls, while the release itself still pays for itself. The likely cost is the TLB shootdown each call sends to every core running the process; this was not confirmed with counters, as the VM exposes no PMU. Sixteen keeps more dynamic balance than eight (the record count per chunk on the board's 12 threads is about 17,000) at nearly the same time. Single thread is unchanged (217 ms) because there are no other cores to interrupt. All reference checks pass; the committed source builds a binary byte-identical to the one measured.
+
+Not kept from the same batch: OR-ing the comma and LF compares before one movemask (60.2 vs 60.5 ms, noise) and a fixed-size `[Agg; 256]` per thread (59.7 vs 60.5 ms alone, no gain combined with 8 chunks).
