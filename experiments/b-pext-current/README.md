@@ -33,3 +33,7 @@ python3 experiments/b-rust-lengthhash/compare.py --baseline /tmp/b-pext-current-
 Repeat the paired comparison with independent ordering and report wall, CPU, actual hardware feature coverage and process RSS. The included comparator uses a fixed randomized order by iteration; alter its seed or use an independent harness for the repeat. Parent-cgroup memory must be measured separately; this VM may lack the cgroup interface. Guard/reference tests do not prove speed. No datasets, credentials or executables are included. No Mac Docker was used.
 
 Packaging note: the archive's explicit contents and checksum were checked, but its portable property suite was **not rerun after extraction** because a concurrent D benchmark needed the CPU window. The same exact candidate source and portable property suite passed before packaging. Run the included checks from the extracted archive; in particular, no actual x86 protected-page or BMI2 path was exercised on the Mac.
+
+## Native x86 outcome
+
+Parent-run shared dot VM paired full-seed testing exercised actual BMI2/AVX2: the candidate was 10.1–10.6% slower in wall time and used 9.6–10.4% more CPU. The table requests 64 MiB even for empty-query input. Actual x86 protected-page, exhaustive mapping, collision, duplicate, reference and non-BMI2 fallback checks passed; across the comparison 72 full hashes and 12 alternate references passed. These native process results are not official scoring-box or cgroup measurements. The candidate remains unselected for speed.
