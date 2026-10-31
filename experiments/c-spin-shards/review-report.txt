@@ -1,0 +1,11 @@
+panic unwound; guard released and value retained
+contending thread acquired after owner unwind
+workers=1 lock=spin iterations=4000 elapsed_ms=0.226 max_observed_wait_ms=0.000
+workers=1 lock=std iterations=4000 elapsed_ms=0.225 max_observed_wait_ms=0.000
+workers=2 lock=spin iterations=8000 elapsed_ms=0.678 max_observed_wait_ms=0.000
+workers=2 lock=std iterations=8000 elapsed_ms=0.820 max_observed_wait_ms=0.039
+workers=7 lock=spin iterations=28000 elapsed_ms=4.706 max_observed_wait_ms=0.243
+workers=7 lock=std iterations=28000 elapsed_ms=5.001 max_observed_wait_ms=0.107
+workers=32 lock=spin iterations=128000 elapsed_ms=26.417 max_observed_wait_ms=1.526
+workers=32 lock=std iterations=128000 elapsed_ms=19.037 max_observed_wait_ms=2.496
+PASS: Held<Cell<u64>> is not Sync

@@ -1,0 +1,5 @@
+# Parent-edge prune (experimental, not selected)
+
+`baseline.rs` is exact restored D baseline 451429c. This candidate stores the predecessor of each heap entry in the four bytes otherwise used as tuple padding, and skips relaxing a return edge to that predecessor. Nonnegative edge weights imply that predecessor already has a path no more expensive than the current vertex, so such a return cannot improve it. The initial heap entries use the impossible node id `u32::MAX` as a sentinel; full n is less than 2^21. All graph data and shortest paths are calculated at runtime.
+
+The candidate passed 16,000 independent randomized graph queries, all 36,864 exhaustive three-node queries, the maximum-size max-weight chain, 6,000 repeated/unreachable queries and all full seed-1 hashes. Nine randomized paired full-data native ARM runs gave 0.28281 s candidate vs 0.26872 s baseline median wall, 1.96427 vs 1.85459 s median CPU, and peak native process RSS 534,986,752 vs 536,002,560 B. All hashes matched. On this shared host the candidate was slower and is not selected; this is not an x86 or official cgroup result. See `report.json`; no Mac Docker was used.

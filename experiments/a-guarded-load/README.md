@@ -1,0 +1,5 @@
+# Track A unchecked load screen (not selected)
+
+This isolated exploratory variant removes the release-mode bound assertion from the existing unaligned 8-byte read and uses unchecked indexed reads for timestamp digits, relying on the valid-record grammar and the 4 KiB mapping after EOF. It adds unsafe assumptions and has not received the independent proof, invalid-input or protected-page review needed for use; the baseline's checks remain selected. Both Linux sources are retained; no selected code changed.
+
+Eleven randomized native shared-macOS ARM full-seed pairs at 12 workers after warmup gave baseline/candidate median wall 0.066649/0.067900 s and CPU 0.210734/0.216572 s. All full hashes passed including warmups. The macOS test copy changed only MAP_ANONYMOUS 0x20 to Darwin 0x1000. These are shared-host, nonofficial results, not x86 or cgroup evidence. Since the candidate regressed in this screen and adds unsafe assumptions, it was not selected and no further target testing is suggested. No Mac Docker was used.

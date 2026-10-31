@@ -1,0 +1,5 @@
+# C SWAR money parser (not selected)
+
+The experimental candidate parses up to five integer amount digits in a guarded eight-byte SWAR load, applies the required two fractional digits, and uses the original scalar parser as fallback. It relies on the exact official §2.2 amount grammar and terminated records. It has not been independently reviewed or tested beyond the full seed hash; the load checks eight readable bytes, but for a five-digit integer it also assumes the mandated following record terminator exists. Strengthen and test all boundary cases before considering it. Selected source is unchanged.
+
+Fifteen randomized native ARM pairs after warmup matched all 32 full-seed outputs. Candidate/baseline median wall was 0.33084/0.34766 s, CPU 1.08840/1.05948 s, under heavy contention; samples are in `arm-report.json`. The small, conflicting changes show no reliable gain, do not establish x86 performance or an official score, and do not justify further prioritization. No Mac Docker was run.

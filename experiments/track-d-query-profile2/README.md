@@ -1,0 +1,7 @@
+# Query and radix work counters (diagnostic only)
+
+`baseline.rs` is exact restored D baseline 451429c (source SHA-256 `1022f4d9c9956b17fd054e96a26d09551eff61936a851edf88505e12e2b1946c`). `profile.rs` inserts per-worker counters, then prints them after processing; it does not change the search logic. The source and stats are from an instrumented native ARM run; they are not reliable runtime timings or x86/official claims. No datasets or answers are included.
+
+The separately generated full seed-1 output matched SHA-256 `a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e`. One run (`stats.txt`) over 2,000 queries counted 20,976,116 reach attempts, 8,655,938 successful updates, 5,041 meeting updates, 7,573,952 popped entries, 450,080 stale pops, 8,065,647 touched slots cleared, 1,821,233 radix redistributions and 32,526,226 entries moved by redistribution. Counts can vary with query-to-worker scheduling and tie ordering; instrumentation changes the workload. `stats2.txt` additionally buckets the side's heap size at pop by floor(log2(size)), with final bucket for size ≥2048. No Mac Docker was used.
+
+`stats3.txt` additionally groups redistributed buckets by floor(log2(length)): 25,292,632 of 32,526,226 moved entries occurred in buckets of length at least 16 and 17,269,422 in buckets of length at least 64. These counts motivate profiling but do not alone show an optimization or speedup.
