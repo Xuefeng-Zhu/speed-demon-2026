@@ -14,11 +14,11 @@ The original full-sort/line-reader baseline is preserved at `track-a-agent/main.
 
 Final code passed the tiny published hash and matched the official reference on sample seed 999. It also passed the synthetic differential tests described above. The parser keeps partial lines between reads and handles empty input; percentile selection retains exact nearest ranks.
 
-From the workspace root, rebuild the preserved baseline and final candidate with the same local compiler and run a paired, alternating comparison:
+This historical comparison used C++ candidates; the final C++ source is preserved at `experiments/prev-candidates/track-a/main.cpp`. From the workspace root, rebuild the preserved baseline and final candidate with the same local compiler and run a paired, alternating comparison:
 
 ```sh
 c++ -O3 -std=c++17 -o /tmp/track-a-baseline track-a-agent/main.cpp
-c++ -O3 -std=c++17 -o /tmp/track-a-final track-a/main.cpp
+c++ -O3 -std=c++17 -o /tmp/track-a-final experiments/prev-candidates/track-a/main.cpp
 python3 official/generators/a_ingest.py --seed 1 --scale full --out /tmp/speed-demon-a-full
 python3 - <<'PYBENCH'
 import hashlib, subprocess, time
