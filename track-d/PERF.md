@@ -178,3 +178,13 @@ Round-3 trial (cand1): renumbering writes renumbered rows directly (one atomic r
 ## Round 3: coarse radix keys (2026-10-31)
 
 The speed-opt rewrite had dropped coarse buckets. Both search queues are now keyed by `distance >> 6` while storing exact distances; a popped node is expanded with its current distance unless that distance lies in an earlier bucket, and the stop test uses bucket starts as lower bounds. A sandbox phase profile of the previous source (8 cores) showed parse 30 ms, renumber 30 ms, relabel 24 ms and queries 103 ms. On the same sandbox, 21 alternating full-seed runs measured 183.5 ms median against 199.1 ms for `dddc0ea`; the full hash, random/exhaustive/boundary/extreme oracles and a new same-bucket stress passed. Sandbox times are not board results. Details and the previous source: `experiments/track-d-coarse-radix33/`. Board run pending.
+
+## Round 3: prefetch in the renumbering BFS (2026-10-31, reverted)
+
+The clustering BFS prefetched the row bounds, rows and head claim slots of nodes queued 16, 8 and 4 places ahead (`dbab6be`). In 25 alternating sandbox runs the median went from 185.8 ms to 178.7 ms.
+
+Board run `run-da3a65ce91e2` at `dbab6be` (pushed 15:19 PDT, scored before 15:34 PDT): T=0.1682 s, S=410, K=23.72; M was not recorded. That commit also contains round-3 cand1 (`1609923`) and coarse radix keys (`963a9e5`), neither of which has its own board run, so the gain over the previous recorded run (`run-d1fea4ee2487` at `ccbfbc0`: T=0.185344 s, S=390, K=22.63) cannot be split between the three changes. The same batch scored A `run-33ec536bde8b` (K 39.20), B `run-17bdd855bde2` (K 22.79) and C `run-24986b362ab9` (K 28.76). The BFS prefetch was reverted in `b607e9e`; no reason was recorded. Its source and experiment folder remain in `dbab6be`.
+
+## Round 3: prefetch the next pops in the query loop (2026-10-31)
+
+Applied on top of `b607e9e` (coarse keys, no BFS prefetch). After each pop the search prefetches the row bounds of the second-next entry and the adjacency row of the next entry in the same side's minimum bucket. In one batch of 25 alternating sandbox runs on full seed 1: `b607e9e` 188.0 ms median, this change 175.3 ms, and this change plus the reverted BFS prefetch 170.6 ms. The full hash and all oracle suites passed. A third stage that also prefetched the neighbours' distance slots was slower. Dynamic parse chunks and `MAP_POPULATE` were neutral or slower and were not kept. Sandbox times are not board results. Details: `experiments/track-d-query-prefetch37/`. Board run pending.

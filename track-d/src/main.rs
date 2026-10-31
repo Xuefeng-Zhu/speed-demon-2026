@@ -78,6 +78,14 @@ fn num(text: &[u8], p: &mut usize) -> u32 {
     v
 }
 
+/// Asks the CPU to start loading `x[i]` into cache, if `i` is in range.
+fn prefetch<T>(x: &[T], i: usize) {
+    #[cfg(target_arch = "x86_64")]
+    if let Some(p) = x.get(i) {
+        unsafe { std::arch::x86_64::_mm_prefetch::<3>(p as *const T as *const i8) };
+    }
+}
+
 /// Calls `f(u, v, w)` for every `u v w` line in `text[p..end]`.
 fn each_edge(text: &[u8], mut p: usize, end: usize, mut f: impl FnMut(u32, u32, u32)) {
     while p < end {
@@ -404,6 +412,15 @@ fn distance<D: Dist>(sides: &mut [Side<D>; 2], net: &Net, s: u32, t: u32) -> (u6
         let (me, other) = if side == 0 { (x, &*y) } else { (y, &*x) };
         let (key, u) = ([a, b][side], me.heap.buckets[0].pop().unwrap().1);
         me.size -= 1;
+        // The next two nodes this side pops: start loading their rows.
+        let q = &me.heap.buckets[0];
+        if let Some(&(_, next)) = q.len().checked_sub(2).map(|i| &q[i]) {
+            prefetch(&net.graphs[side].first, next as usize);
+        }
+        if let Some(&(_, next)) = q.last() {
+            let g = &net.graphs[side];
+            prefetch(&g.adj, g.first[next as usize] as usize);
+        }
         let d = me.get(u);
         if d >> SHIFT < key {
             continue; // stale: already expanded from an earlier bucket
