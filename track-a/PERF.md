@@ -137,3 +137,7 @@ Official practice `5e32c97`, bounded CRC candidate: run `run-930371a77434`, all 
 The same CRC source passed all gates again at `a4e80b3`, `run-7304769756fc`: T=0.042049 s, M=38,752,256 bytes, S=434, K=28.943010. Its two official batches (0.039919 and 0.042049 s) overlap previous compact baseline batches (0.039555, 0.040773, 0.042319 s), with no established target speed improvement and higher S. The simpler exact prior source is restored for a further single-change target comparison; CRC is retained as an experiment, not discarded evidence. See `experiments/board-a4e80.json`.
 
 The restored original hash passed the official practice at `c0a5426`, `run-9eea61ec9051`, T=0.041768 s, M=38,920,192 bytes, S=303, K=30.621832. This is within the range of both previous baseline and CRC batches; these independent batches do not establish a wall-time difference. Retain the simpler baseline while CRC remains available for future target testing. Full run IDs are in `experiments/board-c0a5426.json`.
+
+## Board trial: speed-opt source (2026-10-31)
+
+`src/main.rs` replaced with the shorter `speed-opt` version (Dockerfile and config unchanged); hash verified at 1, 2 and 12 threads on full seed 1. Compare against the prior best `2d67ab5` (`run-142f6588f59d`, T=0.038664 s, M=32.2 MB, S=303, K=33.07) and revert if K is lower.
