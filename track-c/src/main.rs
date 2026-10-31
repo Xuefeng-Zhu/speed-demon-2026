@@ -5,6 +5,7 @@ use std::{env, fs, os::fd::AsRawFd, sync::Mutex, thread};
 
 extern "C" {
     fn mmap(addr: *mut u8, len: usize, prot: i32, flags: i32, fd: i32, off: i64) -> *mut u8;
+    fn memchr(s: *const u8, c: i32, n: usize) -> *const u8;
 }
 
 /// Maps a file read-only (PROT_READ, MAP_PRIVATE): its pages stay in the shared page cache.
@@ -95,14 +96,15 @@ fn number(b: &[u8], p: &mut usize) -> i64 {
     [v, -v][neg as usize]
 }
 
-/// The first record start at or after `p`, given the number of quotes before `p`: the byte
-/// after the first LF outside quotes, i.e. with an even number of quotes before it.
-fn sync(b: &[u8], mut p: usize, mut quotes: usize) -> usize {
-    while p < b.len() && (b[p] != b'\n' || quotes % 2 == 1) {
-        quotes += (b[p] == b'"') as usize;
-        p += 1;
+/// Section 2.2 guarantees that every CR begins an outside-quote CRLF terminator.
+fn sync_crlf(b: &[u8], p: usize) -> usize {
+    if p >= b.len() { return b.len(); }
+    let found = unsafe { memchr(b.as_ptr().add(p), b'\r' as i32, b.len() - p) };
+    if found.is_null() { b.len() } else {
+        let at = unsafe { found.offset_from(b.as_ptr()) as usize };
+        debug_assert_eq!(b.get(at + 1), Some(&b'\n'));
+        (at + 2).min(b.len())
     }
-    b.len().min(p + 1)
 }
 
 /// One output line: count id_sum amount_sum amount_min amount_max names_distinct name_bytes note_bytes.
@@ -144,18 +146,15 @@ fn main() {
     let unmatched = index.len();
     index.insert(b"_UNMATCHED", unmatched as u16);
     let words = (unmatched + 1).div_ceil(64);
-    // Split the records after the header into one chunk per thread. Counting quotes in
-    // parallel tells each chunk's quote parity, so each thread can move its start to a
-    // true record boundary: an LF outside quotes.
+    // Section 2.2 permits CRLF synchronization: every CR marks a record boundary,
+    // including when a note contains bare LF. Repeated cuts may map to the same end.
     let start = recs.iter().position(|&c| c == b'\n').unwrap() + 1;
     let n = thread::available_parallelism().map_or(1, |n| n.get());
     let cut = |t: usize| start + (recs.len() - start) * t / n;
-    let chunk = |t: usize| &recs[cut(t)..cut(t + 1)];
-    let quotes = par(n, |t| chunk(t).iter().filter(|&&c| c == b'"').count());
     let bound = |t: usize| match t {
         0 => start,
         _ if t == n => recs.len(),
-        _ => sync(recs, cut(t), quotes[..t].iter().sum()),
+        _ => sync_crlf(recs, cut(t)),
     };
     let names: Vec<Shard> = (0..1024).map(|_| Shard::default()).collect();
     let aggs = par(n, |t| {
