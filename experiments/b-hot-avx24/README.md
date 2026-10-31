@@ -7,3 +7,5 @@ Independent static review found no concrete AVX equality or bounds defect; its n
 Actual x86 AVX2 execution, protected pages, PGO interaction, performance and official cgroup memory are untested. Two vector comparisons per short token may cost more than the saved hash lookup, so do not promote without serialized x86 testing and target practice. Earlier unrelated timing contamination does not affect these correctness checks. No Docker was run on the Mac.
 
 A secret-free archive with baseline, candidate, verification scripts and x86 reproduction commands is in Library as `libfile_8f236ddc9f1c8191bdbe26663b6439af`. Independently downloaded archive SHA-256 `444c51d7886c98ed381d42a3931fb852497a35bed7b8c8ec73f9aa5fd047c15a` matches the local archive.
+
+Parent-run x86 dot VM paired full-seed tests were near tied in the first batch and 6% slower in the second, with higher CPU. Across D coarse, C prefetch and B hot-key, 216 full hashes and alternate/oracle/zero-cycle/fallback/actual SIMD guard checks passed. This native result is not official cgroup scoring; keep the existing selected B.
