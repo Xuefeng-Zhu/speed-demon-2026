@@ -1,0 +1,126 @@
+{
+  "note": "native ARM; instrumentation perturbs timings; RSS is process, not cgroup",
+  "source_sha256": "671c639be3400209e83e080dfb54947affd30ca71dc34ec17804d24d70292d9c",
+  "results": [
+    {
+      "pair": -1,
+      "label": "baseline",
+      "wall_s": 0.6568464999945718,
+      "cpu_s": 1.875287,
+      "maxrss_native": 442023936,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e",
+      "stderr": ""
+    },
+    {
+      "pair": -1,
+      "label": "profile",
+      "wall_s": 0.573022625001613,
+      "cpu_s": 1.9926709999999999,
+      "maxrss_native": 557547520,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e",
+      "stderr": "D_PROFILE parse_bucket_ms=39.383\nD_PROFILE csr_forward_ms=8.211\nD_PROFILE csr_backward_ms=7.525\nD_PROFILE load_total_ms=55.371 threads=8\nD_WORKER queries=240 reaches=2260351 improves=938290 pops=813344 stale=47217 cutoffs=0 exhausted=0 touched=875091 fallback=0 fallback_ms=0.000 worker_ms=213.739 heap_push=938290 heap_redist=206872 heap_scan=3492214 heap_move=3492214 max_heap=2296\nD_WORKER queries=224 reaches=2855285 improves=1166621 pops=1035530 stale=63217 cutoffs=0 exhausted=0 touched=1086023 fallback=0 fallback_ms=0.000 worker_ms=213.916 heap_push=1166621 heap_redist=229217 heap_scan=4457579 heap_move=4457579 max_heap=2606\nD_WORKER queries=206 reaches=2642928 improves=1086832 pops=954821 stale=57180 cutoffs=3 exhausted=0 touched=1012351 fallback=2 fallback_ms=2.425 worker_ms=214.058 heap_push=1086832 heap_redist=219040 heap_scan=4112006 heap_move=4112006 max_heap=2628\nD_WORKER queries=312 reaches=2638668 improves=1094998 pops=950710 stale=55955 cutoffs=2 exhausted=0 touched=1020707 fallback=2 fallback_ms=2.784 worker_ms=215.113 heap_push=1094998 heap_redist=247673 heap_scan=4068834 heap_move=4068834 max_heap=2721\nD_WORKER queries=210 reaches=2642819 improves=1087606 pops=955868 stale=57412 cutoffs=0 exhausted=0 touched=1012898 fallback=0 fallback_ms=0.000 worker_ms=215.400 heap_push=1087606 heap_redist=211351 heap_scan=4110779 heap_move=4110779 max_heap=2518\nD_WORKER queries=298 reaches=2685629 improves=1112167 pops=968056 stale=56329 cutoffs=2 exhausted=0 touched=1037353 fallback=1 fallback_ms=2.316 worker_ms=217.412 heap_push=1112167 heap_redist=238927 heap_scan=4152572 heap_move=4152572 max_heap=2497\nD_WORKER queries=226 reaches=2594820 improves=1069810 pops=936909 stale=55863 cutoffs=2 exhausted=0 touched=996651 fallback=1 fallback_ms=9.063 worker_ms=219.586 heap_push=1069810 heap_redist=225847 heap_scan=4024832 heap_move=4024832 max_heap=2430\nD_WORKER queries=284 reaches=2655115 improves=1098555 pops=958180 stale=56533 cutoffs=3 exhausted=0 touched=1024057 fallback=2 fallback_ms=2.368 worker_ms=220.392 heap_push=1098555 heap_redist=242272 heap_scan=4103570 heap_move=4103570 max_heap=2355\nD_PROFILE query_ms=220.531\nD_PROFILE total_ms=276.436\n"
+    },
+    {
+      "pair": 0,
+      "label": "baseline",
+      "wall_s": 0.2668180839973502,
+      "cpu_s": 1.797629,
+      "maxrss_native": 584663040,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e",
+      "stderr": ""
+    },
+    {
+      "pair": 0,
+      "label": "profile",
+      "wall_s": 0.29067704099725233,
+      "cpu_s": 1.960025,
+      "maxrss_native": 557563904,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e",
+      "stderr": "D_PROFILE parse_bucket_ms=30.660\nD_PROFILE csr_forward_ms=7.020\nD_PROFILE csr_backward_ms=7.051\nD_PROFILE load_total_ms=44.875 threads=8\nD_WORKER queries=272 reaches=2611727 improves=1080466 pops=941773 stale=55491 cutoffs=2 exhausted=0 touched=1007211 fallback=1 fallback_ms=2.543 worker_ms=225.779 heap_push=1080466 heap_redist=243643 heap_scan=4037528 heap_move=4037528 max_heap=2301\nD_WORKER queries=293 reaches=2749649 improves=1141233 pops=989984 stale=57801 cutoffs=0 exhausted=0 touched=1064121 fallback=0 fallback_ms=0.000 worker_ms=226.179 heap_push=1141233 heap_redist=251553 heap_scan=4249422 heap_move=4249422 max_heap=2628\nD_WORKER queries=247 reaches=2532162 improves=1043736 pops=915000 stale=54649 cutoffs=4 exhausted=0 touched=972654 fallback=3 fallback_ms=4.823 worker_ms=226.370 heap_push=1043736 heap_redist=225666 heap_scan=3929242 heap_move=3929242 max_heap=2355\nD_WORKER queries=192 reaches=2468089 improves=1015273 pops=891829 stale=53531 cutoffs=0 exhausted=0 touched=945441 fallback=0 fallback_ms=0.000 worker_ms=226.994 heap_push=1015273 heap_redist=196921 heap_scan=3837950 heap_move=3837950 max_heap=2606\nD_WORKER queries=282 reaches=2599032 improves=1074745 pops=938171 stale=55676 cutoffs=3 exhausted=0 touched=1001654 fallback=2 fallback_ms=2.458 worker_ms=227.151 heap_push=1074745 heap_redist=238935 heap_scan=4025726 heap_move=4025726 max_heap=2264\nD_WORKER queries=250 reaches=2913344 improves=1200313 pops=1052800 stale=62525 cutoffs=0 exhausted=0 touched=1118395 fallback=0 fallback_ms=0.000 worker_ms=229.516 heap_push=1200313 heap_redist=242924 heap_scan=4520549 heap_move=4520549 max_heap=2464\nD_WORKER queries=202 reaches=2657401 improves=1089555 pops=962210 stale=58019 cutoffs=2 exhausted=0 touched=1014696 fallback=1 fallback_ms=3.238 worker_ms=232.720 heap_push=1089555 heap_redist=205086 heap_scan=4139153 heap_move=4139153 max_heap=2721\nD_WORKER queries=262 reaches=2444211 improves=1009558 pops=881651 stale=52014 cutoffs=1 exhausted=0 touched=940959 fallback=1 fallback_ms=2.291 worker_ms=233.039 heap_push=1009558 heap_redist=216471 heap_scan=3782816 heap_move=3782816 max_heap=2430\nD_PROFILE query_ms=233.177\nD_PROFILE total_ms=279.265\n"
+    },
+    {
+      "pair": 1,
+      "label": "baseline",
+      "wall_s": 0.25186879099783255,
+      "cpu_s": 1.802659,
+      "maxrss_native": 585580544,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e",
+      "stderr": ""
+    },
+    {
+      "pair": 1,
+      "label": "profile",
+      "wall_s": 0.2634639160023653,
+      "cpu_s": 1.913695,
+      "maxrss_native": 557596672,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e",
+      "stderr": "D_PROFILE parse_bucket_ms=29.346\nD_PROFILE csr_forward_ms=7.130\nD_PROFILE csr_backward_ms=7.258\nD_PROFILE load_total_ms=43.883 threads=8\nD_WORKER queries=261 reaches=2628325 improves=1084967 pops=948922 stale=56456 cutoffs=6 exhausted=0 touched=1010962 fallback=3 fallback_ms=4.404 worker_ms=202.290 heap_push=1084967 heap_redist=228779 heap_scan=4077064 heap_move=4077064 max_heap=2606\nD_WORKER queries=277 reaches=2835920 improves=1171131 pops=1023579 stale=60555 cutoffs=0 exhausted=0 touched=1091290 fallback=0 fallback_ms=0.000 worker_ms=202.687 heap_push=1171131 heap_redist=241775 heap_scan=4396690 heap_move=4396690 max_heap=2628\nD_WORKER queries=230 reaches=2445107 improves=1014009 pops=880456 stale=51425 cutoffs=2 exhausted=0 touched=945541 fallback=1 fallback_ms=2.452 worker_ms=202.988 heap_push=1014009 heap_redist=227390 heap_scan=3781358 heap_move=3781358 max_heap=2496\nD_WORKER queries=237 reaches=2661431 improves=1097376 pops=961448 stale=57385 cutoffs=2 exhausted=0 touched=1022288 fallback=2 fallback_ms=3.849 worker_ms=203.216 heap_push=1097376 heap_redist=229141 heap_scan=4126917 heap_move=4126917 max_heap=2721\nD_WORKER queries=273 reaches=2589705 improves=1069143 pops=935932 stale=56087 cutoffs=1 exhausted=0 touched=995823 fallback=1 fallback_ms=2.735 worker_ms=203.715 heap_push=1069143 heap_redist=232559 heap_scan=4016904 heap_move=4016904 max_heap=2002\nD_WORKER queries=256 reaches=2687725 improves=1106967 pops=971196 stale=58056 cutoffs=0 exhausted=0 touched=1031291 fallback=0 fallback_ms=0.000 worker_ms=206.595 heap_push=1106967 heap_redist=226584 heap_scan=4167913 heap_move=4167913 max_heap=2301\nD_WORKER queries=232 reaches=2646767 improves=1091977 pops=955454 stale=56353 cutoffs=1 exhausted=0 touched=1018003 fallback=1 fallback_ms=2.421 worker_ms=207.112 heap_push=1091977 heap_redist=229264 heap_scan=4103111 heap_move=4103111 max_heap=2497\nD_WORKER queries=234 reaches=2480635 improves=1019309 pops=896431 stale=53389 cutoffs=0 exhausted=0 touched=949933 fallback=0 fallback_ms=0.000 worker_ms=209.756 heap_push=1019309 heap_redist=205707 heap_scan=3852429 heap_move=3852429 max_heap=2518\nD_PROFILE query_ms=209.996\nD_PROFILE total_ms=254.360\n"
+    },
+    {
+      "pair": 2,
+      "label": "profile",
+      "wall_s": 0.26222491700173123,
+      "cpu_s": 1.917706,
+      "maxrss_native": 585400320,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e",
+      "stderr": "D_PROFILE parse_bucket_ms=31.911\nD_PROFILE csr_forward_ms=6.998\nD_PROFILE csr_backward_ms=6.474\nD_PROFILE load_total_ms=45.525 threads=8\nD_WORKER queries=255 reaches=2485854 improves=1029982 pops=896281 stale=52841 cutoffs=1 exhausted=0 touched=960309 fallback=1 fallback_ms=2.313 worker_ms=201.148 heap_push=1029982 heap_redist=225876 heap_scan=3843063 heap_move=3843063 max_heap=2518\nD_WORKER queries=177 reaches=2636970 improves=1077372 pops=956280 stale=58029 cutoffs=0 exhausted=0 touched=1003063 fallback=0 fallback_ms=0.000 worker_ms=201.290 heap_push=1077372 heap_redist=197381 heap_scan=4118322 heap_move=4118322 max_heap=2606\nD_WORKER queries=302 reaches=2681930 improves=1114130 pops=964386 stale=56103 cutoffs=2 exhausted=0 touched=1039134 fallback=2 fallback_ms=2.778 worker_ms=201.314 heap_push=1114130 heap_redist=263242 heap_scan=4132856 heap_move=4132856 max_heap=2083\nD_WORKER queries=300 reaches=2763160 improves=1146466 pops=995120 stale=58185 cutoffs=4 exhausted=0 touched=1068649 fallback=2 fallback_ms=2.345 worker_ms=201.701 heap_push=1146466 heap_redist=255521 heap_scan=4268612 heap_move=4268612 max_heap=2628\nD_WORKER queries=189 reaches=2536503 improves=1038568 pops=918676 stale=55462 cutoffs=2 exhausted=0 touched=967226 fallback=1 fallback_ms=3.156 worker_ms=203.103 heap_push=1038568 heap_redist=189408 heap_scan=3956452 heap_move=3956452 max_heap=2497\nD_WORKER queries=354 reaches=2761987 improves=1151202 pops=993431 stale=57667 cutoffs=0 exhausted=0 touched=1073709 fallback=0 fallback_ms=0.000 worker_ms=205.264 heap_push=1151202 heap_redist=274326 heap_scan=4250521 heap_move=4250521 max_heap=2080\nD_WORKER queries=204 reaches=2413268 improves=992751 pops=872577 stale=52093 cutoffs=1 exhausted=0 touched=924785 fallback=1 fallback_ms=3.807 worker_ms=206.414 heap_push=992751 heap_redist=197594 heap_scan=3750362 heap_move=3750362 max_heap=2721\nD_WORKER queries=219 reaches=2695943 improves=1104408 pops=976667 stale=59326 cutoffs=2 exhausted=0 touched=1028256 fallback=1 fallback_ms=2.286 worker_ms=206.676 heap_push=1104408 heap_redist=217851 heap_scan=4202198 heap_move=4202198 max_heap=2430\nD_PROFILE query_ms=206.892\nD_PROFILE total_ms=252.884\n"
+    },
+    {
+      "pair": 2,
+      "label": "baseline",
+      "wall_s": 0.25166929099941626,
+      "cpu_s": 1.837302,
+      "maxrss_native": 584712192,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e",
+      "stderr": ""
+    },
+    {
+      "pair": 3,
+      "label": "baseline",
+      "wall_s": 0.25755316699360264,
+      "cpu_s": 1.8271719999999998,
+      "maxrss_native": 555515904,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e",
+      "stderr": ""
+    },
+    {
+      "pair": 3,
+      "label": "profile",
+      "wall_s": 0.2650915839985828,
+      "cpu_s": 1.901811,
+      "maxrss_native": 527810560,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e",
+      "stderr": "D_PROFILE parse_bucket_ms=31.451\nD_PROFILE csr_forward_ms=6.479\nD_PROFILE csr_backward_ms=7.399\nD_PROFILE load_total_ms=45.491 threads=8\nD_WORKER queries=236 reaches=2487679 improves=1027826 pops=897960 stale=53247 cutoffs=0 exhausted=0 touched=957794 fallback=0 fallback_ms=0.000 worker_ms=203.512 heap_push=1027826 heap_redist=220388 heap_scan=3854837 heap_move=3854837 max_heap=2606\nD_WORKER queries=229 reaches=2565005 improves=1052365 pops=928559 stale=55842 cutoffs=1 exhausted=0 touched=980362 fallback=1 fallback_ms=2.318 worker_ms=204.305 heap_push=1052365 heap_redist=211011 heap_scan=3987745 heap_move=3987745 max_heap=2518\nD_WORKER queries=276 reaches=2476281 improves=1029067 pops=891636 stale=52315 cutoffs=2 exhausted=0 touched=959355 fallback=1 fallback_ms=3.757 worker_ms=204.379 heap_push=1029067 heap_redist=229676 heap_scan=3825645 heap_move=3825645 max_heap=2296\nD_WORKER queries=300 reaches=2780492 improves=1151570 pops=1002444 stale=59222 cutoffs=7 exhausted=0 touched=1073231 fallback=5 fallback_ms=2.469 worker_ms=205.692 heap_push=1151570 heap_redist=257697 heap_scan=4297794 heap_move=4297794 max_heap=2301\nD_WORKER queries=203 reaches=2818841 improves=1157933 pops=1019562 stale=60737 cutoffs=0 exhausted=0 touched=1078855 fallback=0 fallback_ms=0.000 worker_ms=206.930 heap_push=1157933 heap_redist=229408 heap_scan=4383836 heap_move=4383836 max_heap=2355\nD_WORKER queries=247 reaches=2612145 improves=1076499 pops=942894 stale=55993 cutoffs=2 exhausted=0 touched=1003105 fallback=1 fallback_ms=3.112 worker_ms=207.185 heap_push=1076499 heap_redist=229578 heap_scan=4052158 heap_move=4052158 max_heap=2628\nD_WORKER queries=241 reaches=2621636 improves=1080893 pops=946983 stale=56207 cutoffs=0 exhausted=0 touched=1007261 fallback=0 fallback_ms=0.000 worker_ms=209.592 heap_push=1080893 heap_redist=217463 heap_scan=4066312 heap_move=4066312 max_heap=2721\nD_WORKER queries=268 reaches=2613536 improves=1078726 pops=943380 stale=56143 cutoffs=0 exhausted=0 touched=1005168 fallback=0 fallback_ms=0.000 worker_ms=210.053 heap_push=1078726 heap_redist=225978 heap_scan=4054059 heap_move=4054059 max_heap=2430\nD_PROFILE query_ms=210.182\nD_PROFILE total_ms=256.128\n"
+    },
+    {
+      "pair": 4,
+      "label": "profile",
+      "wall_s": 0.2644800410052994,
+      "cpu_s": 1.895867,
+      "maxrss_native": 501628928,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e",
+      "stderr": "D_PROFILE parse_bucket_ms=29.829\nD_PROFILE csr_forward_ms=7.132\nD_PROFILE csr_backward_ms=6.917\nD_PROFILE load_total_ms=44.026 threads=8\nD_WORKER queries=282 reaches=2628511 improves=1085935 pops=948482 stale=56588 cutoffs=1 exhausted=0 touched=1011678 fallback=1 fallback_ms=4.734 worker_ms=205.703 heap_push=1085935 heap_redist=233848 heap_scan=4067565 heap_move=4067565 max_heap=2721\nD_WORKER queries=247 reaches=2960676 improves=1215596 pops=1070779 stale=64073 cutoffs=0 exhausted=0 touched=1132592 fallback=0 fallback_ms=0.000 worker_ms=206.365 heap_push=1215596 heap_redist=237582 heap_scan=4605337 heap_move=4605337 max_heap=2628\nD_WORKER queries=239 reaches=2725999 improves=1122264 pops=985256 stale=58518 cutoffs=0 exhausted=0 touched=1045812 fallback=0 fallback_ms=0.000 worker_ms=206.671 heap_push=1122264 heap_redist=225802 heap_scan=4238438 heap_move=4238438 max_heap=2497\nD_WORKER queries=219 reaches=2404639 improves=993423 pops=867966 stale=51238 cutoffs=6 exhausted=0 touched=926089 fallback=4 fallback_ms=2.383 worker_ms=207.330 heap_push=993423 heap_redist=213068 heap_scan=3727337 heap_move=3727337 max_heap=2355\nD_WORKER queries=274 reaches=2499217 improves=1037923 pops=899680 stale=52606 cutoffs=0 exhausted=0 touched=967611 fallback=0 fallback_ms=0.000 worker_ms=208.122 heap_push=1037923 heap_redist=239521 heap_scan=3855046 heap_move=3855046 max_heap=2182\nD_WORKER queries=282 reaches=2767835 improves=1145700 pops=997955 stale=58432 cutoffs=5 exhausted=0 touched=1068352 fallback=3 fallback_ms=2.430 worker_ms=209.260 heap_push=1145700 heap_redist=251470 heap_scan=4275446 heap_move=4275446 max_heap=2280\nD_WORKER queries=232 reaches=2484924 improves=1022833 pops=898726 stale=53971 cutoffs=0 exhausted=0 touched=952692 fallback=0 fallback_ms=0.000 worker_ms=210.657 heap_push=1022833 heap_redist=211825 heap_scan=3861843 heap_move=3861843 max_heap=2345\nD_WORKER queries=225 reaches=2503814 improves=1031205 pops=904574 stale=54280 cutoffs=0 exhausted=0 touched=960305 fallback=0 fallback_ms=0.000 worker_ms=210.904 heap_push=1031205 heap_redist=208083 heap_scan=3891374 heap_move=3891374 max_heap=2606\nD_PROFILE query_ms=211.113\nD_PROFILE total_ms=255.617\n"
+    },
+    {
+      "pair": 4,
+      "label": "baseline",
+      "wall_s": 0.25842529199871933,
+      "cpu_s": 1.820945,
+      "maxrss_native": 528400384,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e",
+      "stderr": ""
+    }
+  ],
+  "summary": {
+    "baseline": {
+      "wall_s": 0.25755316699360264,
+      "cpu_s": 1.820945,
+      "maxrss_native": 584663040
+    },
+    "profile": {
+      "wall_s": 0.2644800410052994,
+      "cpu_s": 1.913695,
+      "maxrss_native": 557563904
+    }
+  }
+}
