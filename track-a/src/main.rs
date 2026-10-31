@@ -2,22 +2,20 @@
 //!
 //! 1. mmap the log and split it into one newline-aligned chunk per thread.
 //! 2. Each thread parses its chunk into packed records (endpoint id, 5xx bit, latency),
-//!    bucketed by hour. A thread's own endpoint table maps to ids from shared maps (sharded by
-//!    hash, to spread lock contention) that keep copies of the names, so no merge is needed and
-//!    the chunk's pages can be dropped.
+//!    bucketed by hour. A thread's own endpoint table caches the dense ids (0, 1, 2, ...) handed
+//!    out by shared maps (sharded by hash, to spread lock contention) that keep copies of the
+//!    names, so no merge is needed and the chunk's pages can be dropped.
 //! 3. The shared names are sorted once, so every endpoint id gets its output rank.
 //! 4. Threads take whole hours from a queue: counting-sort the hour's latencies by endpoint
 //!    rank, select the three nearest-rank percentiles, format the lines, free the records.
 use std::collections::HashMap;
-use std::sync::{mpsc, Mutex};
+use std::sync::{atomic::{AtomicU32, Ordering}, mpsc, Mutex};
 use std::{env, fs, io::Write, os::unix::io::AsRawFd, thread};
 
 /// The spec fixes the span: 72 hours from 18:00 UTC on 30 October 2026.
 const HOURS: usize = 72;
 const ONES: u64 = 0x0101_0101_0101_0101;
 const MIX: u64 = 0x9E37_79B9_7F4A_7C15;
-/// Shared endpoint id = id within its shard << 4 | shard.
-const SHARDS: usize = 16;
 
 extern "C" {
     fn mmap(addr: *mut u8, len: usize, prot: i32, flags: i32, fd: i32, off: i64) -> *mut u8;
@@ -57,17 +55,36 @@ fn find_byte(w: u64, b: u8) -> usize {
     (zero_bytes(w ^ (ONES * b as u64)).trailing_zeros() / 8) as usize
 }
 
-/// Whether the `len` bytes at `a` and at `b` are equal, compared a word at a time.
+/// Bit `k` is set iff `a[i + k] == b[j + k]` (`b == None`: iff `a[i + k] == c`), for `k` in 0..64.
+/// Reads 64 bytes at `i` (and `j`). In the file, callers start inside a line (at an endpoint),
+/// so the reads end at most 64 bytes past the last line, within the 4 KiB zero pad of
+/// `map_file`; arena reads stay within its 64-byte zero tail.
 #[inline(always)]
-fn same(d: &[u8], a: usize, b: usize, len: usize) -> bool {
-    let mut i = 0;
-    while i + 8 <= len {
-        if load(d, a + i) != load(d, b + i) {
-            return false;
-        }
-        i += 8;
+fn eq_mask(a: &[u8], i: usize, b: Option<(&[u8], usize)>, c: u8) -> u64 {
+    assert!(i + 64 <= a.len() && b.map_or(true, |(b, j)| j + 64 <= b.len()));
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    // SAFETY: in bounds by the assert; AVX2 is enabled at compile time; loads are unaligned.
+    unsafe {
+        use std::arch::x86_64::*;
+        let load = |d: &[u8], i: usize| _mm256_loadu_si256(d.as_ptr().add(i).cast());
+        let other = |k: usize| b.map_or(_mm256_set1_epi8(c as i8), |(b, j)| load(b, j + k));
+        let half = |k| _mm256_movemask_epi8(_mm256_cmpeq_epi8(load(a, i + k), other(k))) as u32;
+        half(0) as u64 | (half(32) as u64) << 32
     }
-    (load(d, a + i) ^ load(d, b + i)) & ((1 << (8 * (len - i))) - 1) == 0
+    #[cfg(not(all(target_arch = "x86_64", target_feature = "avx2")))]
+    (0..64).fold(0, |m, k| m | ((a[i + k] == b.map_or(c, |(b, j)| b[j + k])) as u64) << k)
+}
+
+/// Hash of the endpoint of `n` bytes at `s`, from its first, middle and last words and length.
+#[inline(always)]
+fn hash(d: &[u8], s: usize, n: usize) -> u64 {
+    let h = if n >= 8 {
+        load(d, s) ^ load(d, s + n / 2 - 4).rotate_left(21) ^ load(d, s + n - 8).rotate_left(42)
+    } else {
+        load(d, s) & ((1 << (8 * n)) - 1)
+    };
+    let h = (h ^ n as u64).wrapping_mul(MIX);
+    (h ^ h >> 29).wrapping_mul(MIX)
 }
 
 /// Parses the decimal latency starting at `q`; returns it and the start of the next line.
@@ -93,49 +110,80 @@ fn parse_latency(d: &[u8], q: usize) -> (u64, usize) {
 }
 
 #[derive(Default)]
-/// Open-addressing table from endpoint bytes (byte ranges of the mapped file) to dense ids.
+/// Open-addressing table from endpoint bytes to shared ids. Each entry lives in one compact
+/// arena: hash (8 bytes), length and shared id (4 bytes each), then the name padded to 8 bytes,
+/// so a probe touches one or two adjacent cache lines. The arena ends with 64 zero bytes so
+/// `eq_mask` may read past the last name.
 struct Table {
-    slots: Vec<u32>,
-    names: Vec<(u64, usize, usize)>, // (hash, start, end)
+    slots: Vec<usize>,   // 1 + offset of the entry in `arena`, or 0 if empty
+    entries: Vec<usize>, // entry offsets, for regrowing
+    arena: Vec<u8>,
 }
 
 impl Table {
-    /// Returns the id of endpoint `d[s..e]` (hash `h`), adding it if new.
-    fn find(&mut self, d: &[u8], h: u64, s: usize, e: usize) -> usize {
-        if self.names.len() * 2 >= self.slots.len() {
-            // Grow and reinsert in id order, so ids stay the same.
-            self.slots = vec![0; (self.slots.len() * 2).max(1 << 12)];
-            for (h, s, e) in std::mem::take(&mut self.names) {
-                self.find(d, h, s, e);
-            }
+    /// Returns the shared id of endpoint `d[s..e]` (hash `h`), asking `new` for it if unseen.
+    #[inline(always)]
+    fn find(&mut self, d: &[u8], h: u64, s: usize, e: usize, new: impl FnOnce() -> u32) -> u32 {
+        if self.entries.len() * 2 >= self.slots.len() {
+            self.grow();
         }
-        let mask = self.slots.len() - 1;
+        let (mask, n) = (self.slots.len() - 1, e - s);
         let mut i = (h >> 40) as usize & mask;
         while self.slots[i] != 0 {
-            let id = self.slots[i] as usize - 1;
-            let (nh, ns, ne) = self.names[id];
-            if nh == h && ne - ns == e - s && same(d, ns, s, e - s) {
-                return id;
+            let at = self.slots[i] - 1;
+            let (nh, meta) = (load(&self.arena, at), load(&self.arena, at + 8));
+            if nh == h
+                && meta as u32 as usize == n
+                && if n < 64 {
+                    !eq_mask(&self.arena, at + 16, Some((d, s)), 0) & ((1 << n) - 1) == 0
+                } else {
+                    self.arena[at + 16..at + 16 + n] == d[s..e]
+                }
+            {
+                return (meta >> 32) as u32;
             }
             i = (i + 1) & mask;
         }
-        self.names.push((h, s, e));
-        self.slots[i] = self.names.len() as u32;
-        self.names.len() - 1
+        let id = new();
+        let at = self.arena.len().saturating_sub(64);
+        self.arena.truncate(at);
+        self.arena.extend_from_slice(&h.to_le_bytes());
+        self.arena.extend_from_slice(&(n as u32).to_le_bytes());
+        self.arena.extend_from_slice(&id.to_le_bytes());
+        self.arena.extend_from_slice(&d[s..e]);
+        self.arena.resize((self.arena.len() + 7) / 8 * 8 + 64, 0);
+        self.entries.push(at);
+        self.slots[i] = at + 1;
+        id
+    }
+
+    #[cold]
+    fn grow(&mut self) {
+        self.slots = vec![0; (self.slots.len() * 2).max(1 << 12)];
+        let mask = self.slots.len() - 1;
+        for &at in &self.entries {
+            let mut i = (load(&self.arena, at) >> 40) as usize & mask;
+            while self.slots[i] != 0 {
+                i = (i + 1) & mask;
+            }
+            self.slots[i] = at + 1;
+        }
     }
 }
 
-/// One of the `SHARDS` maps shared by all threads, from (copies of) endpoint names to ids.
+/// One of 16 maps shared by all threads (sharded by hash, to spread lock contention), from
+/// (copies of) endpoint names to dense ids 0, 1, 2, ... handed out by one atomic counter.
 type Shared = Mutex<HashMap<Vec<u8>, u32>>;
+const SHARDS: usize = 16;
 
 /// One chunk's records of one hour: `id << 21 | is_5xx << 20 | latency`, or `u32::MAX` for the
 /// next escaped record `id << 33 | is_5xx << 32 | latency`.
 type Records = (Vec<u32>, Vec<u64>);
 
 /// Parses the lines in `d[i..end]` into records per hour, with ids from the shared tables.
-fn parse(d: &[u8], mut i: usize, end: usize, shared: &[Shared]) -> Vec<Records> {
+fn parse(d: &[u8], mut i: usize, end: usize, shared: &[Shared], next_id: &AtomicU32) -> Vec<Records> {
     let page = i & !4095;
-    let (mut table, mut ids) = (Table::default(), Vec::new()); // local id -> shared id
+    let mut table = Table::default();
     let mut hours = vec![(Vec::new(), Vec::new()); HOURS];
     while i < end {
         let digit = |k: usize| (d[i + k] - b'0') as usize;
@@ -143,27 +191,19 @@ fn parse(d: &[u8], mut i: usize, end: usize, shared: &[Shared]) -> Vec<Records> 
         let day = digit(8) * 10 + digit(9) + 31 * digit(6) - 30;
         let hour = day * 24 + digit(11) * 10 + digit(12) - 18;
         let s = i + 29 + find_byte(load(d, i + 28), b' ');
-        // Find the space after the endpoint a word at a time, hashing the words on the way.
-        let (mut e, mut h) = (s, 0u64);
-        loop {
-            let w = load(d, e);
-            let k = find_byte(w, b' ');
-            if k < 8 {
-                h = (h ^ (w & ((1 << (8 * k)) - 1)) ^ k as u64).wrapping_mul(MIX);
-                e += k;
-                break;
+        // The space after the endpoint: among the next 64 bytes, else a word at a time.
+        let mut e = s + eq_mask(d, s, None, b' ').trailing_zeros() as usize;
+        if e == s + 64 {
+            while find_byte(load(d, e), b' ') == 8 {
+                e += 8;
             }
-            h = (h ^ w).wrapping_mul(MIX);
-            e += 8;
+            e += find_byte(load(d, e), b' ');
         }
-        let local = table.find(d, h, s, e);
-        if local == ids.len() {
-            let k = (h >> 60) as usize; // the top 4 bits pick one of 16 shards
-            let (name, mut map) = (d[s..e].to_vec(), shared[k].lock().unwrap());
-            let n = map.len() as u32;
-            ids.push(*map.entry(name).or_insert(n) << 4 | k as u32);
-        }
-        let id = ids[local] as u64;
+        let h = hash(d, s, e - s);
+        let id = table.find(d, h, s, e, || {
+            let mut map = shared[(h >> 60) as usize].lock().unwrap(); // top 4 bits pick a shard
+            *map.entry(d[s..e].to_vec()).or_insert_with(|| next_id.fetch_add(1, Ordering::Relaxed))
+        }) as u64;
         let (latency, next) = parse_latency(d, e + 5);
         let is_5xx = (d[e + 1] == b'5') as u64;
         let (records, escapes) = &mut hours[hour];
@@ -291,24 +331,25 @@ fn main() {
     }
     cuts.push(len);
     let shared: Vec<Shared> = (0..SHARDS).map(|_| Mutex::default()).collect();
+    let next_id = AtomicU32::new(0);
     let mut chunks: Vec<Vec<Records>> = thread::scope(|s| {
         let hs: Vec<_> = cuts
             .windows(2)
-            .map(|w| s.spawn(|| parse(d, w[0], w[1], &shared)))
+            .map(|w| s.spawn(|| parse(d, w[0], w[1], &shared, &next_id)))
             .collect();
         hs.into_iter().map(|h| h.join().unwrap()).collect()
     });
 
     // An endpoint's position in byte order is its output rank.
     let shared: Vec<_> = shared.into_iter().map(|m| m.into_inner().unwrap()).collect();
-    let mut names: Vec<(&[u8], usize)> = Vec::new();
-    for (k, map) in shared.iter().enumerate() {
-        names.extend(map.iter().map(|(name, &id)| (&name[..], (id as usize) << 4 | k)));
+    let mut names: Vec<(&[u8], u32)> = Vec::new();
+    for map in &shared {
+        names.extend(map.iter().map(|(name, &id)| (&name[..], id)));
     }
     names.sort_unstable();
-    let mut rank = vec![0u32; names.iter().map(|&(_, id)| id + 1).max().unwrap_or(0)];
+    let mut rank = vec![0u32; names.len()]; // ids are exactly 0..names.len()
     for (r, &(_, id)) in names.iter().enumerate() {
-        rank[id] = r as u32;
+        rank[id as usize] = r as u32;
     }
     let names: Vec<&[u8]> = names.into_iter().map(|(n, _)| n).collect();
     let jobs: Vec<Vec<Records>> = (0..HOURS)

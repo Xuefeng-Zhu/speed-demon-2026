@@ -74,3 +74,49 @@ Keep a change only if all of the following hold, measured against the immediatel
 
 Rejected candidates are archived under their own `experiments/a-<name>/` directory with the
 variant source, baseline, JSON report and a README.
+
+## Parse candidates
+
+All numbers below are local x86 VM measurements (paired median ratio candidate/baseline over the
+measured rounds, with the candidate's win fraction in brackets), not official scores. Every bench
+output matched the full seed-1 hash. "Kept" sources passed `check.py` and `adversarial.py`.
+
+### Parse breakdown
+
+`parse-time.py` times only the parse phase (spawn to join of the parse threads, 8 threads, 31
+interleaved rounds after 2 warmups) of patched copies of each source; `breakdown.rs` is
+`baseline.rs` with `--cfg mode="..."` switches that skip work (diagnostic only, outputs not
+correct in those modes). Report: `parse-breakdown.json`.
+
+| Variant | What it does | Parse wall median |
+|---|---|---:|
+| `full` | `baseline.rs` | 26.66 ms |
+| `lines` | only hops from newline to newline | 10.56 ms |
+| `scan` | hour, endpoint scan and hash, latency; no table, no record push | 14.97 ms |
+| `notable` | `scan` plus record push; no endpoint table | 18.39 ms |
+| `nopush` | everything except the record push | 22.93 ms |
+| `nocmp` | table probe without the byte compare (hash and length only) | 21.93 ms |
+| `big` | local table pre-sized to 32,768 slots | 27.47 ms |
+| `p1c`, `p3`, `p2`, `p2b` | the candidates below | 25.56, 24.80, 21.75, 22.08 ms |
+
+The endpoint table costs about 8 ms of the 26.7 ms parse (about 4 ms of it the byte compare
+against the endpoint's first occurrence in the mapped file, which the streaming reads keep
+evicting from cache), the record push about 3.5 ms, field scanning about 4.5 ms. A larger table
+is slower (more cache misses), so the fix is a smaller, denser footprint, not fewer collisions.
+
+### Results
+
+| Candidate | Description | 8 threads | 12 threads | Verdict | JSON |
+|---|---|---:|---:|---|---|
+| `p1-dense-ids.rs` | one shared `Mutex<HashMap>` handing out dense ids, shared id stored in the local table entry | 1.1104 (2%) | 1.1479 (2%) | rejected: lock contention while all threads discover the 1,842 endpoints at once | `p1-dense-ids.json` |
+| `p1b-atomic-ids.rs` | 16 shards kept, dense ids from one `AtomicU32` (no id escapes), `ids` vector kept | 1.0067 (49%) | 1.0079 (49%) | rejected: within noise; id escapes are not a cost | `p1b-atomic-ids.json` |
+| `p1c-table-ids.rs` | `p1b` plus the shared id stored in the local table entry (no `ids[local]` load) | 0.9747 (59%), 0.9875 (56%) | 0.9729 (71%), 0.9917 (62%) | not kept alone: second run missed 0.985; folded into `p2b` | `p1c-table-ids.json`, `p1c-table-ids-2.json` |
+| `p3-avx2-endpoint.rs` | `p1c` plus a 64-byte AVX2 space scan, a fixed three-word endpoint hash (first, middle, last word and length) and an AVX2 masked compare for names under 64 bytes | 0.9876 (61%) | 1.0117 (29%) | not kept alone (vs `p1c` in the same run: 0.9906 / 0.9956); folded into `p2b` | `p3-avx2-endpoint.json` |
+| `p2-arena.rs` | `p3` plus names copied into one compact per-thread arena (compare no longer touches the mapped file) | 0.8717 (98%) | 0.8537 (100%) | superseded by `p2b` (same run: 0.8681 / 0.8538) | `p2-arena.json` |
+| `p2b-inline.rs` | `p2` with hash, length and shared id stored inline in the arena entry before the name, so a probe is slot then one arena entry | 0.8514 (97%), 0.8536 (98%) | 0.8414 (95%), 0.8409 (98%) | **kept** (production) | `p2b-inline.json`, `p2b-inline-2.json` |
+
+`p2b` correctness: `check.py` (14 checks), `adversarial.py` (every endpoint length 1 to 300 under
+all methods, equal-cheap-word families, 5,000 and 70,000 distinct endpoints with ids past 2047,
+boundary latencies, at 1, 2, 3, 7 and 12 threads) on the AVX2 build, on a build with a forced
+constant hash (every probe collides; `--quick`), and on a scalar build without
+`target-cpu=x86-64-v3` (fallback `eq_mask`; also full seed-1 hash).
