@@ -20,3 +20,7 @@ python3 experiments/c-nameowned/compare.py --baseline /tmp/c-avx-rebase-base --v
 ```
 
 Repeat paired timing batches. The comparator checks the public full hash every time and records wall, CPU and process RSS; warmed cgroup peak and official scoring are separate. Property/guard `--avx2` tests assert the actual vector path is compiled, while independent/cut tests use x86-64-v3. Tests without the flag exercise the portable fallback.
+
+## Rebased dot VM result
+
+The parent-run paired x86-64 VM batches on this exact pair measured candidate wall 1.1% slower, 27.2% faster and 4.7% faster; CPU was 3.6–11.5% lower and native RSS unchanged. Across this and D chain/A prefix packages, 300 full hashes, 24 alternate references and actual SIMD, guard, collision and graph transformation oracle checks passed. This supersedes the earlier note that the rebased x86 path had not been executed. Shared VM timings are not official scoring-box or cgroup measurements. Selected for an isolated official comparison.

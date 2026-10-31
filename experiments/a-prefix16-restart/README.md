@@ -28,3 +28,7 @@ python3 compare.py --data /path/to/full-a --report /tmp/a-prefix-pairs.json --ru
 ```
 
 `compare.py` compiles the exact baseline and candidate with matching flags, randomizes paired order and checks each full output hash. Native process RSS and shared-VM wall times are not official cgroup measurements. Repeat target timing before an official practice candidate; never rely on the seed-1 distribution for correctness.
+
+## Dot VM x86 comparison
+
+The parent-run shared native x86 VM did not find a stable wall-time winner. Across this, C AVX2 and D chain packages, 300 full hashes, 24 alternate references and actual SIMD, guard, collision and graph transformation oracle checks passed. This remains unselected.

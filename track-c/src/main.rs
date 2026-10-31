@@ -67,6 +67,18 @@ impl Shard {
 /// Find the first matching byte using guarded unaligned eight-byte loads.
 #[inline(always)]
 fn field_delim(b: &[u8], mut i: usize, c: u8) -> usize {
+    // Compile the vector path only when the build target itself guarantees AVX2.
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    {
+        use std::arch::x86_64::*;
+        let needle = unsafe { _mm256_set1_epi8(c as i8) };
+        while b.len() - i >= 32 {
+            let word = unsafe { _mm256_loadu_si256(b.as_ptr().add(i).cast()) };
+            let mask = unsafe { _mm256_movemask_epi8(_mm256_cmpeq_epi8(word, needle)) } as u32;
+            if mask != 0 { return i + mask.trailing_zeros() as usize; }
+            i += 32;
+        }
+    }
     let splat = u64::from(c).wrapping_mul(0x0101_0101_0101_0101);
     while b.len() - i >= 8 {
         let x = unsafe { u64::from_le(std::ptr::read_unaligned(b.as_ptr().add(i).cast::<u64>())) } ^ splat;
