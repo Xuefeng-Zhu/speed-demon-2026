@@ -1,0 +1,5 @@
+# Generation-tagged distance reject cache (experimental, not selected)
+
+This prototype uses a 1,024-entry per-worker direct-mapped cache, tagged by query generation and exact node ID, to reject tentative distances no better than a previously observed same-side value before accessing the authoritative dense array. Cache misses read the dense pair, successful improvements update both. Generation wrap clears the cache. Baseline is the mapped-input source at `a9e1d0d`. No input-derived data is stored beyond the active run.
+
+It passed all full hashes, 16,000 independent random graph queries, 36,864 exhaustive small-graph queries, the maximum-size maximum-weight chain and 6,000 repeated/unreachable queries. Nine shared ARM native pairs (`report.json`) measured median 0.36333 vs 0.28935 s baseline, CPU 2.14244 vs 1.82315 s, maximum process RSS 549,273,600 vs 547,831,808 B. The candidate is slower in this screen and remains unselected; this is neither target x86 nor official cgroup evidence. Generation-wrap behavior has not been independently tested. No Mac Docker was used.

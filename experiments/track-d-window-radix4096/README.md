@@ -1,0 +1,5 @@
+# 4,096-key exact window plus radix overflow (experimental, not selected)
+
+This candidate rebases the window/radix queue onto mapped-input D at `a9e1d0d`. A near window has 4,096 exact-distance bins; once the first overflow key establishes a window, radix buckets 0–12 contain exactly the remaining overflow keys in that window. Only those are drained so the overflow heap is never advanced past a valid smaller future insertion. This differs from the older rolling window with binary overflow. Source was not independently reviewed.
+
+Overflow/debug-checked tests passed 100,000 modeled heap operations, 16,000 independent random graph queries, 36,864 exhaustive small-graph queries, a maximum-size maximum-weight chain, and 6,000 repeated/unreachable cases. All full seed-1 hashes matched. Seven shared native ARM pairs (`report.json`) measured median 0.31856 vs 0.27032 s baseline, CPU 2.11943 vs 1.81399 s, max process RSS 552,206,336 vs 548,257,792 B. No substantial gain was found; this is neither x86 nor official cgroup evidence. No Mac Docker was used.

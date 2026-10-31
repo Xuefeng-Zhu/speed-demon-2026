@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+"""Check radix-heap invariants against an independent BTreeMap model."""
+from pathlib import Path
+import subprocess, sys, tempfile
+source=Path(sys.argv[1]) if len(sys.argv)>1 else Path(__file__).with_name("meeting.rs")
+tail='\n#[cfg(test)]\nmod independent_lazy_review {\n use super::*;\n use std::collections::BTreeMap;\n fn add(reference: &mut BTreeMap<u64,Vec<u32>>, key:u64, value:u32){reference.entry(key).or_default().push(value);}\n fn pop(reference: &mut BTreeMap<u64,Vec<u32>>, k:u64,v:u32){\n  assert_eq!(reference.first_key_value().unwrap().0, &k);\n  let entries=reference.get_mut(&k).unwrap();\n  let pos=entries.iter().position(|&x|x==v).expect("value missing");entries.swap_remove(pos);\n  if entries.is_empty(){reference.remove(&k);}\n }\n #[test]\n fn bounds_and_counts_over_two_heaps() {\n  let mut hs=[RadixHeap::default(),RadixHeap::default()];\n  let mut rs=[BTreeMap::<u64,Vec<u32>>::new(),BTreeMap::<u64,Vec<u32>>::new()];\n  let mut z=0x1abcde987654321fu64;\n  for step in 0..100_000u32 {\n   z ^= z<<13; z ^= z>>7; z ^= z<<17;\n   let side=(z as usize)&1;\n   if step%997==0 { for i in 0..2 { hs[i].clear();rs[i].clear(); } }\n   let last=hs[side].last;\n   if rs[side].is_empty() || z%5<3 {\n    let delta=match z%17 {0=>0,1=>u32::MAX as u64,2=>u64::MAX-last,_=>(z>>8)%20000};\n    let k=last.saturating_add(delta);\n    hs[side].push(k,step);add(&mut rs[side],k,step);\n   } else if z%5==3 {\n    let k=hs[side].top().unwrap();let (p,v)=hs[side].pop();assert_eq!(k,p);pop(&mut rs[side],p,v);\n   } else { assert_eq!(hs[side].top(),rs[side].first_key_value().map(|(&k,_)|k)); }\n   for i in 0..2 {\n    let expected:usize=rs[i].values().map(|v|v.len()).sum();\n    let actual:usize=hs[i].buckets.iter().map(Vec::len).sum();\n    assert_eq!(hs[i].count,expected);assert_eq!(actual,expected);\n    if let Some((&minimum,_))=rs[i].first_key_value(){assert!(hs[i].last<=minimum);} else {assert_eq!(hs[i].count,0);}\n   }\n  }\n }\n}\n'
+with tempfile.TemporaryDirectory(prefix="d-lazy-review-") as tmp:
+    p=Path(tmp); src=p/"review.rs"; binary=p/"review"
+    src.write_text(source.read_text()+tail)
+    subprocess.run(["rustc","--edition=2021","-O","-C","overflow-checks=yes","-C","debug-assertions=yes","--test",str(src),"-o",str(binary)],check=True)
+    subprocess.run([str(binary),"--test-threads=1"],check=True)

@@ -1,0 +1,5 @@
+# Four-bit digit radix heap (experimental, not selected)
+
+The baseline is mapped-input Track D at `a9e1d0d`. Instead of grouping neighboring binary buckets, this radix heap uses the highest differing four-bit digit plus the key's absolute digit value to choose one of 257 buckets. Absolute digit ordering retains later buckets after the monotone base changes; entries from the first nonempty bucket are redistributed to lower buckets. A five-word occupancy bitmap finds the first nonempty bucket. This is a structural prototype, not independently proven for every possible sequence.
+
+Debug/overflow-checked tests passed 100,000 modeled heap operations, 16,000 independent randomized graph queries, 36,864 exhaustive three-node queries, maximum-size maximum-weight chain, and 6,000 repeated/unreachable queries. Every full seed-1 run matched the published hash. Nine randomized shared ARM native pairs (`report.json`) gave median wall 0.27535 s candidate vs 0.27376 s baseline, CPU 1.82938 vs 1.81724 s, and maximum process RSS 554,811,392 vs 549,666,816 B. No substantial gain was found; this is neither x86 nor official cgroup evidence. No Mac Docker was used.
