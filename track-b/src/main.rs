@@ -19,6 +19,8 @@ use std::{collections::HashMap, env, fs, thread};
 const SAMPLE: usize = 1 << 19;
 /// Bytes of corpus a thread scans between releasing what it has read.
 const SLICE: usize = 1 << 20;
+/// Bits in the filter of the short query terms' hashes.
+const FILTER: usize = 1 << 20;
 /// Term roles: used by a BOOL query and gets a posting list; anchors a
 /// phrase; used by a BOOL query and common, so it gets a bitmap instead.
 const IN_BOOL: u8 = 1;
@@ -46,11 +48,14 @@ fn key(data: &[u8], s: usize, n: usize) -> [u64; 2] {
 /// anchors[aoff[t]..aoff[t + 1]] for term t, as (query, start of the phrase
 /// in `flat`, its length, position of the term in it). The list terms
 /// (IN_BOOL) are 0..nlist, nlist <= 65,535, so their ids fit a u16; the
-/// BITMAP terms follow, term nlist + i with bitmap i of nbm.
+/// BITMAP terms follow, term nlist + i with bitmap i of nbm. Bit h % FILTER
+/// of `filter` is set for each hash h of a short term in the table.
 #[derive(Default)]
 struct Plan<'q> {
     queries: &'q [Query],
     keys: Vec<[u64; 3]>,
+    filter: Vec<u64>,
+    empty: usize,
     long: HashMap<Vec<u8>, u32>,
     role: Vec<u8>,
     aoff: Vec<u32>,
@@ -63,10 +68,14 @@ struct Plan<'q> {
 }
 
 impl Plan<'_> {
+    /// The 24-bit hash of the key k; its low bits are the home slot.
+    fn hash(k: [u64; 2]) -> usize {
+        ((k[0] ^ k[1].rotate_left(29)).wrapping_mul(0x9e37_79b9_7f4a_7c15) >> 40) as usize
+    }
+
     /// The home slot of the key k.
     fn home(&self, k: [u64; 2]) -> usize {
-        let h = (k[0] ^ k[1].rotate_left(29)).wrapping_mul(0x9e37_79b9_7f4a_7c15);
-        (h >> 40) as usize & (self.keys.len() - 1)
+        Self::hash(k) & (self.keys.len() - 1)
     }
 
     /// The slot of the key k, probing from its home slot h: k or empty.
@@ -117,7 +126,10 @@ fn for_each_doc(data: &[u8], lo: usize, hi: usize, plan: &Plan, mut f: impl FnMu
         // Where the tokens of the document start and end, from masks of 64
         // bytes at a time up to its LF. Bit p of `after`: byte p - 1 is in a
         // token. Key every token and prefetch its slot, then look them all
-        // up, so that many cache misses are in flight at once.
+        // up, so that many cache misses are in flight at once. A short token
+        // whose filter bit is clear is no query term: it is looked up as the
+        // empty key at an empty slot, which matches at once (measured faster
+        // than probing that slot with the real key).
         let (mut carry, mut open) = (0, 0);
         loop {
             let (m, lf) = masks(data, i);
@@ -129,7 +141,10 @@ fn for_each_doc(data: &[u8], lo: usize, hi: usize, plan: &Plan, mut f: impl FnMu
                 let s = if carry != 0 { open } else { i + starts.trailing_zeros() as usize };
                 (carry, starts, ends) = (0, starts & starts.wrapping_sub((s >= i) as u64), ends & (ends - 1));
                 let k = key(data, s, e - s);
+                let f = Plan::hash(k) % FILTER;
+                let miss = e - s <= 16 && plan.filter[f / 64] >> f % 64 & 1 == 0;
                 let h = if e - s <= 16 { plan.home(k) } else { !(e - s) };
+                let (k, h) = if miss { ([0; 2], plan.empty) } else { (k, h) };
                 _ = plan.keys.get(h).map(prefetch);
                 keys.push((k, h, s));
             }
@@ -501,7 +516,7 @@ fn main() {
 
     let qtext = fs::read(format!("{data_dir}/queries.txt")).expect("read queries.txt");
     let mut plan = Plan::default();
-    plan.grow(1 << 12);
+    plan.grow((qtext.len() / 16 | 64).next_power_of_two()); // rarely grows
     let mut queries = Vec::new();
     for line in qtext.split(|&b| b == b'\n').filter(|l| !l.is_empty()) {
         let mut w = line.split(|&b| b == b' ');
@@ -519,6 +534,12 @@ fn main() {
     // Anchor each phrase on its rarest term in a sample of the corpus.
     // The id of every token no query uses: a term with no role.
     let none = plan.role.len() as u32;
+    plan.filter = vec![0; FILTER / 64];
+    plan.empty = plan.keys.iter().position(|e| e[0] == 0).unwrap();
+    for e in &plan.keys {
+        let f = Plan::hash([e[0], e[1]]) % FILTER;
+        plan.filter[f / 64] |= ((e[0] != 0) as u64) << (f % 64);
+    }
     plan.keys.iter_mut().filter(|e| e[0] == 0).for_each(|e| e[2] = none as u64);
     plan.role.push(0);
     let (mut freq, mut sdocs, mut last) = (vec![0u32; plan.role.len()], 0, vec![u32::MAX; plan.role.len()]);
