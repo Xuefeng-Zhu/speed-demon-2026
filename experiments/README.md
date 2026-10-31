@@ -114,3 +114,7 @@ A separate quote-parallel parser is not selected. A repeated container invocatio
 ## Official practice run for 02d7b4c
 
 All four tracks passed every gate on the full public seed-1 dataset; raw run IDs and measurements are in `board-02d.json`. Compared with the preceding 2fc9110 practice run, B's measured time changed from 1.450775 to 1.837251 seconds, cgroup peak from 496,271,360 to 257,609,728 bytes, and K from 7.192344 to 6.994585. C's time changed from 0.527238 to 0.395185 seconds, peak from 76,075,008 to 81,285,120 bytes, and K from 6.548517 to 7.383038. These are separate official practice runs, not controlled paired measurements or final holdout scores. B's bounded summaries remain selected while faster bounded alternatives are investigated.
+
+## Official practice run for 89795bb
+
+All four tracks passed every gate on the full public seed-1 dataset; `board-897.json` records the run IDs and measurements. Relative to 02d7b4c, A's Rust implementation scored T=0.047542 s, M=48,148,480 bytes, S=273, K=27.939894 (previous K 13.101162); D's Rust implementation scored T=0.872892 s, M=453,419,008 bytes, S=233, K=8.110433 (previous K 6.382387). B and C code was unchanged, and their K values changed from 6.994585 to 7.665618 and 7.383038 to 7.446852 respectively. These are separate single public-seed practice runs; the final hidden-seed measurements may differ.

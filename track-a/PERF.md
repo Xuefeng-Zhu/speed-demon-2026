@@ -88,6 +88,8 @@ In five alternating full seed-1 pairs on the shared dot x86 VM, the Rust candida
 
 Independent ARM macOS testing used a temporary source copy with only the Linux anonymous mmap flag changed for Darwin. It matched the full seed-1 output hash, the independent zero/1k/100k/100k oracle suite, 16 six-way shard split checks, nine 1 MiB boundary checks, and 84 page-end/reference combinations. The live-board run IDs above belong to earlier C++ implementations, not this candidate.
 
-The unchanged Linux candidate subsequently matched the published full seed-1 SHA-256 in a restricted offline ARM Linux container. The new target-machine source count, time and cgroup memory still require an official practice run.
+The unchanged Linux candidate subsequently matched the published full seed-1 SHA-256 in a restricted offline ARM Linux container.
+
+Official public-seed practice run `run-b4c4f652f111` at commit `89795bbc852b5e24e9f976c7291b3c3a21101361` passed all gates: T=0.047542 s, M=48,148,480 bytes, S=273, K=27.939894. The prior C++ run at 02d7b4c had K=13.101162. These are separate practice measurements, not final holdout results. See `experiments/board-897.json`.
 
 `track-a-verification/latency_grid_test.py` additionally checked 132,624 singleton groups across all 72 hours and 1,842 endpoints, random unsigned-32-bit latencies of every decimal width, 0 and 4294967295, and 1, 2, 6, 12 and 64 workers. This used the same Darwin-only test adaptation.
