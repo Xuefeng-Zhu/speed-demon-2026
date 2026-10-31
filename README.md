@@ -27,6 +27,6 @@ Paired local baseline comparisons and reproducible correctness tests are recorde
 
 ## Before entering
 
-- Team name is set to `PeppaPig` in all four track manifests; registration is being handled separately.
+- Team name is set to `PeppaPig` in all four local track manifests; the form was submitted and the live board lists all four tracks.
 - Test on the official board to establish real run IDs, times, memory and scoring; document those runs and actual iterations in `PERF.md`. The board requires a GitHub App and a repository.
-- Follow the official event registration/submission and publication rules by the deadline, November 2 at 15:00 UTC. The board app is installed with read-only code and metadata access on the selected private repository; GitHub also includes public repositories read-only. No team registration form or formal submission has been sent.
+- Follow the official event registration/submission and publication rules by the deadline, November 2 at 15:00 UTC. The board app is installed with read-only code and metadata access on the selected private repository; GitHub also includes public repositories read-only. The dual-purpose team form has been submitted; the remote remains private.

@@ -37,4 +37,9 @@ The six-worker candidate passed three small differential seeds and the published
 
 ## Native x86 seen16 follow-up
 
-The seen16 variant was provisionally selected after a shared dot VM reported 2.144 s versus 2.318 s for its prior dense baseline and about 11% lower process RSS; the supplied full, alternate, randomized-oracle, epoch and extreme checks passed. The time/memory factors alone imply approximately 1.064× K, before source-size and dependency effects. The sparse alternative was 1.991 versus 2.276 s with slightly lower RSS, but the exact RSS and official scc counts were not supplied. Both estimates are close; seen16 is the smaller change and sparse remains available for board testing. See `experiments/dot-vm.md`. The selected version passed the offline restricted ARM Docker full-data hash in 1.90 s including startup and fresh tiny seeds 2, 17 and 4242. No board run ID is claimed.
+The seen16 variant was provisionally selected after a shared dot VM reported 2.144 s versus 2.318 s for its prior dense baseline and about 11% lower process RSS; the supplied full, alternate, randomized-oracle, epoch and extreme checks passed. The time/memory factors alone imply approximately 1.064× K, before source-size and dependency effects. The sparse alternative was 1.991 versus 2.276 s with slightly lower RSS, but the exact RSS and official scc counts were not supplied. Both estimates are close; seen16 is the smaller change and sparse remains available for board testing. See `experiments/dot-vm.md`. The selected version passed the offline restricted ARM Docker full-data hash in 1.90 s including startup and fresh tiny seeds 2, 17 and 4242. The first subsequent board run is recorded below.
+
+
+## First official live-board practice run
+
+The public seed-1 practice run at commit `f45c4cf3f707123e705b930c6b1f08b8facefdc5` is `run-c58a137eb965`. It passed the check, build, correctness, timeout and sandbox gates. The board reports T=1.808861 s, M=334454784 bytes, S=169, D=1, K=6.283108 and 39.908727 machine points. This is a single live-board run, not the final five-run hidden-seed score. Source and snapshot: `experiments/board-f45.json`.

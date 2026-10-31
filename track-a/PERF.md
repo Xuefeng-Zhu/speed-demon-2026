@@ -1,6 +1,6 @@
 # Performance and correctness log
 
-No official board run IDs have been recorded; timings below are local, not official scores. The board app is installed.
+Earlier iteration timings below are local; the first official practice run is recorded at the end.
 
 - Replaced general timestamp parsing and per-line split with direct fixed-field parsing, endpoint interning, and a compact collection of uint32 latencies per hour and endpoint. All latencies are retained; exact percentiles are obtained by sorting each group. This is the initial candidate, not a measured comparison of individual optimizations.
 - Official generator seed 1, full: input SHA-256 `7ec80ba45bceef51ac7f79d3a14521fc6187b2dcb87b5e5542d08063fe5d962a`; output SHA-256 `495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3`, matching the published expected digest. Five consecutive native runs took 0.496, 0.411, 0.553, 0.411 and 0.411 seconds on this Mac, with peak child RSS 26,689,536 bytes. Other processes were active; these are not official measurements, and Linux cgroup memory accounting may differ.
@@ -64,4 +64,9 @@ That insertion-based candidate passed the official offline restricted ARM Docker
 
 The selected merge now checks vector capacity before resizing and copying the nonempty source. This removes the GCC 14 `-Wstringop-overflow` warning. The prior insertion-based code is `experiments/a-three-shard-insert.cpp`. On a shared native x86 VM, checked measured median 0.2124 s / peak RSS 36.07 MiB versus insertion 0.2161 s / 35.84 MiB. Pinned clang-format 23.1.3 and scc 4.1.0 counted 233 versus 226 code lines including Dockerfile. The resulting estimated K ratio is 1.0028 assuming equal dependency factors, too small to distinguish from noise; the checked merge was chosen for explicit bounds and diagnostic clarity, not a claimed speed gain. See `experiments/static-a-checked/` and `experiments/dot-vm.md`.
 
-The x86 full hash, five alternate references, 25 boundary cases, four synthetic cases and ASan/UBSan passed. Independently, the selected checked code passed the restricted ARM Docker full hash in 0.70 s including startup, seed-999 sample against the reference, 16 shard boundaries, nine read boundaries, and four synthetic cases. No official board time, cgroup peak or run ID is claimed.
+The x86 full hash, five alternate references, 25 boundary cases, four synthetic cases and ASan/UBSan passed. Independently, the selected checked code passed the restricted ARM Docker full hash in 0.70 s including startup, seed-999 sample against the reference, 16 shard boundaries, nine read boundaries, and four synthetic cases. The checked version has not yet been run on the board; the earlier f45 baseline run is recorded below.
+
+
+## First official live-board practice run
+
+The public seed-1 practice run at commit `f45c4cf3f707123e705b930c6b1f08b8facefdc5` is `run-55a9d9b7e7df`. It passed the check, build, correctness, timeout and sandbox gates. The board reports T=0.475183 s, M=35717120 bytes, S=127, D=1, K=10.522722 and 51.106405 machine points. This is a single live-board run, not the final five-run hidden-seed score. Source and snapshot: `experiments/board-f45.json`. This measured the earlier f45 serial candidate, not the later local three-shard or checked-merge changes.

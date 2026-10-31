@@ -22,4 +22,4 @@ The parallel candidate built offline and passed the restricted ARM Linux Docker 
 
 ## Remaining checks
 
-The current candidate has not been measured by the official board. Run additional generated seeds through the container and record real board run IDs in `PERF.md`. Verify any change against the reference and measure on the board.
+The first live-board practice measurement is recorded in `PERF.md`. Run additional generated seeds and record subsequent board run IDs there. Verify any change against the reference and measure on the board.

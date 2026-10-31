@@ -11,4 +11,4 @@ python3 experiments/b-stream-boundary.py
 python3 experiments/b-edge-fixture.py /tmp/b-stream-boundary-review official/reference/b_index.py
 ```
 
-Live-board timings, cgroup memory, and formatted source-size measurements remain outstanding; no board score or run ID is implied.
+The first live-board practice measurement for the f45 source is recorded in `PERF.md`; final hidden-seed scoring remains outstanding.
