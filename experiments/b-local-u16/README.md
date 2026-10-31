@@ -1,0 +1,5 @@
+# Chunk-local u16 CSR postings (experimental, not selected)
+
+Based on exact dynamic-query baseline `7d371fe84ce9f0fd9d3c7e6fdf02b6b37e0f1440319c654161b990cf27bb8bf3`. Store chunk-local document IDs as u16 for chunks of at most 65,536 documents, with an exact u32 fallback for larger chunks. The bitmap and phrase summary logic remains unchanged. This is an exploratory candidate, not selected code.
+
+On a shared native ARM host, two randomized full-seed batches (9 and 15 pairs plus warmups) yielded candidate/baseline wall medians 0.25706/0.24542 s and 0.27179/0.26924 s, and CPU medians 1.50668/1.52632 s and 1.51366/1.54792 s. Native median process RSS was approximately 432 MiB candidate versus 493–497 MiB baseline. All 52 full outputs including warmups matched the official seed-1 hash. `report.json` and `repeat.json` contain all samples. Wall regressed and no speed-first selection is recommended. These are not x86 or cgroup measurements; behavior with the u32 fallback, forced overflow boundaries, phrase stress and alternate references has not yet been validated. No independent code review was performed. Do not promote without these checks and target testing.
