@@ -179,7 +179,11 @@ impl Search {
             if a.saturating_add(b) >= best {
                 break;
             }
-            let side = (a > b) as usize;
+            let side = match self.heaps[0].count.cmp(&self.heaps[1].count) {
+                std::cmp::Ordering::Less => 0,
+                std::cmp::Ordering::Greater => 1,
+                std::cmp::Ordering::Equal => (a > b) as usize,
+            };
             let (d, u) = self.heaps[side].pop();
             if d > !self.dist[u as usize][side] {
                 continue; // stale entry
@@ -243,6 +247,7 @@ fn main() {
 struct RadixHeap {
     last: u64,
     buckets: [Vec<(u64, u32)>; 65],
+    count: usize,
 }
 
 impl Default for RadixHeap {
@@ -250,6 +255,7 @@ impl Default for RadixHeap {
         RadixHeap {
             last: 0,
             buckets: std::array::from_fn(|_| Vec::new()),
+            count: 0,
         }
     }
 }
@@ -261,12 +267,14 @@ impl RadixHeap {
     fn push(&mut self, k: u64, v: u32) {
         let i = self.slot(k);
         self.buckets[i].push((k, v));
+        self.count += 1;
     }
     /// The smallest key, after moving every entry with that key into bucket 0.
     fn top(&mut self) -> Option<u64> {
         if self.buckets[0].is_empty() {
             let i = self.buckets.iter().position(|b| !b.is_empty())?;
             let mut b = std::mem::take(&mut self.buckets[i]);
+            self.count -= b.len();
             self.last = b.iter().map(|e| e.0).min().unwrap();
             for e in b.drain(..) {
                 self.push(e.0, e.1);
@@ -277,10 +285,12 @@ impl RadixHeap {
     }
     /// Call only after `top` returned `Some`.
     fn pop(&mut self) -> (u64, u32) {
+        self.count -= 1;
         self.buckets[0].pop().unwrap()
     }
     fn clear(&mut self) {
         self.last = 0;
+        self.count = 0;
         self.buckets.iter_mut().for_each(Vec::clear);
     }
 }

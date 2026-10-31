@@ -138,3 +138,7 @@ All four tracks passed every gate; see `board-e8.json`. A auto workers measured 
 ## Official practice run for e6e72ac
 
 All four tracks passed every gate; `board-e6.json` records all run IDs and measurements. B length-aware hashing with nine workers measured T=1.124940 s, M=274,243,584 bytes, S=379, K=8.665777, versus the preceding 1.466380 s and K=7.698133. Separate public-seed practice runs are not paired or final hidden-seed scores.
+
+## Official practice run for merged PR d144adc
+
+All four tracks passed all gates; `board-d144.json` records run IDs. B's bounded Rust adaptation measured T=0.394683 s, M=225,353,728 bytes, S=343, K=15.445575, versus the previous B practice's T=1.124940 s, M=274,243,584 bytes, S=379, K=8.665777. A/C/D measured 0.050702/0.134472/0.701512 s respectively. These are separate public-seed practice runs rather than paired or final holdout scores.
