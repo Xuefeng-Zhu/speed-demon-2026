@@ -9,9 +9,9 @@ All four pinned Dockerfiles passed the official Dockerfile allowlist checker. Th
 | Track | Full output SHA-256 | Local container wall time |
 |---|---|---:|
 | A | `495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3` | 0.59 s |
-| B | `f86973c210228141bcb6f1f1b10188ad2a9b65f71e7cd7cf4590b38de4e80927` | 3.97 s |
+| B | `f86973c210228141bcb6f1f1b10188ad2a9b65f71e7cd7cf4590b38de4e80927` | 2.32 s |
 | C | `d8088b1cd42ba1338b1345b107b55db7b96ef1f5066f3ff64fd26a8912a0f536` | 0.84 s |
-| D | `a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e` | 4.61 s |
+| D | `a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e` | 1.90 s |
 
 Times include container startup, used an ARM Linux VM on a Mac with some runs concurrent, and are not competition scores or comparisons against the x86 scoring machine. Extra checks: A seed 999 sample against the reference and independent synthetic cases; B seed 99 tiny and randomized corpus/queries against the reference; C seed 42 sample and seeds 2, 3, 12345 tiny against the reference; D seed 7 sample against the reference and 4,500 randomized graph queries against independent Dijkstra. Track READMEs and PERF files contain further details. No local test proves correctness on the private holdout. An additional run of the upstream generator/reference unit suite was interrupted during its Track B edge-case scan after 21 tests had passed; the suite was not completed and does not directly exercise these candidates.
 

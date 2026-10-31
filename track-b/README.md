@@ -1,9 +1,14 @@
 # Track B: Index
 
-Prototype for the [Track B specification](https://github.com/hackathon-raptors/speed-demon-2026/blob/main/specs/b-index.md). Set the actual team name before registering or submitting.
+This C++17 implementation reads the queries first and indexes only terms they use. A buffered `pread` scan finds document boundaries; six workers tokenize disjoint, contiguous document ranges into local postings, which are merged in ascending document ID order. A second worker pool evaluates queries into their original positions before ordered output. Boolean operators retain strict left-to-right semantics; phrase queries scan token sequences for exact adjacency. There are no non-standard runtime dependencies. The Docker build uses `-pthread` and pinned allowlisted images.
 
-The program reads queries first and assigns IDs to query terms. It tokenizes each document once, recording a sorted document posting list for every relevant term and a sequence of token IDs for phrase evaluation. Boolean operations use ordered set operations, preserving left-to-right semantics. Phrase queries scan documents in the shortest posting list for consecutive tokens. Finally it writes count, sum, and up to ten lowest matching IDs.
+On a shared native x86 dot VM, the selected streaming candidate's full-seed median was 1.445 s versus 5.750 s for the previous selected candidate, with process peak RSS about 470 versus 337 MiB. All full hashes and alternate-reference cases in that comparison passed. These are local results, not official board time or cgroup memory; see `experiments/dot-vm.md`. The prior serial candidate is retained in `experiments/b-serial.cpp`.
 
-No external runtime dependencies. Compilation requires C++17. In the container, input is read from `/data` and output written to `/out/results.txt`.
+The candidate passed the restricted ARM Linux Docker full-data hash check and fresh tiny reference cases, a 1,000-query edge fixture, and a test placing 32-byte tokens across six 1 MiB read boundaries. To reproduce the fixtures from the repository root:
 
-Further work: profile full scale on the competition hardware, investigate parallel indexing, and measure the impact of reducing phrase scans and sorting costs. Do not infer competition scores from local native timings.
+```sh
+python3 experiments/b-stream-boundary.py
+python3 experiments/b-edge-fixture.py /tmp/b-stream-boundary-review official/reference/b_index.py
+```
+
+Set the team name before entering. Live-board timings, cgroup memory, and formatted source-size measurements remain outstanding; no board score or run ID is implied.

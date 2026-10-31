@@ -22,12 +22,17 @@ fn make_graph(n: usize, es: &[(u32,u32,u32)], reverse: bool) -> Graph {
     }
     Graph {offsets,edges}
 }
-struct Search { d: [Vec<u64>;2], seen: [Vec<u32>;2], epoch: u32 }
+struct Search { d: [Vec<u64>;2], seen: [Vec<u16>;2], epoch: u16 }
 impl Search {
     fn new(n:usize) -> Self { Self {d:[vec![0;n],vec![0;n]],seen:[vec![0;n],vec![0;n]],epoch:0} }
     fn run(&mut self, gs: [&Graph;2], s:usize, t:usize) -> Option<u64> {
         if s==t { return Some(0); }
         if gs[0].offsets[s]==gs[0].offsets[s+1] || gs[1].offsets[t]==gs[1].offsets[t+1] { return None; }
+        if self.epoch == u16::MAX {
+            self.seen[0].fill(0);
+            self.seen[1].fill(0);
+            self.epoch = 0;
+        }
         self.epoch += 1;
         let epoch = self.epoch;
         let mut q = [BinaryHeap::new(), BinaryHeap::new()];

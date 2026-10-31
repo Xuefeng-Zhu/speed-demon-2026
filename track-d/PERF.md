@@ -21,7 +21,7 @@ A second three-pair run using Python `resource.getrusage(RUSAGE_CHILDREN).ru_max
 
 The six-worker version matched the official full-seed-1 hash, the official reference on sample seed 7, and sample seed 2 (`70e94813fc6fbee12c22cc040bc4a4629c70508d13eaab2bfabbdd75e1d51aed`).
 
-To reproduce each binary from this six-worker candidate, copy Cargo.toml, Cargo.lock and src/ into a temporary directory. Run `cargo build --release --offline --manifest-path <temp>/Cargo.toml`; preserve the resulting executable as the six-worker version. Change `0..6.min(queries.len())` to `0..12.min(queries.len())` in the temporary `src/main.rs`, rebuild, and preserve the result as the twelve-worker version. Run each with `DATA_DIR=<full-data-dir> OUT_DIR=<existing-output-dir> <binary>`, alternating order and verifying the output SHA-256 after each run. Avoid concurrent jobs and repeat on the scoring machine before drawing conclusions.
+To reproduce those historical binaries, copy Cargo.toml, Cargo.lock and src/ from `experiments/track-d-dense/` into a temporary directory. Run `cargo build --release --offline --manifest-path <temp>/Cargo.toml`; preserve the resulting executable as the six-worker version. Change `0..6.min(queries.len())` to `0..12.min(queries.len())` in the temporary `src/main.rs`, rebuild, and preserve the result as the twelve-worker version. Run each with `DATA_DIR=<full-data-dir> OUT_DIR=<existing-output-dir> <binary>`, alternating order and verifying the output SHA-256 after each run. Avoid concurrent jobs and repeat on the scoring machine before drawing conclusions.
 
 A separate three-pair experiment compared six and three workers under more variable contention: six was 1.308, 1.864, 2.515 seconds and approximately 459–514 MB RSS; three was 1.917, 1.619, 3.140 seconds and approximately 381–388 MB RSS. The noisy measurements do not establish the better target-machine K. Three workers is another candidate for a serial controlled experiment; it was not selected based on these numbers.
 
@@ -33,3 +33,8 @@ Five interleaved full-data pairs after warmup on macOS ARM: 12 versus 6 workers 
 ## Native x86 dot VM follow-up
 
 The six-worker candidate passed three small differential seeds and the published full-data hash after compilation with rustc 1.99.1. Five-run native medians were 2.321 s and 357.2 MiB peak RSS for six workers, versus 2.195 s and 597.2 MiB for a reconstructed twelve-worker variant. Applying the time and memory exponents to these local figures favors six workers by about 7.8% on K, assuming the other factors are equal. This is not an official board result; its time and cgroup memory aggregation differ from these local metrics. Full context and calculation are in `experiments/dot-vm.md`.
+
+
+## Native x86 seen16 follow-up
+
+The seen16 variant was provisionally selected after a shared dot VM reported 2.144 s versus 2.318 s for its prior dense baseline and about 11% lower process RSS; the supplied full, alternate, randomized-oracle, epoch and extreme checks passed. The time/memory factors alone imply approximately 1.064× K, before source-size and dependency effects. The sparse alternative was 1.991 versus 2.276 s with slightly lower RSS, but the exact RSS and official scc counts were not supplied. Both estimates are close; seen16 is the smaller change and sparse remains available for board testing. See `experiments/dot-vm.md`. The selected version passed the offline restricted ARM Docker full-data hash in 1.90 s including startup and fresh tiny seeds 2, 17 and 4242. No board run ID is claimed.
