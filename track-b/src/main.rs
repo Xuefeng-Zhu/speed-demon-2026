@@ -43,6 +43,25 @@ fn key(data: &[u8], s: usize, n: usize) -> Key {
     }))
 }
 
+/// Four exact short keys and their original IDs, in one aligned cache line.
+#[derive(Clone)]
+#[repr(C, align(64))]
+struct ShortGroup { keys: [u64; 4], ids: [u32; 4] }
+impl Default for ShortGroup { fn default() -> Self { Self { keys: [0;4], ids: [MISS;4] } } }
+
+#[inline]
+fn matching(group: &ShortGroup, x: u64) -> u32 {
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    unsafe {
+        use std::arch::x86_64::*;
+        let keys = _mm256_load_si256(group.keys.as_ptr().cast());
+        let same = _mm256_cmpeq_epi64(keys, _mm256_set1_epi64x(x as i64));
+        _mm256_movemask_pd(_mm256_castsi256_pd(same)) as u32
+    }
+    #[cfg(not(all(target_arch = "x86_64", target_feature = "avx2")))]
+    { group.keys.iter().enumerate().fold(0, |mask, (i, &key)| mask | (u32::from(key == x) << i)) }
+}
+
 /// The queries and their terms: an open-addressing table from token to dense
 /// term id, and what the corpus scan does with each term: its roles, and the
 /// phrases it anchors as (query index, phrase, position of the term in it).
@@ -54,7 +73,7 @@ struct Plan<'q> {
     keys: Vec<Key>,
     role: Vec<u8>,
     anchors: Vec<Vec<(usize, &'q [u32], usize)>>,
-    short_slots: Vec<u32>,
+    short_groups: Vec<ShortGroup>,
 }
 
 impl Plan<'_> {
@@ -69,13 +88,20 @@ impl Plan<'_> {
 
     fn build_short(&mut self) {
         let count = self.keys.iter().filter(|k| k.0[1..].iter().all(|&x| x == 0)).count();
-        self.short_slots = vec![MISS; (count * 2).max(1).next_power_of_two()];
-        let mask = self.short_slots.len() - 1;
+        self.short_groups = vec![ShortGroup::default(); ((count * 2 + 3) / 4).max(1).next_power_of_two()];
+        let mask = self.short_groups.len() - 1;
         for (id, k) in self.keys.iter().enumerate() {
             if k.0[1..].iter().any(|&x| x != 0) { continue; }
             let mut i = Self::short_hash(k.0[0]) & mask;
-            while self.short_slots[i] != MISS { i = (i + 1) & mask; }
-            self.short_slots[i] = id as u32;
+            loop {
+                let group = &mut self.short_groups[i];
+                if let Some(lane) = group.keys.iter().position(|&key| key == 0) {
+                    group.keys[lane] = k.0[0];
+                    group.ids[lane] = id as u32;
+                    break;
+                }
+                i = (i + 1) & mask;
+            }
         }
     }
 
@@ -86,11 +112,13 @@ impl Plan<'_> {
         let src = data.get(p..p+8).unwrap_or_else(|| {pad[..n].copy_from_slice(&data[p..p+n]); &pad});
         let x = u64::from_le_bytes(src.try_into().unwrap()) | 0x2020_2020_2020_2020;
         let x = x & ((1u128 << (n * 8)) - 1) as u64;
-        let mask = self.short_slots.len() - 1;
+        let mask = self.short_groups.len() - 1;
         let mut i = Self::short_hash(x) & mask;
         loop {
-            let id = self.short_slots[i];
-            if id == MISS || self.keys[id as usize].0[0] == x { return id; }
+            let group = &self.short_groups[i];
+            let found = matching(group, x);
+            if found != 0 { return group.ids[found.trailing_zeros() as usize]; }
+            if matching(group, 0) != 0 { return MISS; }
             i = (i + 1) & mask;
         }
     }
