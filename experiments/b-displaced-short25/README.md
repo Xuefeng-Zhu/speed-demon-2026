@@ -24,3 +24,5 @@ python3 experiments/b-rust-lengthhash/compare.py --baseline /tmp/b-displaced-bas
 ```
 
 Compare every full hash, CPU and native RSS in both paired batches. The actual official build uses PGO, so a native unprofiled win alone cannot establish an official win. Run the official practice only after independent review of the exact tested source, actual guarded x86 execution and the memory tradeoffs. Do not run Docker on the Mac.
+
+Parent-run native x86 dot VM paired screens were 8.5% and 5.2% slower in wall time, with roughly 2.03 MiB additional tables. Across B displacement and D width32, 144 full hashes, alternate references, actual SIMD guards, collision/capacity, zero-cycle and fallback tests passed. Native RSS is not official cgroup memory; this candidate remains unselected.
