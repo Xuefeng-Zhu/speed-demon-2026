@@ -36,3 +36,7 @@ python3 experiments/b-rust-lengthhash/compare.py --baseline /tmp/b-sparse-base -
 ```
 
 The comparison script alternates randomized order and checks every output hash. Independently verify actual page-guard coverage and cgroup peak memory on the target. Keep baseline if target results do not show a repeatable speed improvement.
+
+## Dot VM comparison against dynamic global B
+
+The parent-run shared x86 VM compared sparse-512 (based on the older per-chunk implementation) with the current dynamic global-query candidate: paired wall time was 0.8–2.5% lower, but a four-way rotation showed only 0.34% lower, with slightly higher native RSS. On synthetic skew it was 9.6–17% faster. Across the comparison 192 full hashes, 16 alternate references, 48 skew cases and collision/duplicate/AVX2 tests passed. This was not a tested sparse-plus-dynamic combination; native VM results are not official scoring-box or cgroup evidence. The candidate remains isolated.
