@@ -26,3 +26,7 @@ Repeat end-to-end paired timing batches with fresh outputs and no competing benc
 An independent reviewer found no §2.3 correctness defect. Their reproducible test checked all 17,576 index values form a bijection and ran 32 baseline/candidate reference executions across 1/2/7/32 workers, including an empty lookup, duplicate country assignments, reversed country keys, sparse ids and all uppercase codes (`independent-review.py`). This does not establish target performance.
 
 A second independent reviewer found no §2.3 defect and built a manual, independent aggregation oracle covering 52,729 sorted region rows across all 17,576 codes with repeated nonadjacent mappings, id 999999, 52,730 records, unused and unknown groups, BOMs, line endings and amounts. It matched the exact candidate at workers 1/2/7/32 with overflow checks (`independent-oracle.py`).
+
+## Dot VM x86 comparison
+
+The parent-run shared x86 VM paired batches measured 6.3% and 4.8% lower wall time; a randomized four-way screen measured 18.1% lower wall, native RSS approximately 208.7 MiB and unchanged, while CPU results were mixed. Across this comparison 136 full executions, 16 alternate comparisons, full-domain/sparse-ID/oracle, collision, 357 boundary and 48,289 guard checks passed. This is native VM evidence rather than scoring-box or cgroup measurements. Selected for separate official practice.

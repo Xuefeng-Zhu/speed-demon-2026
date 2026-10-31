@@ -171,16 +171,28 @@ fn main() {
     let (data, out) = (dir("SD_DATA", "/data"), dir("SD_OUT", "/out"));
     let recs = map(format!("{data}/records.csv"));
     let regs = map(format!("{data}/regions.csv"));
-    let (mut index, mut region) = (HashMap::new(), Vec::new()); // country -> group, region -> group
+    // Country codes are exactly three uppercase ASCII bytes by §2.3.
+    let mut code_group = vec![u16::MAX; 26 * 26 * 26];
+    let last = regs.strip_suffix(b"\n").unwrap_or(regs).rsplit(|&c| c == b'\n').next().unwrap_or_default();
+    let mut p_last = 0;
+    let last_id = if last.first().is_some_and(u8::is_ascii_digit) { number(last, &mut p_last) as usize } else { 0 };
+    let (mut countries, mut region) = (Vec::<&[u8]>::new(), vec![u16::MAX; last_id + 1]);
     for line in regs.split_inclusive(|&c| c == b'\n').skip(1) {
         let mut p = 0;
         let id = number(line, &mut p) as usize;
-        let groups = index.len() as u16;
-        region.resize(region.len().max(id + 1), u16::MAX);
-        region[id] = *index.entry(&line[p..line.len() - 1]).or_insert(groups);
+        let code = &line[p..line.len() - 1];
+        let k = usize::from(code[0] - b'A') * 676 + usize::from(code[1] - b'A') * 26 + usize::from(code[2] - b'A');
+        let mut group = code_group[k];
+        if group == u16::MAX {
+            group = countries.len() as u16;
+            code_group[k] = group;
+            countries.push(code);
+        }
+        if id >= region.len() { region.resize(id + 1, u16::MAX); }
+        region[id] = group;
     }
-    let unmatched = index.len();
-    index.insert(b"_UNMATCHED", unmatched as u16);
+    let unmatched = countries.len();
+    countries.push(b"_UNMATCHED");
     let words = (unmatched + 1).div_ceil(64);
     // Section 2.2 permits CRLF synchronization: every CR marks a record boundary,
     // including when a note contains bare LF. Repeated cuts may map to the same end.
@@ -210,7 +222,7 @@ fn main() {
         agg
     });
     let mut lines: Vec<String> = Vec::new();
-    for (key, g) in index {
+    for (g, key) in countries.into_iter().enumerate() {
         let mut a = EMPTY;
         aggs.iter().for_each(|agg| merge(&mut a, agg[g as usize]));
         if a[0] > 0 {
