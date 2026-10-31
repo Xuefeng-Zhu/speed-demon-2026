@@ -187,3 +187,4 @@ Sandbox CPU min: 0.90 s -> 0.63 s.
 ## Board trial: one-pass AVX2 parser (2026-10-31)
 
 No quote-counting pre-pass (chunks start after a CR), 64-byte AVX2 masks, write-prefetch of name lines 16 records ahead, parallel regions, key-ordered groups. Sandbox CPU about -37%; compare against `b07872c` (`run-11992ecda65c`, T=0.08069 s, M=13.1 MB, S=246, K=23.04) and revert if K is lower.
+Result: `run-31d631d51681` at `9bd00f0`: T=0.057728 s, M=13.1 MB, S=310, K=26.32. Kept.
