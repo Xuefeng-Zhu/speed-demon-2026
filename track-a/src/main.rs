@@ -1,7 +1,6 @@
 //! Speed Demon 2026, Track A (Ingest): per (hour, endpoint) count, p50/p95/p99 and 5xx rate.
 //!
-//! 1. mmap the log and cut it into 8 chunks per thread, which threads claim from an atomic
-//!    counter (so faster cores parse more), each moving its chunk's ends to line starts.
+//! 1. mmap the log and split it into one newline-aligned chunk per thread.
 //! 2. Each thread parses its chunk into packed records (endpoint id, 5xx bit, latency),
 //!    bucketed by hour. A thread's own endpoint table caches the dense ids (0, 1, 2, ...) handed
 //!    out by shared maps (sharded by hash, to spread lock contention) that keep copies of the
@@ -14,7 +13,7 @@
 //!    selection otherwise), format the lines, free the records. The main thread writes the
 //!    hours in order.
 use std::collections::HashMap;
-use std::sync::{atomic::{AtomicU32, AtomicUsize, Ordering}, mpsc, Barrier, Mutex, OnceLock};
+use std::sync::{atomic::{AtomicU32, Ordering}, mpsc, Barrier, Mutex, OnceLock};
 use std::{env, fs, io::Write, os::unix::io::AsRawFd, thread};
 
 /// The spec fixes the span: 72 hours from 18:00 UTC on 30 October 2026.
@@ -188,61 +187,53 @@ const SHARDS: usize = 16;
 /// next escaped record `id << 33 | is_5xx << 32 | latency`.
 type Records = (Vec<u32>, Vec<u64>);
 
-/// Parses the chunks of `d[..len]` (out of `n`) claimed from `claim` into records per hour, with
-/// ids from the shared tables. A chunk's ends move forward to line starts.
-fn parse(d: &[u8], len: usize, n: usize, claim: &AtomicUsize, shared: &[Shared], next_id: &AtomicU32) -> Vec<Records> {
+/// Parses the lines in `d[i..end]` into records per hour, with ids from the shared tables.
+fn parse(d: &[u8], mut i: usize, end: usize, shared: &[Shared], next_id: &AtomicU32) -> Vec<Records> {
+    let page = i & !4095;
     let mut table = Table::default();
     let mut hours = vec![(Vec::new(), Vec::new()); HOURS];
-    let snap = |c: usize| (len * c / n..len).find(|&at| at == 0 || d[at - 1] == b'\n').unwrap_or(len);
-    loop {
-        let c = claim.fetch_add(1, Ordering::Relaxed);
-        if c >= n {
-            return hours;
-        }
-        let (mut i, end) = (snap(c), snap(c + 1));
-        let page = i & !4095;
-        while i < end {
-            // Bytes 5..13 are "MM-DDTHH"; their low nibbles x make 10 * x[k] + x[k + 1] in byte k of
-            // y without carries. October 30, 31 and November 1, 2 become day indexes 0..=3.
-            let x = load(d, i + 5) & (ONES * 0x0f);
-            let y = x * 10 + (x >> 8);
-            let day = (y >> 24 & 0xff) + 31 * (x >> 8 & 0xff) - 30;
-            let hour = (day * 24 + (y >> 48 & 0xff) - 18) as usize;
-            let s = i + 29 + find_byte(load(d, i + 28), b' ');
-            // The space after the endpoint: among the next 64 or 128 bytes, else a word at a time.
-            let mut e = s + eq_mask(d, s, None, b' ').trailing_zeros() as usize;
-            if e == s + 64 {
-                e += eq_mask(d, e, None, b' ').trailing_zeros() as usize;
-                if e == s + 128 {
-                    while find_byte(load(d, e), b' ') == 8 {
-                        e += 8;
-                    }
-                    e += find_byte(load(d, e), b' ');
+    while i < end {
+        // Bytes 5..13 are "MM-DDTHH"; their low nibbles x make 10 * x[k] + x[k + 1] in byte k of
+        // y without carries. October 30, 31 and November 1, 2 become day indexes 0..=3.
+        let x = load(d, i + 5) & (ONES * 0x0f);
+        let y = x * 10 + (x >> 8);
+        let day = (y >> 24 & 0xff) + 31 * (x >> 8 & 0xff) - 30;
+        let hour = (day * 24 + (y >> 48 & 0xff) - 18) as usize;
+        let s = i + 29 + find_byte(load(d, i + 28), b' ');
+        // The space after the endpoint: among the next 64 or 128 bytes, else a word at a time.
+        let mut e = s + eq_mask(d, s, None, b' ').trailing_zeros() as usize;
+        if e == s + 64 {
+            e += eq_mask(d, e, None, b' ').trailing_zeros() as usize;
+            if e == s + 128 {
+                while find_byte(load(d, e), b' ') == 8 {
+                    e += 8;
                 }
+                e += find_byte(load(d, e), b' ');
             }
-            let h = hash(d, s, e - s);
-            let id = table.find(d, h, s, e, || {
-                let mut map = shared[(h >> 60) as usize].lock().unwrap(); // top 4 bits pick a shard
-                *map.entry(d[s..e].to_vec()).or_insert_with(|| next_id.fetch_add(1, Ordering::Relaxed))
-            }) as u64;
-            let (latency, next) = parse_latency(d, e + 5);
-            let is_5xx = (d[e + 1] == b'5') as u64;
-            let (records, escapes) = &mut hours[hour];
-            if records.capacity() == 0 {
-                records.reserve(1 << 15); // mapped directly, not grown through the allocator's heap
-            }
-            if id < 2048 && latency < 0x000f_ffff {
-                records.push(((id as u32) << 21) | ((is_5xx as u32) << 20) | latency as u32);
-            } else {
-                records.push(u32::MAX);
-                escapes.push(id << 33 | is_5xx << 32 | latency);
-            }
-            i = next;
         }
-        // Drop this chunk's file pages from the mapping now, in parallel, instead of at exit on one
-        // thread. Nothing reads these pages again (a read would fault the file back in).
-        unsafe { madvise(d.as_ptr().add(page), end - page, 4) }; // MADV_DONTNEED
+        let h = hash(d, s, e - s);
+        let id = table.find(d, h, s, e, || {
+            let mut map = shared[(h >> 60) as usize].lock().unwrap(); // top 4 bits pick a shard
+            *map.entry(d[s..e].to_vec()).or_insert_with(|| next_id.fetch_add(1, Ordering::Relaxed))
+        }) as u64;
+        let (latency, next) = parse_latency(d, e + 5);
+        let is_5xx = (d[e + 1] == b'5') as u64;
+        let (records, escapes) = &mut hours[hour];
+        if records.capacity() == 0 {
+            records.reserve(1 << 15); // mapped directly, not grown through the allocator's heap
+        }
+        if id < 2048 && latency < 0x000f_ffff {
+            records.push(((id as u32) << 21) | ((is_5xx as u32) << 20) | latency as u32);
+        } else {
+            records.push(u32::MAX);
+            escapes.push(id << 33 | is_5xx << 32 | latency);
+        }
+        i = next;
     }
+    // Drop this chunk's file pages from the mapping now, in parallel, instead of at exit on one
+    // thread. Nothing reads these pages again (a read would fault the file back in).
+    unsafe { madvise(d.as_ptr().add(page), end - page, 4) }; // MADV_DONTNEED
+    hours
 }
 
 /// Two-digit decimal strings "00" to "99".
@@ -454,7 +445,15 @@ fn main() {
     let cpus = thread::available_parallelism().map_or(1, |n| n.get());
     let threads = env::var("SD_THREADS").map_or(cpus, |t| t.parse().unwrap());
 
-    let claim = AtomicUsize::new(0);
+    let mut cuts = vec![0];
+    for t in 1..threads {
+        let mut at = (len * t / threads).max(cuts[t - 1]);
+        while at > 0 && at < len && d[at - 1] != b'\n' {
+            at += 1;
+        }
+        cuts.push(at);
+    }
+    cuts.push(len);
     let shared: Vec<Shared> = (0..SHARDS).map(|_| Mutex::default()).collect();
     let next_id = AtomicU32::new(0);
     // The parse threads go on to summarize: after a barrier, one of them makes the plan, and after
@@ -466,10 +465,11 @@ fn main() {
     let (tx, rx) = mpsc::channel();
     thread::scope(|s| {
         for t in 0..threads {
-            let (tx, shared, next_id, parsed, plan, barrier, claim) =
-                (tx.clone(), &shared, &next_id, &parsed, &plan, &barrier, &claim);
+            let (tx, shared, next_id, parsed, plan, barrier) =
+                (tx.clone(), &shared, &next_id, &parsed, &plan, &barrier);
+            let (start, end) = (cuts[t], cuts[t + 1]);
             s.spawn(move || {
-                *parsed[t].lock().unwrap() = parse(d, len, 8 * threads, claim, shared, next_id);
+                *parsed[t].lock().unwrap() = parse(d, start, end, shared, next_id);
                 if barrier.wait().is_leader() {
                     let _ = plan.set(make_plan(shared, parsed));
                 }
