@@ -64,6 +64,19 @@ impl Shard {
     }
 }
 
+/// Find the first matching byte using guarded unaligned eight-byte loads.
+#[inline(always)]
+fn field_delim(b: &[u8], mut i: usize, c: u8) -> usize {
+    let splat = u64::from(c).wrapping_mul(0x0101_0101_0101_0101);
+    while b.len() - i >= 8 {
+        let x = unsafe { u64::from_le(std::ptr::read_unaligned(b.as_ptr().add(i).cast::<u64>())) } ^ splat;
+        let zeros = x.wrapping_sub(0x0101_0101_0101_0101) & !x & 0x8080_8080_8080_8080;
+        if zeros != 0 { return i + (zeros.trailing_zeros() as usize / 8); }
+        i += 8;
+    }
+    i + b[i..].iter().position(|&x| x == c).unwrap()
+}
+
 /// Parses the text field at `p` and steps past the comma after it. Returns the bytes
 /// between the quotes, still escaped (escaping is one-to-one, so equal raw bytes mean
 /// equal values, and unquoted text never contains a quote), and the unescaped length.
@@ -71,7 +84,7 @@ fn field(b: &'static [u8], p: &mut usize) -> (&'static [u8], i64) {
     let (s, q) = (*p, (b[*p] == b'"') as usize);
     let (mut i, mut pairs) = (s + q, 0);
     loop {
-        i += b[i..].iter().position(|&c| c == [b',', b'"'][q]).unwrap();
+        i = field_delim(b, i, [b',', b'"'][q]);
         if q == 0 || b[i + 1] != b'"' {
             break;
         }
@@ -94,6 +107,29 @@ fn number(b: &[u8], p: &mut usize) -> i64 {
     }
     *p += 1 + (b.get(*p) == Some(&b'\r')) as usize;
     [v, -v][neg as usize]
+}
+
+/// Parse an unsigned comma-terminated id. Fast path handles up to seven digits;
+/// guarded loads and scalar fallback cover all other legal lengths.
+#[inline(always)]
+fn positive_fast(b: &[u8], p: &mut usize) -> i64 {
+    if b.len() - *p >= 8 {
+        let raw = unsafe { u64::from_le(std::ptr::read_unaligned(b.as_ptr().add(*p).cast::<u64>())) };
+        let x = raw ^ 0x2c2c_2c2c_2c2c_2c2c;
+        let mask = x.wrapping_sub(0x0101_0101_0101_0101) & !x & 0x8080_8080_8080_8080;
+        if mask != 0 {
+            let n = mask.trailing_zeros() as usize / 8;
+            if n > 0 {
+                let mut v = raw.wrapping_shl(((8 - n) * 8) as u32) & 0x0f0f_0f0f_0f0f_0f0f;
+                v = (v.wrapping_mul(10).wrapping_add(v >> 8)) & 0x00ff_00ff_00ff_00ff;
+                v = (v.wrapping_mul(100).wrapping_add(v >> 16)) & 0x0000_ffff_0000_ffff;
+                v = (v.wrapping_mul(10000).wrapping_add(v >> 32)) & 0x0000_0000_ffff_ffff;
+                *p += n + 1;
+                return v as i64;
+            }
+        }
+    }
+    number(b,p)
 }
 
 /// Section 2.2 guarantees that every CR begins an outside-quote CRLF terminator.
@@ -161,9 +197,9 @@ fn main() {
         let (mut p, end, mut agg) = (bound(t), bound(t + 1), vec![EMPTY; unmatched + 1]);
         while p < end {
             p += 3 * recs[p..].starts_with(b"\xEF\xBB\xBF") as usize; // a byte order mark
-            let id = number(recs, &mut p);
+            let id = positive_fast(recs, &mut p);
             let ((name, name_len), (_, note_len)) = (field(recs, &mut p), field(recs, &mut p));
-            let rid = number(recs, &mut p) as usize;
+            let rid = positive_fast(recs, &mut p) as usize;
             let g = unmatched.min(*region.get(rid).unwrap_or(&u16::MAX) as usize);
             let cents = number(recs, &mut p);
             let shard = BuildHasherDefault::<Fx>::default().hash_one(name) >> 32 & 1023;

@@ -28,3 +28,7 @@ python3 experiments/b-rust-lengthhash/compare.py --baseline /tmp/b-group4-base -
 ```
 
 The test property includes forced short-hash collisions but the full-program forced-hash reference corpus should also be run; use `make-forced.py` to generate that candidate. Do not select without repeated x86 timings, correctness and official sandbox and practice results. No datasets or cached answers are bundled.
+
+## Dot VM x86 comparison
+
+The parent-run native x86 paired batches reported 1.9–3.0% lower wall time than the exact baseline. Across this, C parser and D mmap packages, 164 full hashes, 24 alternate comparisons, Linux/AVX2 guard-page, collision, boundary and graph-oracle checks passed. This remains an isolated candidate pending a separately controlled official comparison.

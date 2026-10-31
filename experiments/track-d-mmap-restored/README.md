@@ -18,3 +18,7 @@ python3 experiments/track-d-mmap-restored/boundaries.py
 ```
 
 The comparator randomizes paired order, uses matching build flags, validates the published full output hash after each run, and measures native per-process RSS rather than cgroup peak. Repeat in isolation. Before promotion, test Linux x86 and the official sandbox and measure warmed cgroup peak. No datasets, answers or credentials are included.
+
+## Dot VM x86 comparison
+
+The parent-run native x86 paired batches reported 0.8–3.7% lower wall time with approximately 26% higher native RSS. Across this, C parser and B grouped packages, 164 full hashes, 24 alternate comparisons, Linux/AVX2 guard-page, collision, boundary and graph-oracle checks passed. These are not official scoring-box wall or cgroup-peak measurements; the selected source remains unchanged pending a controlled comparison.

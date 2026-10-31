@@ -27,3 +27,7 @@ The comparator randomizes paired order after warmup and validates the official o
 An independent reviewer extracted the actual candidate into a test harness and checked all 1–9,999,999 positive values, sampled longer fallback values and offsets, 652,800 delimiter byte/alignment cases, 200,000 randomized buffers and encoded field round trips with overflow checks. `independent-adversarial.py` and its tail preserve those tests. This is not Linux performance evidence.
 
 A second independent reviewer found no defect under §2.2 and reran both protected-page/property suites and 24 mixed corpora at five worker counts against the reference. All passed. Independent review does not establish Linux timing or machine compatibility.
+
+## Dot VM x86 comparison
+
+The parent-run native x86 paired batches reported 7.4–21.0% lower wall time with lower CPU and unchanged native RSS versus the exact baseline. Across C parser, B grouped lookup and D mmap packages, 164 full hashes, 24 alternate comparisons, Linux/AVX2 guard-page, collision, boundary and graph-oracle checks passed. These are shared VM results rather than official scoring-box or parent-cgroup metrics. This candidate is selected for official practice.
