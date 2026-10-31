@@ -49,3 +49,12 @@ Five interleaved full-data pairs after warmup on macOS ARM: original median 0.36
 ## Native x86 dot VM
 
 The candidate and original were tested on the full seed-1 dataset with GCC 14. See `experiments/dot-vm.md` for the five-run medians and limitations. This was not a board run.
+
+
+## Three-shard native x86 follow-up
+
+The selected three-shard buffered implementation had a 0.200 s median and 36.0 MiB peak RSS versus 0.386 s and 25.2 MiB for the prior selected source on a shared native x86 VM. With pinned clang-format 23.1.3 and scc 4.1.0 on temporary source and Dockerfile copies, code-line counts were 226 versus 127; applying those time, memory and source factors gives approximately 1.187× K before dependency effects. This is an estimate, not an official score; the official cgroup peak and trimmed timing may differ. The prior source is `experiments/a-serial-f45.cpp`.
+
+GCC 14 warns in the vector range-insert that merges independent shard groups. Under the input contract, the two vectors cannot alias and their combined length is bounded by the 3.1 million records; supplied x86 ASan/UBSan, full hashes, reference and boundary checks found no defect. That strongly suggests a false positive but does not prove a compiler bug. A separately tested checked resize-and-copy alternative suppresses the diagnostic, including with `-Werror=stringop-overflow`, and passes restricted ARM Linux GCC 14 and allowlisted GCC 15 full hashes; x86 speed and source scoring for this changed code remain unknown. See `experiments/a-three-shard-checked.cpp` and `experiments/bench-a-merge-check.json`.
+
+The selected candidate passed the official offline restricted ARM Docker full hash in 0.56 s including startup, 16 exact shard-boundary cases, nine 1 MiB boundaries, four synthetic datasets, and fresh sample reference comparisons. No official board run ID is claimed.

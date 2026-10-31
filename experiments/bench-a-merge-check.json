@@ -1,0 +1,80 @@
+{
+  "system": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+  "machine": "arm64",
+  "python": "3.14.3 (main, Feb  3 2026, 15:32:20) [Clang 17.0.0 (clang-1700.6.3.2)]",
+  "commands": {
+    "baseline": [
+      "/tmp/a3-original-review",
+      "/tmp/speed-demon-a-full/requests.log",
+      "/tmp/a3-compare-output.txt"
+    ],
+    "candidate": [
+      "/tmp/a3-resize-review",
+      "/tmp/speed-demon-a-full/requests.log",
+      "/tmp/a3-compare-output.txt"
+    ]
+  },
+  "output": "/tmp/a3-compare-output.txt",
+  "expected_sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+  "warmups": 1,
+  "runs": 5,
+  "measurements": {
+    "baseline": [
+      {
+        "wall_s": 0.142599,
+        "user_s": 0.244705,
+        "system_s": 0.032459
+      },
+      {
+        "wall_s": 0.134939,
+        "user_s": 0.244039,
+        "system_s": 0.030431
+      },
+      {
+        "wall_s": 0.132887,
+        "user_s": 0.24021,
+        "system_s": 0.030395
+      },
+      {
+        "wall_s": 0.13509,
+        "user_s": 0.240221,
+        "system_s": 0.03075
+      },
+      {
+        "wall_s": 0.136459,
+        "user_s": 0.246517,
+        "system_s": 0.031287
+      }
+    ],
+    "candidate": [
+      {
+        "wall_s": 0.13643,
+        "user_s": 0.242418,
+        "system_s": 0.031399
+      },
+      {
+        "wall_s": 0.13495,
+        "user_s": 0.239276,
+        "system_s": 0.030528
+      },
+      {
+        "wall_s": 0.133207,
+        "user_s": 0.240425,
+        "system_s": 0.030364
+      },
+      {
+        "wall_s": 0.132121,
+        "user_s": 0.239735,
+        "system_s": 0.030837
+      },
+      {
+        "wall_s": 0.134413,
+        "user_s": 0.240783,
+        "system_s": 0.030828
+      }
+    ]
+  },
+  "baseline_median_wall_s": 0.13509,
+  "candidate_median_wall_s": 0.134413,
+  "median_wall_speedup": 1.0050367151986785
+}
