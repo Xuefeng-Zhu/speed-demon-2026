@@ -27,4 +27,9 @@ A separate three-pair experiment compared six and three workers under more varia
 
 ## Controlled local comparison
 
-Five interleaved full-data pairs after warmup on macOS ARM: 12 versus 6 workers median 1.018773 versus 1.102140 s; 6 versus 3 workers median 1.110951 versus 1.422599 s. Every output matched the full hash. Earlier separate Mac RSS checks show approximately 766 MB (12) versus 515 MB (6). Six remains provisional pending board measurement. Details: `../../experiments/bench-d-12-vs-6.json` and `../../experiments/bench-d-6-vs-3.json`. These are local measurements, not board scores.
+Five interleaved full-data pairs after warmup on macOS ARM: 12 versus 6 workers median 1.018773 versus 1.102140 s; 6 versus 3 workers median 1.110951 versus 1.422599 s. Every output matched the full hash. Earlier separate Mac RSS checks show approximately 766 MB (12) versus 515 MB (6). Six remains provisional pending board measurement. Details: `experiments/bench-d-12-vs-6.json` and `experiments/bench-d-6-vs-3.json`. These are local measurements, not board scores.
+
+
+## Native x86 dot VM follow-up
+
+The six-worker candidate passed three small differential seeds and the published full-data hash after compilation with rustc 1.99.1. Five-run native medians were 2.321 s and 357.2 MiB peak RSS for six workers, versus 2.195 s and 597.2 MiB for a reconstructed twelve-worker variant. Applying the time and memory exponents to these local figures favors six workers by about 7.8% on K, assuming the other factors are equal. This is not an official board result; its time and cgroup memory aggregation differ from these local metrics. Full context and calculation are in `experiments/dot-vm.md`.
