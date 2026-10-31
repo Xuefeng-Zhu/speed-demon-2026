@@ -278,7 +278,7 @@ fn main() {
     let file = fs::File::open(format!("{data_dir}/requests.log")).expect("open requests.log");
     let len = file.metadata().unwrap().len() as usize;
     let d = map_file(&file, len);
-    let cpus = 6;
+    let cpus = thread::available_parallelism().map_or(1, |n| n.get());
     let threads = env::var("SD_THREADS").map_or(cpus, |t| t.parse().unwrap());
 
     let mut cuts = vec![0];

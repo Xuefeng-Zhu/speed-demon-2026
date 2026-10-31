@@ -188,7 +188,7 @@ fn main() {
     let (data, out) = (dir("SD_DATA", "/data"), dir("SD_OUT", "/out"));
     let recs = map(format!("{data}/records.csv"));
     let regs = map(format!("{data}/regions.csv"));
-    let n = 6;
+    let n = thread::available_parallelism().map_or(1, |n| n.get());
     // regions.csv is sorted, so its last line holds the largest region id.
     let last = regs[..regs.len() - 1]
         .iter()

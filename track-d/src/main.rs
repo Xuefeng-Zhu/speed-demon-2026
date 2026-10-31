@@ -430,7 +430,7 @@ fn main() {
     // M_MMAP_THRESHOLD: big blocks (the edge buckets) go straight back to
     // the kernel when freed, instead of lingering in per-thread arenas.
     unsafe { mallopt(-3, 1 << 17) };
-    let threads = 6;
+    let threads = thread::available_parallelism().map_or(1, |n| n.get());
     let (g, bits, big) = load_graph(&format!("{data}/graph.txt"), threads);
     let rank = renumber(&g, bits, threads);
     let r = |v: u32| rank[v as usize];
