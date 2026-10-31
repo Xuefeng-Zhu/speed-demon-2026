@@ -1,0 +1,75 @@
+# ct.py 7 p-vG p-vI0 p-vJ p-vK  (scan cycles/token, medians of 7 runs, 8 threads)
+p-vG        masks 31.5 lookup 15.6 cb 10.1 phrase 3.5 csr 7.6 total 69.9
+p-vI0       masks 27.8 lookup 19.8 cb 10.1 phrase 3.5 csr 7.5 total 70.5
+p-vJ        masks 32.0 lookup 14.3 cb 9.8 phrase 3.5 csr 7.7 total 68.6
+p-vK        masks 31.6 lookup 15.4 cb 9.9 phrase 3.5 csr 7.6 total 69.7
+# ct.py 7 p-vL p-vM
+p-vL        masks 31.9 lookup 16.6 cb 10.1 phrase 3.5 csr 7.8 total 71.4
+p-vM        masks 32.0 lookup 16.4 cb 10.6 phrase 3.5 csr 7.4 total 70.3
+# ct.py 7 p-vA? (not built) p-vC1 p-vB1 p-vG
+p-vC1       masks 36.4 lookup 16.8 cb 10.6 phrase 3.6 csr 7.6 total 76.3
+p-vG        masks 31.7 lookup 15.7 cb 9.8 phrase 3.5 csr 7.8 total 70.0
+# ct.py 7 p-vC1 p-vk1 p-vk2 p-vk3  (key mask variants on top of vC1)
+p-vC1       masks 35.6 lookup 16.5 cb 10.4 phrase 3.4 csr 7.3 total 74.9
+p-vk1       masks 35.0 lookup 17.2 cb 10.3 phrase 3.5 csr 7.5 total 74.7
+p-vk2       masks 30.8 lookup 15.4 cb 9.5 phrase 3.4 csr 7.5 total 68.1
+p-vk3       masks 34.6 lookup 16.9 cb 10.4 phrase 3.4 csr 7.5 total 74.5
+# ct.py 5 p-vG diag-d0 diag-g1 diag-g3 diag-g2  (diagnostic only, wrong output: d0 bounds+push, g1 +key, g3 +hash/home, g2 +filter/select; p-vG adds prefetch and real lookups)
+p-vG        masks 30.8 lookup 15.3 cb 9.6 phrase 3.4 csr 7.6 total 68.2
+diag-d0     masks 10.4 lookup 6.2 cb 7.9 phrase 0.3 csr 0.7 total 27.0
+diag-g1     masks 16.0 lookup 6.9 cb 7.1 phrase 0.3 csr 0.6 total 32.5
+diag-g3     masks 18.8 lookup 7.2 cb 7.4 phrase 0.3 csr 0.7 total 35.8
+diag-g2     masks 25.6 lookup 7.4 cb 7.3 phrase 0.3 csr 0.6 total 42.7
+# phases.py 7 p-vC1 p-vF1 p-vF2  (bitmap spill threshold words/4, words, 2*words; ms, query kinds are summed over threads)
+phase                    p-vC1         p-vF1         p-vF2
+read_queries              0.78          0.78          0.75
+parse_intern             13.38         13.45         13.52
+mmap                      0.03          0.03          0.03
+sample_scan               2.20          2.22          2.22
+plan_build                3.99          4.09          4.10
+rows_alloc                0.01          0.01          0.01
+index                   145.20        143.90        144.63
+chunk_sort                0.00          0.00          0.00
+hits_collect              0.35          0.36          0.37
+answer                   28.63         29.14         29.97
+outs_sort_concat          0.69          0.74          0.71
+write                     0.53          0.55          0.55
+bool_list                94.37        132.59        151.72
+bool_list_bm             61.08         23.17          7.40
+bool_row_list            14.01         19.00         20.56
+bool_row_bm              50.92         48.09         47.47
+df_sum_cyc                7.27          7.53          7.57
+tl_build_cyc             41.57         42.37         42.46
+probe_cyc                 9.29          9.28          9.40
+bm_emit_cyc              47.20         25.50         20.01
+total                   195.93        195.27        197.74
+# phases.py 5 diag-pq  (diagnostic parse split on vL: tokenize+Vec, tokenize only, tokenize+cold probe)
+phase                  diag-pq
+read_queries              0.74
+diag_tok_vec              3.75
+diag_tok_only             0.97
+diag_tok_probe_cold          2.06
+parse_intern              9.04
+# phases.py 7 p-vG p-vL p-vN
+phase                     p-vG          p-vL          p-vN
+read_queries              0.72          0.79          0.76
+parse_intern             13.38          9.98          8.15
+mmap                      0.03          0.03          0.03
+sample_scan               2.09          2.10          2.07
+plan_build                4.03          3.99          3.68
+rows_alloc                0.01          0.01          0.01
+index                   133.40        134.99        134.87
+chunk_sort                0.00          0.00          0.00
+hits_collect              0.36          0.35          0.37
+answer                   29.56         29.15         29.31
+outs_sort_concat          0.72          0.73          0.77
+write                     0.53          0.57          0.63
+bool_list                95.33         93.80         95.53
+bool_list_bm             60.91         61.88         62.62
+bool_row_list            14.12         14.13         14.30
+bool_row_bm              50.99         50.96         52.86
+df_sum_cyc                7.70          7.71          8.34
+tl_build_cyc             40.35         41.63         42.59
+probe_cyc                 9.38          9.35          9.52
+bm_emit_cyc              46.53         46.27         47.84
+total                   184.46        185.63        180.68

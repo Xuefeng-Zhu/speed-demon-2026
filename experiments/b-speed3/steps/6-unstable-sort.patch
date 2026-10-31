@@ -1,0 +1,11 @@
+--- a/vN.rs
++++ a/vO.rs
+@@ -562,7 +562,7 @@
+     // A BOOL term in more than 1 of 32 sample documents gets a bitmap,
+     // and so do the most frequent others beyond 65,535.
+     let mut bools: Vec<usize> = (0..plan.role.len()).filter(|&t| plan.role[t] & IN_BOOL != 0).collect();
+-    bools.sort_by_key(|&t| std::cmp::Reverse(freq[t].0));
++    bools.sort_unstable_by_key(|&t| std::cmp::Reverse(freq[t].0));
+     let common = bools.partition_point(|&t| freq[t].0 as usize * 32 > sdocs as usize);
+     let nbm = common.max(bools.len().saturating_sub(65535));
+     bools[..nbm].iter().for_each(|&t| plan.role[t] ^= IN_BOOL | BITMAP);

@@ -1,0 +1,15 @@
+--- a/vG.rs
++++ a/vJ.rs
+@@ -582,6 +582,12 @@
+     plan.long.values_mut().for_each(|t| *t = new[*t as usize]);
+     plan.role = order.iter().map(|&t| plan.role[t]).collect();
+     let freq: Vec<u32> = order.iter().map(|&t| freq[t].0).collect();
++    // Reinsert the terms, most frequent first, so that they sit at their home slots.
++    plan.keys.sort_by_key(|e| std::cmp::Reverse(freq[e[2] as usize]));
++    plan.grow(plan.keys.len());
++    let none = plan.role.len() as u64 - 1;
++    plan.keys.iter_mut().filter(|e| e[0] == 0).for_each(|e| e[2] = none);
++    plan.empty = plan.keys.iter().position(|e| e[0] == 0).unwrap();
+     remap(&mut queries, &new);
+     plan.queries = &queries;
+     let mut list = Vec::new();

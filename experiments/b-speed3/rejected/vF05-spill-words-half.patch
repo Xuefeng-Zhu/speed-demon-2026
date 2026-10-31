@@ -1,0 +1,11 @@
+--- a/vC1.rs
++++ a/vF05.rs
+@@ -405,7 +405,7 @@
+         for c in chunks {
+             tl.extend(c.post(t).iter().map(|&d| c.first + d as u32));
+         }
+-        if !is_bm && op == b'O' && r.len() + tl.len() > words / 4 {
++        if !is_bm && op == b'O' && r.len() + tl.len() > words / 2 {
+             r.drain(..).for_each(|d| set(bm, d));
+             is_bm = true;
+         }

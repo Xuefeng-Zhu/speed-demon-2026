@@ -1,0 +1,23 @@
+--- a/vC1.rs
++++ a/vG.rs
+@@ -30,16 +30,16 @@
+ /// The first 16 bytes of the n-byte token at data[s..], zero-padded; tokens
+ /// never contain a zero byte. Token bytes are ASCII letters and digits, so
+ /// OR-ing 0x20 lowercases letters and leaves digits alone.
++const ONES: [u8; 32] = *b"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
+ fn key(data: &[u8], s: usize, n: usize) -> [u64; 2] {
+     let mut pad = [0u8; 16];
+     let src = data.get(s..s + 16).unwrap_or_else(|| {
+         pad[..n.min(16)].copy_from_slice(&data[s..s + n.min(16)]);
+         &pad
+     });
+-    std::array::from_fn(|w| {
+-        let x = u64::from_le_bytes(src[w * 8..w * 8 + 8].try_into().unwrap());
+-        (x | 0x2020_2020_2020_2020) & ((1u128 << (n.saturating_sub(w * 8).min(8) * 8)) - 1) as u64
+-    })
++    let x = u128::from_le_bytes(src[..16].try_into().unwrap()) | u128::from_le_bytes([0x20; 16]);
++    let x = x & u128::from_le_bytes(ONES[16 - n.min(16)..][..16].try_into().unwrap());
++    [x as u64, (x >> 64) as u64]
+ }
+ 
+ /// The queries and their terms: an open-addressing table from the key of a

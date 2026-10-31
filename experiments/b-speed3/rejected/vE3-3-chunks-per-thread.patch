@@ -1,0 +1,11 @@
+--- a/vC1.rs
++++ a/vE3.rs
+@@ -612,7 +612,7 @@
+     let mut rows = std::mem::ManuallyDrop::new(vec![0u64; plan.nbm * words]);
+     // SAFETY: AtomicU64 has the size, alignment and bit validity of u64.
+     let rows: Vec<AtomicU64> = unsafe { Vec::from_raw_parts(rows.as_mut_ptr().cast(), rows.len(), rows.capacity()) };
+-    let nchunks = nthreads * data.len().div_ceil(nthreads << 24).max(1);
++    let nchunks = (nthreads * 3).max(data.len() >> 24);
+     let cut = |k| {
+         let mut i = line_start(data, k * data.len() / nchunks);
+         while i < data.len() && id_at(data, i) % 64 != 0 {

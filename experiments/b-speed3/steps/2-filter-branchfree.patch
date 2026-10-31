@@ -1,0 +1,14 @@
+--- a/vA.rs
++++ a/vC1.rs
+@@ -146,9 +146,9 @@
+                 ends &= ends - 1;
+                 let k = key(data, s, e - s);
+                 let f = Plan::hash(k) % FILTER;
+-                let miss = e - s <= 16 && plan.filter[f / 64] >> f % 64 & 1 == 0;
++                let miss = ((e - s <= 16) as u64 & !plan.filter[f / 64] >> f % 64 & 1).wrapping_neg();
+                 let h = if e - s <= 16 { plan.home(k) } else { !(e - s) };
+-                let (k, h) = if miss { ([0; 2], plan.empty) } else { (k, h) };
++                let (k, h) = (k.map(|x| x & !miss), h ^ (h ^ plan.empty) & miss as usize);
+                 _ = plan.keys.get(h).map(prefetch);
+                 keys.push((k, h, s));
+             }

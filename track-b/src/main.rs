@@ -27,6 +27,9 @@ const IN_BOOL: u8 = 1;
 const ANCHOR: u8 = 2;
 const BITMAP: u8 = 4;
 
+/// ONES[16 - n..32 - n] masks the first n of 16 bytes.
+const ONES: [u8; 32] = *b"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
+
 /// The first 16 bytes of the n-byte token at data[s..], zero-padded; tokens
 /// never contain a zero byte. Token bytes are ASCII letters and digits, so
 /// OR-ing 0x20 lowercases letters and leaves digits alone.
@@ -36,10 +39,9 @@ fn key(data: &[u8], s: usize, n: usize) -> [u64; 2] {
         pad[..n.min(16)].copy_from_slice(&data[s..s + n.min(16)]);
         &pad
     });
-    std::array::from_fn(|w| {
-        let x = u64::from_le_bytes(src[w * 8..w * 8 + 8].try_into().unwrap());
-        (x | 0x2020_2020_2020_2020) & ((1u128 << (n.saturating_sub(w * 8).min(8) * 8)) - 1) as u64
-    })
+    let x = u128::from_le_bytes(src[..16].try_into().unwrap()) | u128::from_le_bytes([0x20; 16]);
+    let x = x & u128::from_le_bytes(ONES[16 - n.min(16)..][..16].try_into().unwrap());
+    [x as u64, (x >> 64) as u64]
 }
 
 /// The queries and their terms: an open-addressing table from the key of a
@@ -51,8 +53,7 @@ fn key(data: &[u8], s: usize, n: usize) -> [u64; 2] {
 /// BITMAP terms follow, term nlist + i with bitmap i of nbm. Bit h % FILTER
 /// of `filter` is set for each hash h of a short term in the table.
 #[derive(Default)]
-struct Plan<'q> {
-    queries: &'q [Query],
+struct Plan {
     keys: Vec<[u64; 3]>,
     filter: Vec<u64>,
     empty: usize,
@@ -67,7 +68,7 @@ struct Plan<'q> {
     rows: Vec<u64>,
 }
 
-impl Plan<'_> {
+impl Plan {
     /// The 24-bit hash of the key k; its low bits are the home slot.
     fn hash(k: [u64; 2]) -> usize {
         ((k[0] ^ k[1].rotate_left(29)).wrapping_mul(0x9e37_79b9_7f4a_7c15) >> 40) as usize
@@ -85,9 +86,9 @@ impl Plan<'_> {
         (h..).map(|i| i & mask).find(hit).unwrap()
     }
 
-    /// The id of the term w, added if new, after adding `role` to its roles.
-    fn intern(&mut self, w: &[u8], role: u8) -> u32 {
-        let (k, t) = (key(w, 0, w.len()), self.role.len() as u32);
+    /// The id of the term w = data[s..e], added if new, after adding `role` to its roles.
+    fn intern(&mut self, data: &[u8], s: usize, e: usize, role: u8) -> u32 {
+        let (w, k, t) = (&data[s..e], key(data, s, e - s), self.role.len() as u32);
         let t = if w.len() > 16 {
             *self.long.entry(w.to_vec()).or_insert(t)
         } else {
@@ -124,44 +125,21 @@ fn for_each_doc(data: &[u8], lo: usize, hi: usize, plan: &Plan, mut f: impl FnMu
     let (mut i, mut done, mut tokens, mut keys) = (lo, lo, Vec::new(), Vec::new());
     while i < hi {
         i += data[i..].iter().position(|&b| b == b'\t').unwrap() + 1;
-        // Where the tokens of the document start and end, from masks of 64
-        // bytes at a time up to its LF. Bit p of `after`: byte p - 1 is in a
-        // token. Key every token and prefetch its slot, then look them all
-        // up, so that many cache misses are in flight at once. A short token
-        // whose filter bit is clear is no query term: it is looked up as the
-        // empty key at an empty slot, which matches at once (measured faster
-        // than probing that slot with the real key).
-        let (mut carry, mut open) = (0, 0);
-        loop {
-            let (m, lf) = masks(data, i);
-            let m = m & (lf & lf.wrapping_neg()).wrapping_sub(1);
-            let after = m << 1 | carry;
-            let (mut starts, mut ends) = (m & !after, !m & after);
-            while ends != 0 {
-                let e = i + ends.trailing_zeros() as usize;
-                let start = i + starts.trailing_zeros() as usize;
-                let s = if carry != 0 { open } else { start };
-                carry = 0;
-                starts &= starts.wrapping_sub((s >= i) as u64);
-                ends &= ends - 1;
-                let k = key(data, s, e - s);
-                let f = Plan::hash(k) % FILTER;
-                let miss = e - s <= 16 && plan.filter[f / 64] >> f % 64 & 1 == 0;
-                let h = if e - s <= 16 { plan.home(k) } else { !(e - s) };
-                let (k, h) = if miss { ([0; 2], plan.empty) } else { (k, h) };
-                _ = plan.keys.get(h).map(prefetch);
-                keys.push((k, h, s));
-            }
-            // A token that runs on into the next 64 bytes.
-            if starts != 0 {
-                open = i + starts.trailing_zeros() as usize;
-            }
-            carry = m >> 63;
-            i += (lf.trailing_zeros() as usize + 1).min(64);
-            if lf != 0 {
-                break;
-            }
-        }
+        // Key every token and prefetch its slot, then look them all up, so
+        // that many cache misses are in flight at once. A short token whose
+        // filter bit is clear is no query term: it is looked up as the empty
+        // key at an empty slot, which matches at once (measured faster than
+        // probing that slot with the real key). Branch-free: `miss` is all ones
+        // for such a token.
+        i = each_token(data, i, |s, e| {
+            let k = key(data, s, e - s);
+            let f = Plan::hash(k) % FILTER;
+            let miss = ((e - s <= 16) as u64 & !plan.filter[f / 64] >> f % 64 & 1).wrapping_neg();
+            let h = if e - s <= 16 { plan.home(k) } else { !(e - s) };
+            let (k, h) = (k.map(|x| x & !miss), h ^ (h ^ plan.empty) & miss as usize);
+            _ = plan.keys.get(h).map(prefetch);
+            keys.push((k, h, s));
+        });
         let none = plan.role.len() as u32 - 1;
         let long = |w: &[u8]| *plan.long.get(&w.to_ascii_lowercase()).unwrap_or(&none);
         tokens.extend(keys.iter().map(|&(k, h, s)| match plan.keys.get(h) {
@@ -174,6 +152,37 @@ fn for_each_doc(data: &[u8], lo: usize, hi: usize, plan: &Plan, mut f: impl FnMu
         if i - done >= SLICE || i >= hi {
             release(&data[done..i]);
             done = i;
+        }
+    }
+}
+
+/// Calls f(s, e) for each token data[s..e] of the line from byte i, and returns
+/// the start of the next line (or a position past the end of data). The bounds
+/// come from masks of 64 bytes at a time; bit p of `after`: byte p - 1 is in a token.
+fn each_token(data: &[u8], mut i: usize, mut f: impl FnMut(usize, usize)) -> usize {
+    let (mut carry, mut open) = (0, 0);
+    loop {
+        let (m, lf) = masks(data, i);
+        let m = m & (lf & lf.wrapping_neg()).wrapping_sub(1);
+        let after = m << 1 | carry;
+        let (mut starts, mut ends) = (m & !after, !m & after);
+        while ends != 0 {
+            let e = i + ends.trailing_zeros() as usize;
+            let start = i + starts.trailing_zeros() as usize;
+            let s = if carry != 0 { open } else { start };
+            carry = 0;
+            starts &= starts.wrapping_sub((s >= i) as u64);
+            ends &= ends - 1;
+            f(s, e);
+        }
+        // A token that runs on into the next 64 bytes.
+        if starts != 0 {
+            open = i + starts.trailing_zeros() as usize;
+        }
+        carry = m >> 63;
+        i += (lf.trailing_zeros() as usize + 1).min(64);
+        if lf != 0 || i >= data.len() {
+            return i;
         }
     }
 }
@@ -232,21 +241,6 @@ fn prefetch<T>(p: &T) {
     };
 }
 
-/// Replaces each term t of the queries by new[t].
-fn remap(queries: &mut [Query], new: &[u32]) {
-    for q in queries {
-        match q {
-            Query::Bool(v) => v.iter_mut().for_each(|(_, t)| *t = new[*t as usize]),
-            Query::Phrase(p) => p.iter_mut().for_each(|t| *t = new[*t as usize]),
-        }
-    }
-}
-
-enum Query {
-    Bool(Vec<(u8, u32)>), // (first byte of the operator: AND, NOT, else OR; term)
-    Phrase(Vec<u32>),
-}
-
 /// A chunk's posting lists: list l has the ids first + docs[offs[l]..offs[l + 1]],
 /// and its phrase matches as (query, id).
 struct Chunk {
@@ -272,9 +266,9 @@ fn scan_chunk(data: &[u8], lo: usize, hi: usize, plan: &Plan, rows: &[AtomicU64]
     let mut stream = Vec::with_capacity((hi - lo) / 16);
     let (mut hits, mut doc, mut new, mut anch) = (Vec::new(), first, Vec::new(), Vec::new());
     // The bitmap words of the current 64 documents, stored when they are done.
-    let mut group = vec![0u64; plan.nbm];
+    let mut group = vec![0u64; plan.nbm + 1]; // and one for all other terms
     let flush = |group: &mut [u64], doc: u32| {
-        for (b, x) in group.iter_mut().enumerate() {
+        for (b, x) in group[..plan.nbm].iter_mut().enumerate() {
             rows[b * words + doc as usize / 64].store(std::mem::take(x), Relaxed);
         }
     };
@@ -282,7 +276,8 @@ fn scan_chunk(data: &[u8], lo: usize, hi: usize, plan: &Plan, rows: &[AtomicU64]
         if doc % 64 == 0 && doc != first {
             flush(&mut group, doc - 1);
         }
-        // Branch-free: write every term, keep the list terms and note the anchors.
+        // Branch-free: write every term, keep the list terms and note the
+        // anchors; a term without a bitmap sets a bit in the spare group word.
         new.resize(tokens.len(), 0);
         anch.resize(tokens.len(), 0);
         let (mut n, mut m) = (0, 0);
@@ -291,9 +286,7 @@ fn scan_chunk(data: &[u8], lo: usize, hi: usize, plan: &Plan, rows: &[AtomicU64]
             (new[n], anch[m]) = (t as u16, p);
             n += ((t as usize) < nl) as usize;
             m += (plan.role[t as usize] & ANCHOR != 0) as usize;
-            if let Some(g) = group.get_mut((t as usize).wrapping_sub(nl)) {
-                *g |= bit;
-            }
+            group[(t as usize).wrapping_sub(nl).min(plan.nbm)] |= bit;
         }
         stream.extend_from_slice(&new[..n]);
         stream.push(u16::MAX);
@@ -530,18 +523,24 @@ fn main() {
     let qtext = fs::read(format!("{data_dir}/queries.txt")).expect("read queries.txt");
     let mut plan = Plan::default();
     plan.grow((qtext.len() / 16 | 64).next_power_of_two()); // rarely grows
-    let mut queries = Vec::new();
-    for line in qtext.split(|&b| b == b'\n').filter(|l| !l.is_empty()) {
-        let mut w = line.split(|&b| b == b' ');
-        queries.push(if line.starts_with(b"BOOL") {
-            // (operator, term) pairs; the leading "BOOL" acts as OR on the empty set.
-            let mut pair = || Some((w.next()?[0], plan.intern(w.next()?, IN_BOOL)));
-            Query::Bool(std::iter::from_fn(&mut pair).collect())
-        } else {
-            let terms = line[b"PHRASE \"".len()..line.len() - 1].split(|&b| b == b' ');
-            Query::Phrase(terms.map(|w| plan.intern(w, 0)).collect())
+    // Query words: BOOL and PHRASE start a query, AND, OR and NOT are
+    // operators and terms are lowercase. Query i is (b'B' or b'P', its first
+    // term), its terms terms[qs[i].1..qs[i + 1].1] as (first byte of the
+    // operator: AND, NOT, else OR; term); the first term of a BOOL query has
+    // operator 0, OR on the empty set.
+    let (mut qs, mut terms, mut i, mut op) = (Vec::new(), Vec::new(), 0, 0);
+    while i < qtext.len() {
+        i = each_token(&qtext, i, |s, e| match qtext[s] {
+            b'B' | b'P' => qs.push((qtext[s], terms.len())),
+            b'A' | b'O' | b'N' => op = qtext[s],
+            _ => {
+                let role = IN_BOOL * (qs[qs.len() - 1].0 == b'B') as u8;
+                terms.push((std::mem::take(&mut op), plan.intern(&qtext, s, e, role)));
+            }
         });
     }
+    let nq = qs.len();
+    qs.push((0, terms.len()));
     let data = map_file(&format!("{data_dir}/docs.txt"));
 
     // Anchor each phrase on its rarest term in a sample of the corpus.
@@ -567,7 +566,7 @@ fn main() {
     // A BOOL term in more than 1 of 32 sample documents gets a bitmap,
     // and so do the most frequent others beyond 65,535.
     let mut bools: Vec<usize> = (0..plan.role.len()).filter(|&t| plan.role[t] & IN_BOOL != 0).collect();
-    bools.sort_by_key(|&t| std::cmp::Reverse(freq[t].0));
+    bools.sort_unstable_by_key(|&t| std::cmp::Reverse(freq[t].0));
     let common = bools.partition_point(|&t| freq[t].0 as usize * 32 > sdocs as usize);
     let nbm = common.max(bools.len().saturating_sub(65535));
     bools[..nbm].iter().for_each(|&t| plan.role[t] ^= IN_BOOL | BITMAP);
@@ -584,15 +583,14 @@ fn main() {
     plan.long.values_mut().for_each(|t| *t = new[*t as usize]);
     plan.role = order.iter().map(|&t| plan.role[t]).collect();
     let freq: Vec<u32> = order.iter().map(|&t| freq[t].0).collect();
-    remap(&mut queries, &new);
-    plan.queries = &queries;
+    terms.iter_mut().for_each(|e| e.1 = new[e.1 as usize]);
+    let query = |i: usize| (qs[i].0, &terms[qs[i].1..qs[i + 1].1]);
     let mut list = Vec::new();
-    for (qi, q) in queries.iter().enumerate() {
-        if let Query::Phrase(p) = q {
-            let j = (0..p.len()).min_by_key(|&j| freq[p[j] as usize]).unwrap();
-            plan.role[p[j] as usize] |= ANCHOR;
-            list.push((p[j], qi, &p[..], j));
-        }
+    for qi in (0..nq).filter(|&i| qs[i].0 == b'P') {
+        let p = query(qi).1;
+        let j = (0..p.len()).min_by_key(|&j| freq[p[j].1 as usize]).unwrap();
+        plan.role[p[j].1 as usize] |= ANCHOR;
+        list.push((p[j].1, qi, p, j));
     }
     // One flat list of anchors, grouped by term, with copies of the phrases.
     list.sort_unstable_by_key(|a| a.0);
@@ -602,7 +600,7 @@ fn main() {
     for (_, qi, p, j) in list {
         plan.anchors
             .push((qi as u32, plan.flat.len() as u32, p.len() as u32, j as u32));
-        plan.flat.extend_from_slice(p);
+        plan.flat.extend(p.iter().map(|e| e.1));
     }
 
     // Equal byte ranges, each moved to the next line whose id is a multiple
@@ -646,13 +644,13 @@ fn main() {
     let mut outs: Vec<(usize, String)> = par(nthreads, |_| {
         let mut s = Scratch::default();
         s.bm = vec![0; words];
-        claim(queries.len().div_ceil(block))
+        claim(nq.div_ceil(block))
             .map(|b| {
                 let mut out = String::new();
-                for qi in b * block..((b + 1) * block).min(queries.len()) {
-                    match &queries[qi] {
-                        Query::Bool(q) => boolean(q, &plan, &mut s, &mut out),
-                        Query::Phrase(_) => {
+                for qi in b * block..((b + 1) * block).min(nq) {
+                    match query(qi) {
+                        (b'B', q) => boolean(q, &plan, &mut s, &mut out),
+                        _ => {
                             let q = |h: &(u32, u32)| h.0 as usize;
                             let d = &hits[hits.partition_point(|h| q(h) < qi)..hits.partition_point(|h| q(h) <= qi)];
                             sorted_line(&mut out, d.iter().map(|h| h.1));

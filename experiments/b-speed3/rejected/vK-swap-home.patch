@@ -1,0 +1,18 @@
+--- a/vG.rs
++++ a/vK.rs
+@@ -582,6 +582,15 @@
+     plan.long.values_mut().for_each(|t| *t = new[*t as usize]);
+     plan.role = order.iter().map(|&t| plan.role[t]).collect();
+     let freq: Vec<u32> = order.iter().map(|&t| freq[t].0).collect();
++    // Move the terms seen in the sample to their home slots where the slot holds
++    // a term away from its own home; linear probing still finds both.
++    for p in 0..plan.keys.len() {
++        let k = |i: usize| [plan.keys[i][0], plan.keys[i][1]];
++        let h = plan.home(k(p));
++        if plan.keys[p][0] != 0 && freq[plan.keys[p][2] as usize] > 0 && plan.home(k(h)) != h {
++            plan.keys.swap(p, h);
++        }
++    }
+     remap(&mut queries, &new);
+     plan.queries = &queries;
+     let mut list = Vec::new();

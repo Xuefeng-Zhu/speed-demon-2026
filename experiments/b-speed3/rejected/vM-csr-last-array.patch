@@ -1,0 +1,33 @@
+--- a/vL.rs
++++ a/vM.rs
+@@ -326,7 +326,7 @@
+     if doc != first {
+         flush(&mut group, doc - 1);
+     }
+-    assert!(doc - first <= 1 << 16, "chunk too large");
++    assert!(doc - first < 1 << 16, "chunk too large");
+     // Counting sort of the stream, dropping a term's repeats within a document.
+     let mut offs = vec![0u32; nl + 1];
+     for &l in stream.iter().filter(|&&l| l != u16::MAX) {
+@@ -334,15 +334,16 @@
+     }
+     (1..=nl).for_each(|l| offs[l] += offs[l - 1]);
+     let (mut end, mut docs, mut d) = (offs.clone(), vec![0u16; offs[nl] as usize], 0u16);
++    let mut last = vec![u16::MAX; nl]; // the last document of each list, no id is u16::MAX
+     for l in stream {
+         if l == u16::MAX {
+             d = d.wrapping_add(1);
+         } else {
+-            let e = &mut end[l as usize];
+-            if *e == offs[l as usize] || docs[*e as usize - 1] != d {
+-                docs[*e as usize] = d;
+-                *e += 1;
+-            }
++            // Branch-free: a repeat is written but not kept.
++            let (e, l) = (&mut end[l as usize], l as usize);
++            docs[*e as usize] = d;
++            *e += (last[l] != d) as u32;
++            last[l] = d;
+         }
+     }
+     // Close the gaps the repeats left.

@@ -1,0 +1,10 @@
+--- a/vG.rs
++++ a/vI0.rs
+@@ -149,7 +149,6 @@
+                 let miss = ((e - s <= 16) as u64 & !plan.filter[f / 64] >> f % 64 & 1).wrapping_neg();
+                 let h = if e - s <= 16 { plan.home(k) } else { !(e - s) };
+                 let (k, h) = (k.map(|x| x & !miss), h ^ (h ^ plan.empty) & miss as usize);
+-                _ = plan.keys.get(h).map(prefetch);
+                 keys.push((k, h, s));
+             }
+             // A token that runs on into the next 64 bytes.
