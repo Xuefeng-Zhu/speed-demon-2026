@@ -168,3 +168,7 @@ The restored unpruned coarse source passed all gates at `386aec0`, `run-4ca1789c
 
 `src/main.rs` replaced with the `speed-opt` version (Dockerfile, .speed-demon.toml and build flags unchanged). Sandbox A/B against `3b1126e` on full seed 1 (2-core arm64, noisy, min of alternating runs, hashes match): no official board run yet for this source. Add the run ID here once the board has scored it, and revert to `3b1126e` if the board T is not better.
 Sandbox CPU min: 2.33 s -> 1.54 s; sandbox peak RSS at 2 threads rose ~195 -> 241 MB (includes mmap pages), so check board M.
+
+## Round 2: packed u32 edges (2026-10-31)
+
+Edges packed as one u32 (21-bit node, 11-bit weight; large weights in a sorted side list), single parse to u64 per edge then per-block build, old graph freed before the backward graph, u32 distances with exact u64 rerun when needed, compare_exchange cluster claim. Board `run-d1fea4ee2487` at `ccbfbc0`: T=0.185344 s, M=87.7 MB, S=390, K=22.63 (was 18.94). Kept.

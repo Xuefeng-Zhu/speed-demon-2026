@@ -163,3 +163,7 @@ The restored baseline PGO build passed all official gates at `8001800`, `run-1e9
 
 `src/main.rs` replaced with the `speed-opt` version (Dockerfile, .speed-demon.toml and build flags unchanged). Sandbox A/B against `3b1126e` on full seed 1 (2-core arm64, noisy, min of alternating runs, hashes match): no official board run yet for this source. Add the run ID here once the board has scored it, and revert to `3b1126e` if the board T is not better.
 Sandbox CPU min: 3.95 s -> 1.92 s.
+
+## Round 2 trial: global bitmaps + 16-bit postings (2026-10-31)
+
+Board `run-225241b20c9f` at `ccbfbc0`: T=0.381388 s, M=76.1 MB, S=496, K=18.47, below v23 (K 19.6). Memory halved but time rose; v23 source restored.
