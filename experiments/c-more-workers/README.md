@@ -7,3 +7,7 @@ An initial randomized shared macOS ARM screen of seven measured full-seed runs p
 The combined variant passed `python3 experiments/c-rust-independent.py --source experiments/c-more-workers/double-4096.rs --seeds 24`: 120 byte-exact reference comparisons over five effective worker counts (2, 4, 6, 14 and 32). The simpler double-worker variant was not separately differential tested. Both remain unreviewed on x86.
 
 Reproduce using `rustc --edition 2021 -O -C lto=fat -C codegen-units=1` for each source and `experiments/c-nameowned/compare.py --baseline <baseline-bin> --variant <candidate-bin> --data <full-data> --runs 9 --report <report>`. Confirm full hashes, alternate-reference/worker cases, CPU, peak memory and official scores on the intended machine before any decision.
+
+## Dot VM comparison
+
+The parent-run shared x86 VM compared this double-worker/4,096-shard candidate with the exact selected baseline. Results were inconsistent: 4.5% slower in one batch, 11% faster in a repeat. In the combined C candidate investigation, 128 full hashes, 12 alternate references, 360 mixed references, 357 boundary checks and group/collision tests passed. Native timings do not establish an official win, so the baseline was retained.

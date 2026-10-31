@@ -7,3 +7,7 @@ Two randomized, full-seed paired ARM Mac runs (7 then 9 measured pairs, one warm
 `python3 experiments/c-rust-independent.py --source experiments/c-inline-groupbits/candidate.rs --seeds 24` passed 120 alternate-reference checks across five worker counts. `python3 experiments/c-inline-groupbits/overflow-collisions.py` passed eight reference comparisons using 310-country inputs, exercising the vector fallback at worker counts 1/2/7/16 with normal hash and a forced constant hash. Exact full-field name equality is tested; full hashes alone are insufficient. Candidate has not been verified on x86, with cgroup metrics, or on the official board.
 
 For repeat native timing use `rustc --edition 2021 -O -C lto=fat -C codegen-units=1` for both sources, then `experiments/c-nameowned/compare.py --baseline <baseline> --variant <candidate> --data <full-seed1> --runs 9 --report <report.json>`.
+
+## Dot VM comparison
+
+The parent-run shared x86 VM repeat measured this candidate 21.4% slower than the exact selected baseline with higher CPU time. In the combined C candidate investigation, 128 full hashes, 12 alternate references, 360 mixed references, 357 boundary checks and group/collision tests passed. This native result does not establish an official score; the baseline was retained.
