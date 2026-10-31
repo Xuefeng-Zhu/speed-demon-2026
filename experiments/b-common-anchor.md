@@ -8,11 +8,12 @@ implementation assigns 10,000 of the distinct phrases to the common `a b`
 anchor. The script independently computes the matching windows and verifies
 every output byte, including document counts, sums, and smallest ten IDs.
 
-From the repository root, compile the two implementations and run a small
-reference-backed check:
+From the repository root, compile the two historical C++ implementations and
+run a small reference-backed check. To check the current Rust track, use the
+positional adapter described in `experiments/b-rust-fixtures.md`.
 
 ```sh
-c++ -O3 -std=c++17 -pthread track-b/main.cpp -o /tmp/speed-b-selected
+c++ -O3 -std=c++17 -pthread experiments/pr1-c634/baseline-track-b/main.cpp -o /tmp/speed-b-selected
 c++ -O3 -std=c++17 -pthread experiments/b-stream-2fc.cpp -o /tmp/speed-b-prior
 python3 experiments/b-common-anchor.py /tmp/speed-b-selected \
   --baseline /tmp/speed-b-prior --documents 1 \

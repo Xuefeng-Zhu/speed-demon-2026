@@ -10,4 +10,4 @@ with tempfile.TemporaryDirectory(prefix='b-shard-top10-') as d:
  subprocess.run([sys.executable,'official/reference/b_index.py','--data',str(data),'--out',str(ref)],check=True)
  subprocess.run([sys.argv[1],str(data/'docs.txt'),str(data/'queries.txt'),str(out/'results.txt')],check=True)
  got=(out/'results.txt').read_bytes();expected=(ref/'results.txt').read_bytes();assert got==expected
- print('PASS distributed top-10 across all 6 workers, duplicate phrases and overlapping occurrences')
+ print('PASS distributed top-10, duplicate phrases and overlapping occurrences')

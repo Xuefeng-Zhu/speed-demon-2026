@@ -18,7 +18,7 @@ On seed 1 full, three alternating native comparisons yielded baseline 7.479, 4.3
 
 A separate seed 13 sample (generated with `python3 official/generators/b_index.py --seed 13 --scale sample --out /tmp/speed-b-sample13`) matched the official reference byte for byte; candidate SHA-256 `21b6916ba01887cf204ec1a2be70abc18110f27877c9d425a55a31931df9d2dc`.
 
-To reproduce the comparison from the workspace root, compile `c++ -O3 -std=c++17 track-b-agent/main.cpp -o /tmp/b-baseline` and `c++ -O3 -std=c++17 track-b/main.cpp -o /tmp/b-candidate`. Generate the full seed 1 input with `python3 official/generators/b_index.py --seed 1 --scale full --out /tmp/speed-b-full`. Run each binary with `/tmp/speed-b-full/docs.txt /tmp/speed-b-full/queries.txt /tmp/results.txt` as its three arguments and hash the result; warm the page cache and alternate runs to limit ordering effects. Competition hardware and the official harness remain decisive.
+This historical comparison used C++ candidates. Generate the full seed 1 input with `python3 official/generators/b_index.py --seed 1 --scale full --out /tmp/speed-b-full`. The subsequent selected C++ source is preserved in `experiments/pr1-c634/baseline-track-b/main.cpp`; the current Rust candidate uses directory overrides as documented in `README.md`. Competition hardware and the official harness remain decisive.
 
 ## Controlled local comparison
 
@@ -68,3 +68,7 @@ The speed-focused candidate hashes only occupied 64-bit words of each zero-padde
 Independent review found no defect in the hash length, key bounds or nine-shard merge. An ASan/UBSan test of 250,000 distinct keys and 250,000 lookups, 40 randomized reference corpora, shard top-ten, duplicate and overlapping phrases passed on the exact nine-worker source. The official practice board must measure its runtime, memory and source size; local Mac Docker was not used. At e8e828a, prior B run `run-44b3123b3bcb` passed every gate with T=1.466380 s, M=255,537,152 bytes, S=379, K=7.698133 (`experiments/board-e8.json`).
 
 Official practice `run-6f8f977f36f7` at e6e72ac passed every gate: T=1.124940 s, M=274,243,584 bytes, S=379, K=8.665777 (`experiments/board-e6.json`). The previous practice was 1.466380 s and K=7.698133; these separate single public-seed runs are subject to noise and are not final holdout results.
+
+## Proposed bounded Rust PR merge
+
+The selected merge candidate adapts PR head c634a2a to deduplicate identical phrases and retain bounded per-chunk summaries, cap aggregate bitmap payload at 64 MiB with exact postings fallback, and use nonlinear hashing with full-key equality. The unmodified PR B is preserved outside the submitted track as `experiments/pr1-c634/track-b.rs`; the preceding C++ source is `experiments/pr1-c634/baseline-track-b/main.cpp`. The candidate passed full seed-1, 250,000-document/19,000-duplicate-phrase, maximum query-vocabulary, forced-collision, 240 corpus/worker and forced-cap reference checks. Shared x86 dot VM paired medians were 0.39674 s and 151,300 KiB process RSS versus 0.99440 s and 268,012 KiB for the C++ baseline; hashes and references passed. Native VM observations are not official sandbox, cgroup or source-score measurements.

@@ -103,3 +103,7 @@ Official practice `run-39ea5704e350` at b9c2b54 passed every gate, with six work
 The restored auto default passed all gates in official practice `run-2ff15013ed39` at e8e828a: T=0.051316 s, M=50,696,192 bytes, S=273, K=26.616965 (`experiments/board-e8.json`). Auto's two results bracket the six-worker result, so separate practice runs do not establish a reliable ordering.
 
 `track-a-verification/latency_grid_test.py` additionally checked 132,624 singleton groups across all 72 hours and 1,842 endpoints, random unsigned-32-bit latencies of every decimal width, 0 and 4294967295, and 1, 2, 6, 12 and 64 workers. This used the same Darwin-only test adaptation.
+
+## Proposed hardened PR line reduction
+
+The isolated merge candidate adapts PR 385a930 with dynamic endpoint-table growth, exact-byte collision comparison, explicit SWAR wrapping and a guard before tail shifts. Its full seed-1 hash, 5,020-endpoint forced-collision/growth cases, page boundaries, latency grid and overflow-check-enabled synthetic suite passed using a temporary Darwin mmap flag adjustment. On the shared x86 dot VM it measured 0.05938 s versus 0.05436 s for the existing source. The speed-first merge retains the existing implementation; the tested rewrite is `experiments/pr1-c634/trimmed-a-hardened.rs`. These are native VM observations, not official scores.
