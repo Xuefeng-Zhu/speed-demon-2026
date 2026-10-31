@@ -75,3 +75,8 @@ The public seed-1 practice run at commit `f45c4cf3f707123e705b930c6b1f08b8facefd
 ## Live-board practice run at 664ba1a
 
 Run `run-f2cc9af47d9d` at commit `664ba1aafb0d765427f49d5ad933b6c1a18b0f24` passed check, build, correctness, timeout and sandbox. The board reports T=0.226277 s, M=47616000 bytes, S=233, D=1, K=13.144081 and 55.936511 machine points. This single public-seed practice run is not final hidden-seed scoring. See `experiments/board-664.json`.
+
+
+## Live-board practice run at 2fc9110
+
+Run `run-0739ec66c62d` at commit `2fc9110d0c2acfc880350efbc240f5aa4620bd99` passed check, build, correctness, timeout and sandbox. The board reports T=0.227481 s, M=47534080 bytes, S=233, D=1, K=13.113766 and 55.886371 machine points. This is a single public-seed practice run, not final hidden-seed scoring. See `experiments/board-2fc.json`.

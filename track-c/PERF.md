@@ -40,3 +40,8 @@ Run `run-e235d1cc36ec` at commit `664ba1aafb0d765427f49d5ad933b6c1a18b0f24` pass
 ## Read-only input mapping
 
 The selected candidate maps records rather than copying the full input into an anonymous buffer. The full official hash passed under the restricted ARM container; tiny seeds 2, 17 and 4242 and BOM/EOF/page-boundary fixtures passed against the reference. Independent review, ASan/UBSan, sample seed 99 and the earlier native x86 full/alternate checks also passed. Three alternating warmed-cache local ARM Docker pairs gave cgroup peaks 277,241,856 / 276,971,520 / 277,200,896 B for heap versus 75,550,720 / 76,128,256 / 75,730,944 B for mmap, all hashes correct. A separate prewarmer held the data cache before the measured containers; `experiments/c-cgroup-bench.py` and `experiments/c-cgroup-report.json` preserve the method and data. The supplied x86 wall medians were 0.462 s heap and 0.415 s mmap; pinned formatted S was 167 versus 198. Together those cross-machine local figures imply about 1.33× K, not an official score. The board run above measured heap; mmap awaits its own board run.
+
+
+## Live-board practice run at 2fc9110
+
+Run `run-a9d0b9f55766` at commit `2fc9110d0c2acfc880350efbc240f5aa4620bd99` passed check, build, correctness, timeout and sandbox. The board reports T=0.527238 s, M=76075008 bytes, S=198, D=1, K=6.548517 and 40.807147 machine points. This is a single public-seed practice run, not final hidden-seed scoring. See `experiments/board-2fc.json`. Compared with the prior heap-copy run `run-e235d1cc36ec`, T changed from 0.526909 to 0.527238 s, M from 277127168 to 76075008 B, S from 167 to 198, and K from 5.188997 to 6.548517 (about 26.2% higher).
