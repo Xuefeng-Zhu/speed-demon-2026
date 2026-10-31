@@ -1,0 +1,93 @@
+{
+  "system": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+  "machine": "arm64",
+  "python": "3.14.3 (main, Feb  3 2026, 15:32:20) [Clang 17.0.0 (clang-1700.6.3.2)]",
+  "commands": {
+    "baseline": [
+      "/tmp/b-bounded-base",
+      "/tmp/speed-b-full/docs.txt",
+      "/tmp/speed-b-full/queries.txt",
+      "/tmp/b-tokenhash-bench-out"
+    ],
+    "candidate": [
+      "/tmp/b-tokenhash",
+      "/tmp/speed-b-full/docs.txt",
+      "/tmp/speed-b-full/queries.txt",
+      "/tmp/b-tokenhash-bench-out"
+    ]
+  },
+  "output": "/tmp/b-tokenhash-bench-out",
+  "expected_sha256": "f86973c210228141bcb6f1f1b10188ad2a9b65f71e7cd7cf4590b38de4e80927",
+  "warmups": 1,
+  "runs": 5,
+  "measurements": {
+    "baseline": [
+      {
+        "wall_s": 1.351917,
+        "user_s": 5.122709,
+        "system_s": 0.189013,
+        "max_rss_native_units": 262324224
+      },
+      {
+        "wall_s": 2.088859,
+        "user_s": 5.523176,
+        "system_s": 0.234125,
+        "max_rss_native_units": 265338880
+      },
+      {
+        "wall_s": 1.448029,
+        "user_s": 4.949503,
+        "system_s": 0.185031,
+        "max_rss_native_units": 266469376
+      },
+      {
+        "wall_s": 1.125396,
+        "user_s": 4.403291,
+        "system_s": 0.157937,
+        "max_rss_native_units": 274628608
+      },
+      {
+        "wall_s": 1.451109,
+        "user_s": 4.637667,
+        "system_s": 0.200413,
+        "max_rss_native_units": 271269888
+      }
+    ],
+    "candidate": [
+      {
+        "wall_s": 2.09277,
+        "user_s": 5.227493,
+        "system_s": 0.246813,
+        "max_rss_native_units": 262520832
+      },
+      {
+        "wall_s": 1.539159,
+        "user_s": 4.910228,
+        "system_s": 0.233282,
+        "max_rss_native_units": 269287424
+      },
+      {
+        "wall_s": 1.49529,
+        "user_s": 5.038782,
+        "system_s": 0.198891,
+        "max_rss_native_units": 262569984
+      },
+      {
+        "wall_s": 1.461897,
+        "user_s": 4.601328,
+        "system_s": 0.191835,
+        "max_rss_native_units": 268615680
+      },
+      {
+        "wall_s": 1.626301,
+        "user_s": 4.838834,
+        "system_s": 0.223799,
+        "max_rss_native_units": 263110656
+      }
+    ]
+  },
+  "baseline_median_wall_s": 1.448029,
+  "candidate_median_wall_s": 1.539159,
+  "rss_note": "wait4 per-process peak RSS: KiB on Linux, bytes on macOS; not cgroup memory",
+  "median_wall_speedup": 0.9407923417918487
+}

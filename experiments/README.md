@@ -101,3 +101,12 @@ A later Track B rare-anchor phrase experiment was about 2.1% slower than its zer
 ## Warm-cache C cgroup comparison
 
 A separate prewarmer container read both inputs and stayed alive while three restricted ARM Docker pairs ran, alternating order. All outputs matched the full hash. The heap-copy cgroup peaks were 277,241,856 / 276,971,520 / 277,200,896 B; mmap peaks were 75,550,720 / 76,128,256 / 75,730,944 B. The comparison reads each run container's `memory.peak` after the program exits but before the shell exits; shell/container overhead and ARM/OrbStack differ from the official parent-cgroup harness. This is local evidence, not a board score. See `c-cgroup-bench.py` and `c-cgroup-report.json`; input paths, images, and output folders in that script must be recreated. The host's official prewarming is documented in the competition context. Mmap was selected for board measurement; the heap baseline is `c-heap-664.cpp`.
+
+
+## B bounded phrase summaries and C exact hash counting
+
+The B bounded variant uses query-derived phrase anchors, deduplicates phrases and records bounded per-worker summaries instead of full match lists. It was x86-tested and selected; see `dot-vm.md`. `b-stream-2fc.cpp` preserves its board-tested predecessor. It passed an independent 40-corpus fuzz suite, a 250k-document/19k-duplicate-phrase stress, shard top-ten checks and the pinned ARM Docker full hash. It has not yet been measured on the board. See `b-bounded-*` and `bench-b-bounded.json`.
+
+The C mmap+hash variant uses per-country open addressing and exact collision comparisons. It was independently reviewed, passed 40 mixed corpora with all hashes forced equal under ASan/UBSan, and was selected for board measurement. The comparison package's selected/mmap files were identical; distinguish its mmap baseline from the separate f45 heap comparison. `c-mmap-2fc.cpp` preserves the board-tested predecessor. See `c-hash-*` and `dot-vm.md`.
+
+A separate quote-parallel parser is not selected: although adversarial boundary tests passed, a repeated container invocation returned exit 1 without output and the cause is still being investigated.

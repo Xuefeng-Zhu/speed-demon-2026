@@ -46,3 +46,10 @@ Using hash-verified pinned clang-format 23.1.3 and scc 4.1.0 on temporary source
 ## Checked A merge follow-up
 
 On the shared native x86 VM, the checked-resize merge compiled under GCC 14 `-O3 -Werror=stringop-overflow` without diagnostics; the insertion merge reproduced the warning. Full hashes, five alternate references, 25 boundary cases, four synthetic cases and ASan/UBSan passed. Checked median was 0.2124 s versus 0.2161 s for insertion; peak process RSS was 36.07 versus 35.84 MiB. Pinned clang-format 23.1.3 and scc 4.1.0 measured S 233 versus 226 including Dockerfile, giving an estimated relative K of 1.0028 with equal dependency factors. The result is within likely shared-VM noise and is not a board score. Checked was selected for explicit bounds and a clean diagnostic. See `static-a-checked/`.
+
+
+## Native x86 B bounded and C hash comparison
+
+A later dot VM campaign reported 48 full executions and 16 alternate-reference cases across B/C, plus boundary, sanitizer and duplicate-phrase stress checks, all passing. B bounded median was 1.541 s versus 1.548 s selected, process RSS 246 versus 470 MiB; pinned S was 335 versus 255. The modeled time/memory/source ratio is approximately 1.095× K before dependency effects, not an official cgroup score. B bounded was selected for board measurement.
+
+C mmap+hash median was 0.311 s versus 0.466 s for an independently verified f45 heap baseline, with process RSS 267.8 versus 263 MiB. The package's files labelled `selected` and `mmap` were byte-identical; comparisons inside the package are to mmap, not f45. The f45 baseline comparison was independently checked against an earlier archive. Exact matched-pair mmap time and target cgroup peak are not inferred here. The candidate passed an independent forced-collision ASan/UBSan review and was selected for board measurement.

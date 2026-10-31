@@ -21,6 +21,7 @@ struct Group {
     string key;
     int64_t count=0, ids=0, sum=0, low=INT64_MAX, high=INT64_MIN, namebytes=0, notebytes=0;
     vector<string_view> names;
+    size_t distinct=0;
 };
 string readfile(const string& path) {
     ifstream in(path, ios::binary);
@@ -109,16 +110,25 @@ int main(int argc,char** argv) {
     for (int i=0;i<6;++i) workers.emplace_back([&] {
         size_t idx;
         while ((idx=next.fetch_add(1, memory_order_relaxed)) < groups.size()) {
-            auto& names = groups[idx].names;
-            sort(names.begin(), names.end());
-            names.erase(unique(names.begin(), names.end()), names.end());
+            auto& group = groups[idx];
+            auto& names = group.names;
+            if (names.empty()) continue;
+            size_t capacity=1;
+            while (capacity < names.size()*2) capacity*=2;
+            vector<uint32_t> table(capacity, UINT32_MAX);
+            hash<string_view> hasher;
+            for (uint32_t i=0; i<names.size(); ++i) {
+                size_t pos=hasher(names[i]) & (capacity-1);
+                while (table[pos]!=UINT32_MAX && names[table[pos]]!=names[i]) pos=(pos+1)&(capacity-1);
+                if (table[pos]==UINT32_MAX) { table[pos]=i; ++group.distinct; }
+            }
         }
     });
     for (auto& worker:workers) worker.join();
     ofstream result(out+"/aggregates.txt",ios::binary);
     if (!result) return 1;
     for(auto& g:groups) if(g.count) {
-        result<<g.key<<' '<<g.count<<' '<<g.ids<<' '<<money(g.sum)<<' '<<money(g.low)<<' '<<money(g.high)<<' '<<g.names.size()<<' '<<g.namebytes<<' '<<g.notebytes<<'\n';
+        result<<g.key<<' '<<g.count<<' '<<g.ids<<' '<<money(g.sum)<<' '<<money(g.low)<<' '<<money(g.high)<<' '<<g.distinct<<' '<<g.namebytes<<' '<<g.notebytes<<'\n';
     }
     if (!result) return 1;
     munmap(map,len);

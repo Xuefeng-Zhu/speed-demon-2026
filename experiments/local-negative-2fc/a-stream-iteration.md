@@ -1,0 +1,5 @@
+# Track A streaming group merge — rejected local experiment
+
+Candidate `/tmp/a-stream-groups.cpp` keeps the three worker-local endpoint groups after parsing, then gathers each hour/endpoint's latency vectors into one reusable temporary buffer for percentile selection. This avoids persistent merged copies while keeping the input partition and output format unchanged. It is an isolated experiment, not selected.
+
+One warmup and five interleaved full seed-1 native macOS ARM runs per variant were measured while other work could have been active. Every output matched SHA-256 `495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3`. Median wall time was 0.168334 s selected vs 0.213351 s candidate; maximum process RSS across the five runs was 42,631,168 vs 41,500,672 bytes. The candidate was approximately 26.7% slower for approximately 2.7% lower RSS, so it was rejected without further holdout or container tests. These are not official board results. Raw individual samples are `/tmp/a-stream-bench.json`.

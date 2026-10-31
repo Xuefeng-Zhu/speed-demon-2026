@@ -45,3 +45,10 @@ The selected candidate maps records rather than copying the full input into an a
 ## Live-board practice run at 2fc9110
 
 Run `run-a9d0b9f55766` at commit `2fc9110d0c2acfc880350efbc240f5aa4620bd99` passed check, build, correctness, timeout and sandbox. The board reports T=0.527238 s, M=76075008 bytes, S=198, D=1, K=6.548517 and 40.807147 machine points. This is a single public-seed practice run, not final hidden-seed scoring. See `experiments/board-2fc.json`. Compared with the prior heap-copy run `run-e235d1cc36ec`, T changed from 0.526909 to 0.527238 s, M from 277127168 to 76075008 B, S from 167 to 198, and K from 5.188997 to 6.548517 (about 26.2% higher).
+
+
+## Exact hash distinct-count candidate
+
+Per-country open-addressing retains source views and resolves hash collisions by exact byte comparison. A shared x86 VM measured median 0.311 s for this version versus 0.466 s for an independently verified f45 heap baseline. The supplied comparison package's `selected` and `mmap` sources were byte-identical, so its internal comparisons are against mmap; no paired mmap time is inferred from those figures. Pinned formatted S is 213 versus mmap+sort's 198. Local ARM warm-cgroup peaks were approximately 79 MB hash versus 76 MB mmap+sort. These cross-machine results are not a board score.
+
+The selected code passed the pinned restricted ARM Docker full hash in 0.74 s including startup, fresh tiny seeds 2/17/4242, six BOM/EOF/page-boundary fixtures, sample seed 271828 against reference, and a forced-all-hashes-collide ASan/UBSan build on 40 mixed corpora. All 48 full and 16 alternate executions in the user-supplied B/C VM campaign passed across the compared variants. The prior source is `experiments/c-mmap-2fc.cpp`; pinned counts are `experiments/c-hash-static-*.json`, and the collision fixture is `experiments/c-hash-collision-fuzz.py`. No board run ID exists yet for this selected version.

@@ -47,3 +47,8 @@ Run `run-8da2d746f8a0` at commit `664ba1aafb0d765427f49d5ad933b6c1a18b0f24` pass
 ## Live-board practice run at 2fc9110
 
 Run `run-720a9b2e78e9` at commit `2fc9110d0c2acfc880350efbc240f5aa4620bd99` passed check, build, correctness, timeout and sandbox. The board reports T=1.450775 s, M=496271360 bytes, S=255, D=1, K=7.192344 and 42.843522 machine points. This is a single public-seed practice run, not final hidden-seed scoring. See `experiments/board-2fc.json`.
+
+
+## Bounded phrase-index candidate
+
+The new candidate evaluates phrase matches during indexing, deduplicates identical phrase queries, and retains only per-worker count, sum, first-ten and last-document summaries. On a shared x86 VM, median wall time was 1.541 s versus 1.548 s for the prior streaming candidate, and process RSS 246 versus 470 MiB. Pinned S is 335 versus 255, giving an estimated K ratio of about 1.095 before dependency effects; official cgroup and board measurements remain pending. The campaign reported all full and alternate hashes passed. Independently, the selected code passed the full restricted ARM Docker hash in 2.14 s including startup, tiny seeds 2/17/4242, 1,000 edge queries, 10,000 randomized mixed queries, shard top-ten and six >1 MiB boundary cases, a 250,000-document / 19,000-duplicate-phrase stress and ASan/UBSan differential checks. Many distinct phrases sharing frequent anchors may increase CPU work, so the board timeout and hidden seed remain important. The previous source is `experiments/b-stream-2fc.cpp`; pinned count and Mac evidence are `experiments/b-{selected-664,phrase-bounded}.json` and `experiments/bench-b-bounded.json`.

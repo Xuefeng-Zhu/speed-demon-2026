@@ -1,14 +1,7 @@
 # Track B: Index
 
-This C++17 implementation reads the queries first and indexes only terms they use. A buffered `pread` scan finds document boundaries; six workers tokenize disjoint, contiguous document ranges into local postings, which are merged in ascending document ID order. A second worker pool evaluates queries into their original positions before ordered output. Boolean operators retain strict left-to-right semantics; phrase queries scan token sequences for exact adjacency. There are no non-standard runtime dependencies. The Docker build uses `-pthread` and pinned allowlisted images.
+This C++17 implementation reads queries first. Six workers index disjoint contiguous document ranges using bounded `pread` buffers. Boolean terms get sorted posting lists, and Boolean operators retain strict left-to-right semantics. For phrase queries, an adjacent query-term pair identifies candidate matches during tokenization; complete phrases are checked in order. Identical phrases share bounded per-worker summaries containing count, sum and first ten IDs. Worker summaries merge in document order, and query output is emitted in its original order. No result list grows with the number of matching documents. The program uses no non-standard runtime dependency; the pinned offline Docker build uses `-pthread`.
 
-On a shared native x86 dot VM, the selected streaming candidate's full-seed median was 1.445 s versus 5.750 s for the previous selected candidate, with process peak RSS about 470 versus 337 MiB. All full hashes and alternate-reference cases in that comparison passed. These are local results, not official board time or cgroup memory; see `experiments/dot-vm.md`. The prior serial candidate is retained in `experiments/b-serial.cpp`.
+On a shared native x86 dot VM, the bounded candidate measured median 1.541 s versus 1.548 s for the previous streaming implementation, with process peak RSS about 246 versus 470 MiB. Pinned formatter and scc counts were 335 versus 255 code lines including Dockerfile. These time, memory and source factors suggest approximately 1.095× K, not an official score. The prior source is `experiments/b-stream-2fc.cpp`; the next board run will measure the new candidate.
 
-The candidate passed the restricted ARM Linux Docker full-data hash check and fresh tiny reference cases, a 1,000-query edge fixture, and a test placing 32-byte tokens across six 1 MiB read boundaries. To reproduce the fixtures from the repository root:
-
-```sh
-python3 experiments/b-stream-boundary.py
-python3 experiments/b-edge-fixture.py /tmp/b-stream-boundary-review official/reference/b_index.py
-```
-
-The first live-board practice measurement for the f45 source is recorded in `PERF.md`; final hidden-seed scoring remains outstanding.
+The bounded candidate matched the published full-data hash in the restricted ARM Linux container and passed alternate-reference, boundary, randomized, sanitizer and phrase-duplication tests. In particular, 19,000 identical phrases across 250,000 matching documents produced the independently calculated output without retaining per-match lists. Independent review found no new ordering or race defect; many distinct phrases sharing common anchors can still increase CPU work, so the official timeout and hidden-seed checks matter. Reproducible fixtures and measurements are in `experiments/b-bounded-*` and `experiments/bench-b-bounded.json`.
