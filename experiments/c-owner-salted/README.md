@@ -33,3 +33,5 @@ Repeat paired batches and retain individual samples. `--avx2` tests compile the 
 ## Dot VM x86 comparison
 
 The parent-run shared x86 VM paired batches measured 28.6–35.9% lower wall time and 6.6–7.7% lower CPU, with approximately 23.5% higher native RSS versus the exact selected baseline. Across this and A compact-record work, 276 full hashes, 16 full-size all-escape runs, 20 alternate references, collision, fallback and guard checks passed. Sparse actual 4 GiB and 4 GiB + 4,096 byte mappings selected the fallback; full parsing above 4 GiB remains untested. Native VM memory is not official cgroup peak. Official practice is pending.
+
+Official first practice `run-c09e5f674726` at `ba7a690` passed all gates: T=0.094138 s, M=72,445,952 bytes, S=397 and K=14.099074. The immediately prior AVX baseline run was T=0.104887 s, M=18,006,016 bytes, S=247 and K=18.947223. This is a separate-batch speed improvement with materially higher cgroup peak and lower K; retained for the user’s explicitly speed-first objective. Repeat and hidden performance remain uncertain.
