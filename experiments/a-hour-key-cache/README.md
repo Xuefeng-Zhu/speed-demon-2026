@@ -1,0 +1,7 @@
+# Per-worker last-hour key cache (not selected)
+
+Candidate changes only parsing of the hour: each worker remembers the previous complete eight-byte timestamp slice at offset 6, covering the month digit, day, hour and constant separators. Matching keys reuse the prior hour; non-matching keys use the exact original arithmetic. It does not depend on time ordering: arbitrary jumps and repeated hours remain exact. Input guarantees timestamps share fixed year/month format and lie in the published 72-hour span. Baseline and candidate Linux sources are included; for native Darwin testing the temporary build changes only the anonymous mmap flag from `0x20` to `0x1000`.
+
+Two shared ARM native 12-worker paired full-seed screens (warmup plus nine and fifteen measured pairs, every hash matched) gave candidate/baseline medians of 0.052386/0.048948 s in the first and 0.037484/0.038882 s in the repeat. Wall ranges overlap and the ordering reversed. All independent synthetic oracle cases (0, 1k and two 100k records) and 14 page-end fixtures passed on the Darwin-adapted build. The first, slower candidate screen reported slightly lower candidate CPU, but contention was possible; no target x86 or cgroup conclusion follows. It is not selected.
+
+Reproduce with identical release builds, locally generated full data and `experiments/benchmark.py`; set `SD_DATA`, `SD_OUT` and `SD_THREADS` for both. Verify source semantics and target timing before adoption. No Docker was used.
