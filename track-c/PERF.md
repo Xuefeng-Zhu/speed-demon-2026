@@ -192,3 +192,5 @@ Result: `run-31d631d51681` at `9bd00f0`: T=0.057728 s, M=13.1 MB, S=310, K=26.32
 Round-3 trial: name dictionary rebuilt as 2^18 u32 tag index plus one 64-byte line per name (key + group bitset), pipelined probe/prefetch; records.csv read with pread 32 KB chunks instead of mmap (avoids serial 200 MB unmap at exit); read prefetch for shared read-only lines. Local 1-thread CPU 0.335 -> 0.25 s.
 Result: `run-f78e7fd076e8` at `b2df83b`: T=0.055621 s, M=35.1 MB, S=339, K=21.71 (was 26.39); time barely moved, memory up 2.6x. Reverted.
 Result: `run-e3f84fdfdd7d` at `feadbcc`: T=0.055285 s, M=13.5 MB, S=312, K=26.67 (was 26.30-26.39). Kept.
+
+Round-4 trial (c5): read-only inline name dictionary (dense ids), per-record (name id, country) pairs handed to country-owner threads in 1024 blocks instead of shared atomic OR, read-intent prefetch, fixed-end number parsing.
