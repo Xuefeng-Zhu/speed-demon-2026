@@ -33,13 +33,25 @@ type Edge = (u32, u32, u32);
 struct Csr {
     first: Vec<u32>,
     adj: Vec<u64>,
+    compact: Vec<u32>,
+    wide: Vec<u32>,
 }
 
 impl Csr {
     /// `(head, weight)` of every edge out of `u`.
     fn edges(&self, u: u32) -> impl Iterator<Item = (u32, u64)> + '_ {
         let range = self.first[u as usize] as usize..self.first[u as usize + 1] as usize;
-        self.adj[range].iter().map(|&e| (e as u32, e >> 32))
+        range.map(|i| {
+            if self.compact.is_empty() {
+                let e = self.adj[i];
+                (e as u32, e >> 32)
+            } else {
+                let e = self.compact[i];
+                let tag = e >> 21;
+                let w = if tag == 2047 { self.wide[i] } else { tag };
+                (e & ((1 << 21) - 1), w as u64)
+            }
+        })
     }
 }
 
@@ -96,8 +108,12 @@ fn load_graph(path: &str, threads: usize) -> [Csr; 2] {
 /// window of memory.
 fn build_csr(n: usize, m: usize, threads: usize, buckets: Vec<Vec<Vec<Edge>>>) -> Csr {
     let mut first = vec![0u32; n + 1];
-    let mut adj = vec![0u64; m];
+    let pack = n <= (1 << 21);
+    let mut adj = vec![0u64; if pack { 0 } else { m }];
+    let mut compact = vec![0u32; if pack { m } else { 0 }];
+    let mut wide = vec![0u32; if pack { m } else { 0 }];
     let (mut first_rest, mut adj_rest) = (&mut first[..n], &mut adj[..]);
+    let (mut compact_rest, mut wide_rest) = (&mut compact[..], &mut wide[..]);
     let (buckets, mut base) = (&buckets, 0);
     // Block j is the nodes `u` with `u * threads / n == j`.
     let lo = |j: usize| (j * n).div_ceil(threads);
@@ -105,8 +121,10 @@ fn build_csr(n: usize, m: usize, threads: usize, buckets: Vec<Vec<Vec<Edge>>>) -
         for j in 0..threads {
             let size: usize = buckets.iter().map(|b| b[j].len()).sum();
             let (first, f) = std::mem::take(&mut first_rest).split_at_mut(lo(j + 1) - lo(j));
-            let (adj, a) = std::mem::take(&mut adj_rest).split_at_mut(size);
-            (first_rest, adj_rest) = (f, a);
+            let (adj, a) = std::mem::take(&mut adj_rest).split_at_mut(if pack { 0 } else { size });
+            let (compact, cp) = std::mem::take(&mut compact_rest).split_at_mut(if pack { size } else { 0 });
+            let (wide, wp) = std::mem::take(&mut wide_rest).split_at_mut(if pack { size } else { 0 });
+            (first_rest, adj_rest, compact_rest, wide_rest) = (f, a, cp, wp);
             let block_base = base;
             base += size as u32;
             let lo = lo(j);
@@ -122,14 +140,21 @@ fn build_csr(n: usize, m: usize, threads: usize, buckets: Vec<Vec<Vec<Edge>>>) -
                 let mut cursor = first.to_vec();
                 for &(u, v, w) in edges() {
                     let c = &mut cursor[u as usize - lo];
-                    adj[(*c - block_base) as usize] = (w as u64) << 32 | v as u64;
+                    let pos = (*c - block_base) as usize;
+                    if pack {
+                        let tag = w.min(2047);
+                        compact[pos] = tag << 21 | v;
+                        if tag == 2047 { wide[pos] = w; }
+                    } else {
+                        adj[pos] = (w as u64) << 32 | v as u64;
+                    }
                     *c += 1;
                 }
             });
         }
     });
     first[n] = m as u32;
-    Csr { first, adj }
+    Csr { first, adj, compact, wide }
 }
 
 /// Per-thread search state, reused between queries. `dist[v]` holds the
