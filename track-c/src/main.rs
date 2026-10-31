@@ -48,20 +48,30 @@ impl Hasher for Fx {
 #[derive(Default)]
 #[repr(align(128))]
 struct Shard(Mutex<(HashMap<Box<[u8]>, usize, BuildHasherDefault<Fx>>, Vec<u64>)>);
-impl Shard {
-    /// Notes that `name` occurs in group `g`; returns 1 the first time, else 0.
-    fn see(&self, name: &[u8], g: usize, words: usize) -> i64 {
-        let (map, bits) = &mut *self.0.lock().unwrap();
-        let row = match map.get(name) {
-            Some(&row) => row,
-            None => *map.entry(name.into()).or_insert(bits.len() / words),
-        };
-        bits.resize(bits.len().max((row + 1) * words), 0);
-        let (w, bit) = (row * words + g / 64, 1 << (g % 64));
-        let new = bits[w] & bit == 0;
-        bits[w] |= bit;
-        new as i64
+// Each parser owns one bounded array and fixed shard heads; no bucket retains
+// unbounded capacity across adversarially shifting distributions.
+struct Event { name: &'static [u8], group: usize, next: u32 }
+fn flush(names: &[Shard], heads: &mut [u32; 1024], events: &mut Vec<Event>, words: usize, agg: &mut [Agg]) {
+    for (shard, head) in names.iter().zip(heads.iter_mut()) {
+        let mut i = *head;
+        if i == u32::MAX { continue; }
+        let (map, bits) = &mut *shard.0.lock().unwrap();
+        while i != u32::MAX {
+            let e = &events[i as usize];
+            let row = match map.get(e.name) {
+                Some(&row) => row,
+                None => *map.entry(e.name.into()).or_insert(bits.len() / words),
+            };
+            bits.resize(bits.len().max((row + 1) * words), 0);
+            let (w, bit) = (row * words + e.group / 64, 1 << (e.group % 64));
+            let new = bits[w] & bit == 0;
+            bits[w] |= bit;
+            agg[e.group][5] += new as i64;
+            i = e.next;
+        }
+        *head = u32::MAX;
     }
+    events.clear();
 }
 
 /// Parses the text field at `p` and steps past the comma after it. Returns the bytes
@@ -159,6 +169,8 @@ fn main() {
     let names: Vec<Shard> = (0..1024).map(|_| Shard::default()).collect();
     let aggs = par(n, |t| {
         let (mut p, end, mut agg) = (bound(t), bound(t + 1), vec![EMPTY; unmatched + 1]);
+        let mut heads = [u32::MAX; 1024];
+        let mut events = Vec::with_capacity(32768);
         while p < end {
             p += 3 * recs[p..].starts_with(b"\xEF\xBB\xBF") as usize; // a byte order mark
             let id = number(recs, &mut p);
@@ -167,10 +179,14 @@ fn main() {
             let g = unmatched.min(*region.get(rid).unwrap_or(&u16::MAX) as usize);
             let cents = number(recs, &mut p);
             let shard = BuildHasherDefault::<Fx>::default().hash_one(name) >> 32 & 1023;
-            let new = names[shard as usize].see(name, g, words);
-            let rec = [1, id, cents, cents, cents, new, name_len, note_len];
+            let h = &mut heads[shard as usize];
+            events.push(Event { name, group: g, next: *h });
+            *h = events.len() as u32 - 1;
+            let rec = [1, id, cents, cents, cents, 0, name_len, note_len];
             merge(&mut agg[g], rec);
+            if events.len() == 32768 { flush(&names, &mut heads, &mut events, words, &mut agg); }
         }
+        flush(&names, &mut heads, &mut events, words, &mut agg);
         agg
     });
     let mut lines: Vec<String> = Vec::new();
