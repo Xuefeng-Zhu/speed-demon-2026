@@ -92,3 +92,5 @@ On the shared x86 dot VM, two batches were 13.5–18.2% faster with median proce
 Official public-seed practice `run-6fefc73b3633` at 5934716 passed every gate: T=0.134421 s, M=29,593,600 bytes, S=208, K=15.549336 (`experiments/board-593.json`). The 0.005147 s wall regression versus the preceding run conflicts with both VM paired wins, while the measured memory and source factors are higher. A same-code repeat is warranted before choosing on wall speed; these are not final holdout scores.
 
 The same-code repeat `run-a8648a24df86` at b1f947f passed every gate: T=0.137428 s, M=29,286,400 bytes, S=208, K=15.410409 (`experiments/board-b1.json`). Since both scoring-box runs were slower than the earlier 0.129274 s baseline and the user's priority is wall speed, the prior CRLF source was restored. These separate runs are not controlled pairs or final holdout scores.
+
+The restored CRLF implementation passed every gate in official public-seed practice `run-3f3918380bdc` at ebb7061: T=0.128503 s, M=17,321,984 bytes, S=175, K=18.166138 (`experiments/board-ebb.json`). It was faster in this separate run than both batch practices; this is not final holdout scoring.

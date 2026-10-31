@@ -178,3 +178,7 @@ All tracks passed every gate; `board-593.json` records run IDs. C bounded batchi
 ## Same-code official repeat for b1f947f
 
 All tracks passed every gate; `board-b1.json` records run IDs. C batching repeated at T=0.137428 s, M=29,286,400 bytes, S=208, K=15.410409, compared with 0.134421 s in its first run and 0.129274 s for the prior baseline. The same selected sources and Dockerfiles were used at 5934716 and b1f947f. Given two slower target runs, the speed-first selection restores the prior CRLF source; separate practices are not controlled pairs or final holdout scores.
+
+## Official practice for restored C at ebb7061
+
+All tracks passed every gate; `board-ebb.json` records the run IDs. Restored C measured T=0.128503 s, M=17,321,984 bytes, S=175, K=18.166138. The immediately preceding two batch runs were 0.134421 and 0.137428 s, with K=15.549336 and 15.410409. This agrees with retaining the restored version for wall speed, though the public-seed practice runs are separate and not final holdout scores.
