@@ -25,3 +25,19 @@ The two packed CSR payloads total `2*(4*(n+1) + 8*m) = 93,924,104` bytes. Both p
 Add the search payload, deliberately cumulative loader-vector payload, both CSR graphs and cursors, input buffers and one full graph file cache, 4 phases × 12 threads × 2 MiB stack allowance, and an 8 MiB main stack allowance. The result is `2,574,052,660` bytes (2.397 GiB), leaving 5.603 GiB below 8 GiB **before** allocator overhead, heap fragmentation, thread/TLS metadata, process libraries, query/output buffers, cgroup-charged kernel memory, other harness or process allocations, and potential additional cached files. Four sets of stacks are included conservatively in case freed mappings remain charged; stack size and caching must be verified or explicitly configured. The graph and query bounds assume the official input grammar and dimensions, not a claimed graph distribution.
 
 This arithmetic is useful design headroom, **not a proof of a less-than-8-GiB parent-cgroup peak**. The competition material does not specify a portable upper bound on `Vec` over-allocation, global allocator behavior, retained/free page accounting, kernel charges, helper processes or other cgroup-charged cache. A formal bound requires fixing those mechanisms or proving an enforceable runtime budget that includes them, and an audit of the actual scoring harness. Synthetic cgroup peak tests are evidence, not a universal proof. The indexed queue's correctness, fallback behavior, runtime cost, and page-cache/allocator behavior also require independent validation on the target.
+
+## Capped-hybrid requested-payload comparison
+
+For the isolated capped-hybrid candidate SHA-256 `671c639be3400209e83e080dfb54947affd30ca71dc34ec17804d24d70292d9c`, the narrow search requests `8*n` bytes of distance pairs, `4*n` touched indices, and two fixed pools of `65,536 * 16` bytes per worker. If all 12 workers also retain wide fallback state, that requests `16*n` wide distance bytes, `4*n` wide touched bytes, and `16*n` indexed links per worker. Totals are:
+
+| Component | 12-worker requested bytes |
+| --- | ---: |
+| Narrow distances | 167,089,152 |
+| Narrow touched | 83,544,576 |
+| Two fixed narrow pools per worker | 25,165,824 |
+| Wide distances | 334,178,304 |
+| Wide touched | 83,544,576 |
+| Wide indexed links | 334,178,304 |
+| **Search payload total** | **1,027,700,736** |
+
+Substituting this total into the same conditional illustrative envelope above gives **2,265,040,180 bytes** (2.109 GiB), leaving 5.891 GiB nominal headroom below 8 GiB before the previously listed unspecified charges. The two pool arrays each retain their capacity but do not grow past their fixed logical cap; exhausting one triggers a wide rerun. Rust's allocation footprint, loader growth assumptions and the remaining parent-cgroup charges still prevent claiming a formal 8 GiB bound from this arithmetic. This is not a correctness, target performance or cgroup stress result.
