@@ -100,3 +100,9 @@ On the shared dot VM, two paired x86 passes measured 7.8–9.3% lower wall time,
 Official practice `run-60df0a3a64c3` at 23ffdfc passed every gate: T=0.346703 s, M=223,195,136 bytes, S=478, K=15.709610. The previous official run was 0.341042 s with K=16.120054 (`experiments/board-b073.json`). Because this small single-run loss differs from the two dot VM paired wins, the candidate remains selected for a further scoring-box measurement rather than claiming a reliable improvement. See `experiments/board-23f.json`.
 
 Same-code official repeat `run-ce99b40ddc51` at e88ee2c passed every gate: T=0.315290 s, M=224,714,752 bytes, S=478, K=16.451282 (`experiments/board-e88.json`). The 23ffdfc and e88ee2c runs used identical selected source and Dockerfiles. These separate public-seed practices vary; together with two dot VM paired wins, they support retaining the short-token table for wall speed, but are not final holdout scores.
+
+## Dense Boolean summaries
+
+The current candidate computes count and ID sum for dense bitmap words using popcount masks, while sparse words still visit individual bits and the first ten IDs remain ascending. Phrase summaries, strict left-to-right Boolean evaluation and the bitmap cap are unchanged. The exact previous source, proofs and tests are in `experiments/b-bitstats/` and `experiments/b-bitstats-independent/`.
+
+Two paired x86 dot VM batches reported wall time 1.4–6.8% lower and CPU time 4.9–6.1% lower, with process RSS roughly unchanged. All 56 full hashes, eight alternate references, AVX2/guard-page, exhaustive/random masks, forced dense/sparse and cap-fallback, collision and duplicate checks passed. Independent review found no defect and checked 65,536 exhaustive and 200,000 random bit masks plus overflow-checked references. These are native VM observations, not official scores; the board must measure this candidate's time, cgroup memory and source count.

@@ -229,16 +229,6 @@ impl PhraseStats {
 /// min(count, 10) ids in the second vector, id sum).
 type Answers = (Vec<(u32, u32, u64)>, Vec<u32>);
 
-/// Summarizes the ascending chunk-local `ids`; their first ten go to `top`.
-fn part(first: u32, ids: impl Iterator<Item = u32>, top: &mut Vec<u32>) -> (u32, u32, u64) {
-    let start = top.len() as u32;
-    let (n, sum) = ids.fold((0, 0), |(n, sum), d| {
-        top.extend((n < 10).then_some(first + d));
-        (n + 1, sum + (first + d) as u64)
-    });
-    (n, start, sum)
-}
-
 /// Indexes the whole lines in data[lo..hi] and answers every query on them.
 /// Doc ids are local to the chunk until `part` adds the id of its first line.
 fn solve_chunk(data: &[u8], lo: usize, hi: usize, plan: &Plan, barrier: &Barrier, bitmap_limit: usize) -> Answers {
@@ -334,15 +324,37 @@ fn solve_chunk(data: &[u8], lo: usize, hi: usize, plan: &Plan, barrier: &Barrier
                 post.iter().map(bit).for_each(|(w, m)| apply(&mut r[w], m));
             }
         }
-        let set_bits = r.iter().enumerate().flat_map(|(w, &x)| {
-            let mut x = x;
-            std::iter::from_fn(move || {
-                let b = x.trailing_zeros();
-                x &= x.wrapping_sub(1);
-                (b < 64).then_some(w as u32 * 64 + b)
-            })
-        });
-        part(first, set_bits, &mut top)
+        let start = top.len() as u32;
+        let (mut count, mut sum) = (0u32, 0u64);
+        for (w, &word) in r.iter().enumerate() {
+            if word == 0 { continue; }
+            let n = word.count_ones();
+            let base = first + w as u32 * 64;
+            count += n;
+            sum += u64::from(base) * u64::from(n);
+            let mut bits = word;
+            if n <= 8 {
+                while bits != 0 {
+                    let pos = bits.trailing_zeros();
+                    sum += u64::from(pos);
+                    if top.len() - (start as usize) < 10 { top.push(base + pos); }
+                    bits &= bits - 1;
+                }
+            } else {
+                sum += u64::from((word & 0xaaaaaaaaaaaaaaaa).count_ones());
+                sum += u64::from((word & 0xcccccccccccccccc).count_ones()) * 2;
+                sum += u64::from((word & 0xf0f0f0f0f0f0f0f0).count_ones()) * 4;
+                sum += u64::from((word & 0xff00ff00ff00ff00).count_ones()) * 8;
+                sum += u64::from((word & 0xffff0000ffff0000).count_ones()) * 16;
+                sum += u64::from((word & 0xffffffff00000000).count_ones()) * 32;
+                while bits != 0 && top.len() - (start as usize) < 10 {
+                    let pos = bits.trailing_zeros();
+                    top.push(base + pos);
+                    bits &= bits - 1;
+                }
+            }
+        }
+        (count, start, sum)
     };
     let counts = (0..plan.queries.len()).map(answer).collect();
     (counts, top)
