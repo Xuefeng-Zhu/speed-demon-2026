@@ -178,3 +178,7 @@ Round-3 trial (cand1): renumbering writes renumbered rows directly (one atomic r
 ## Round 3: coarse radix keys (2026-10-31)
 
 The speed-opt rewrite had dropped coarse buckets. Both search queues are now keyed by `distance >> 6` while storing exact distances; a popped node is expanded with its current distance unless that distance lies in an earlier bucket, and the stop test uses bucket starts as lower bounds. A sandbox phase profile of the previous source (8 cores) showed parse 30 ms, renumber 30 ms, relabel 24 ms and queries 103 ms. On the same sandbox, 21 alternating full-seed runs measured 183.5 ms median against 199.1 ms for `dddc0ea`; the full hash, random/exhaustive/boundary/extreme oracles and a new same-bucket stress passed. Sandbox times are not board results. Details and the previous source: `experiments/track-d-coarse-radix33/`. Board run pending.
+
+## Round 3: prefetch in the renumbering BFS (2026-10-31)
+
+A sandbox profile at `963a9e5` (`experiments/track-d-profile35/`) showed renumbering at 31 ms wall, mostly BFS growth over random rows and claim slots, and queries at 97 ms. The clustering BFS now prefetches the row bounds, rows and head claim slots of nodes queued 16, 8 and 4 places ahead. In 25 alternating sandbox runs on full seed 1 the median went from 185.8 ms to 178.7 ms; the full hash and all oracle suites passed. Sandbox times are not board results. Details: `experiments/track-d-bfs-prefetch36/`. Board run pending.
