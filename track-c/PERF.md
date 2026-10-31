@@ -183,3 +183,7 @@ The restored non-PGO build passed all gates in `run-d973f581cb82` at `8520cf1`: 
 
 `src/main.rs` replaced with the `speed-opt` version (Dockerfile, .speed-demon.toml and build flags unchanged). Sandbox A/B against `3b1126e` on full seed 1 (2-core arm64, noisy, min of alternating runs, hashes match): no official board run yet for this source. Add the run ID here once the board has scored it, and revert to `3b1126e` if the board T is not better.
 Sandbox CPU min: 0.90 s -> 0.63 s.
+
+## Board trial: one-pass AVX2 parser (2026-10-31)
+
+No quote-counting pre-pass (chunks start after a CR), 64-byte AVX2 masks, write-prefetch of name lines 16 records ahead, parallel regions, key-ordered groups. Sandbox CPU about -37%; compare against `b07872c` (`run-11992ecda65c`, T=0.08069 s, M=13.1 MB, S=246, K=23.04) and revert if K is lower.
