@@ -1,0 +1,3 @@
+# Sequential BFS relabel phase diagnostic
+
+`profile.rs` instruments the older `experiments/track-d-bfs-relabel/meeting.rs`; `baseline-profile.rs` instruments selected `b4f634b` source. One shared native ARM full seed-1 run for each produced the published output hash. Sequential BFS relabel reported parse/CSR 122.25 ms, labeling 146.49 ms, CSR conversion 190.44 ms, and query 192.07 ms. The baseline run reported parse/CSR 114.55 ms and query 271.66 ms. These are separate instrumented runs on a shared host, not controlled timing comparisons or target/official results; phase values include instrumentation and scheduling variability. They motivated the parallel bounded-cluster experiment, which remained slower end to end. No Mac Docker was used.

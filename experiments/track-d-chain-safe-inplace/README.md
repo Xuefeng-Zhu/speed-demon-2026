@@ -1,0 +1,5 @@
+# Safe in-place directed chain shortcuts, separate passes (experimental)
+
+This prototype computes immutable per-node directional neighbor minima and applies forward and reverse core-row rewrites in separate safe, disjoint mutable-slice passes. No new unsafe pointer code or adjacency-copy pass is used. Query endpoints are pinned; missing arcs, over-16-step paths and sums above u32 retain the original edge. Baseline is positioned-read D at b4f634b.
+
+Overflow/debug-checked builds passed 16,000 random graph queries, 36,864 exhaustive three-node queries, 376 directed chain/cycle fixtures, the maximum-size maximum-weight chain and 6,000 repeated/unreachable queries; all full hashes matched. Nine shared ARM native pairs (`report.json`) gave median 0.26348 s candidate vs 0.26536 s baseline, CPU 1.74629 vs 1.84100 s and peak process RSS 583,221,248 vs 535,592,960 B. This screen does not establish x86 or official cgroup performance. The joint-direction version is `../track-d-chain-safe-joint/`; neither is selected. No Mac Docker was used.

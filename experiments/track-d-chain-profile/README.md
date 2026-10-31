@@ -1,0 +1,5 @@
+# Degree-two shortcut work profile (diagnostic only)
+
+`baseline.rs` and `meeting.rs` instrument the old restored positioned-read baseline `451429c` and `../track-d-chain-shortcut/` with per-worker query counters and stage timestamps. One shared ARM full-seed execution of each matched the published output hash. Instrumentation and host contention preclude timing or target conclusions. The baseline recorded 20,976,116 reach attempts, 8,655,938 improvements, 7,573,952 pops, 450,080 stale pops, and 8,065,647 distance slots cleared. The shortcut version recorded 17,767,248 attempts, 7,143,537 improvements, 6,124,196 pops, 605,959 stale pops, and 6,332,477 slots cleared. Counts depend on query scheduling and tie ordering.
+
+The single candidate profile reported graph construction 61 ms, classification 14 ms, forward shortcutting 33 ms, backward shortcutting 31 ms, and query phase 257 ms, whereas the separately instrumented baseline experienced severe contention; these are not paired timing or target evidence. `baseline.txt` and `meeting.txt` preserve individual worker counters. No Mac Docker was used.

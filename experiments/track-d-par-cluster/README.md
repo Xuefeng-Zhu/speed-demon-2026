@@ -1,0 +1,5 @@
+# Parallel bounded-cluster graph relabeling (experimental, not selected)
+
+Baseline is Track D at `b4f634b`, source SHA-256 `ac9674a11b90244c63a518ee94eb7a9547353540ff564672aaa128ac4851a2ea`. The candidate constructs a runtime permutation by parallel BFS clusters of at most 256 vertices with atomic first-claim, then builds the forward and reverse CSR in parallel in the new order and maps each query endpoint. Every old vertex is claimed exactly once and the output maps back by preserving the query order. No hidden seed, precomputed data, or answers are used.
+
+Overflow-checked tests passed 16,000 random directed-graph oracle queries, 36,864 exhaustive small-graph queries, maximum-size maximum-weight chain, and 6,000 repeated/unreachable queries. All 12 full seed-1 hashes in the five paired runs and warmups matched. On shared ARM native the candidate measured median 0.34316 s vs 0.28351 s baseline, CPU 2.16784 vs 1.84562 s and max native process RSS 567,689,216 vs 534,200,320 B. The ~21% wall regression is not x86 or official-cgroup evidence. The candidate has not been independently reviewed or selected. No Mac Docker was used.

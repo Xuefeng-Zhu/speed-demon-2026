@@ -1,0 +1,5 @@
+# Joint degree-two shortcut pass (experimental, not selected)
+
+This variant combines the forward and backward degree-two shortcut passes into one scoped worker pool and visits both directions per node. It retains every query endpoint, original intermediate rows, a 16-step limit and fallback to the original edge on missing direction or 32-bit overflow. It is based on the prior positioned-read baseline 451429c, differing from current restored b4f634b only by a source comment. It has not received an independent graph-equivalence review.
+
+An overflow/debug-checked build passed 16,000 random graph queries, 36,864 exhaustive three-node queries, 376 directed chain/cycle edge cases, a maximum-size maximum-weight chain, and 6,000 repeated/unreachable cases. Every full seed-1 run matched the published hash. Nine shared ARM native measured pairs (`report.json`) had median wall 0.52723 s vs 0.51172 s baseline, CPU 1.94725 vs 1.92040 s, peak process RSS 572,882,944 vs 535,265,280 B. The host was heavily contended, and this does not establish x86 or official cgroup behavior. No gain was established; the candidate remains unselected and no Mac Docker was used.
