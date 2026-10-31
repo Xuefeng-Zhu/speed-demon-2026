@@ -1,0 +1,72 @@
+{
+  "note": "instrumentation perturbs timing; RSS is process, not cgroup",
+  "source_sha256": "2a2a325a1c87e4bc68c260e0d80353e0b8f1f9a7b5be81b1ffeaaede6d813f9d",
+  "results": [
+    {
+      "pair": -1,
+      "label": "baseline",
+      "wall_s": 0.7966691249966971,
+      "cpu_s": 1.723462,
+      "maxrss_native": 546471936,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e",
+      "stderr": ""
+    },
+    {
+      "pair": -1,
+      "label": "profile",
+      "wall_s": 0.6138920419980423,
+      "cpu_s": 1.83162,
+      "maxrss_native": 528760832,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e",
+      "stderr": "D_PROFILE parse_bucket_ms=43.505\nD_PROFILE csr_forward_ms=10.237\nD_PROFILE csr_backward_ms=8.667\nD_PROFILE load_total_ms=62.636 threads=8\nD_WORKER queries=213 reaches=2309341 improves=964057 pops=843791 stale=59209 cutoffs=3 exhausted=0 touched=886944 fallback=2 fallback_ms=7.464 worker_ms=235.989 heap_push=964057 heap_redist=6332 heap_scan=1151773 heap_move=1151773 max_heap=2633\nD_WORKER queries=220 reaches=2789069 improves=1162391 pops=1019077 stale=71917 cutoffs=1 exhausted=0 touched=1068996 fallback=0 fallback_ms=0.000 worker_ms=236.620 heap_push=1162391 heap_redist=7129 heap_scan=1391355 heap_move=1391355 max_heap=2171\nD_WORKER queries=246 reaches=2836854 improves=1179001 pops=1038660 stale=73914 cutoffs=0 exhausted=0 touched=1083776 fallback=0 fallback_ms=0.000 worker_ms=238.982 heap_push=1179001 heap_redist=7534 heap_scan=1419164 heap_move=1419164 max_heap=2744\nD_WORKER queries=235 reaches=2726762 improves=1133977 pops=997074 stale=70504 cutoffs=1 exhausted=0 touched=1042806 fallback=0 fallback_ms=0.000 worker_ms=239.224 heap_push=1133977 heap_redist=7294 heap_scan=1367363 heap_move=1367363 max_heap=2322\nD_WORKER queries=212 reaches=2561028 improves=1073404 pops=934351 stale=65263 cutoffs=2 exhausted=0 touched=987677 fallback=1 fallback_ms=2.682 worker_ms=239.368 heap_push=1073404 heap_redist=6949 heap_scan=1278416 heap_move=1278416 max_heap=2329\nD_WORKER queries=262 reaches=2812314 improves=1171418 pops=1029718 stale=73278 cutoffs=6 exhausted=0 touched=1076729 fallback=4 fallback_ms=3.026 worker_ms=239.545 heap_push=1171418 heap_redist=7948 heap_scan=1408174 heap_move=1408174 max_heap=2555\nD_WORKER queries=314 reaches=3022914 improves=1260708 pops=1104304 stale=77892 cutoffs=0 exhausted=0 touched=1159264 fallback=0 fallback_ms=0.000 worker_ms=242.770 heap_push=1260708 heap_redist=8504 heap_scan=1507092 heap_move=1507092 max_heap=2688\nD_WORKER queries=298 reaches=2836162 improves=1184731 pops=1036588 stale=73427 cutoffs=1 exhausted=0 touched=1089001 fallback=1 fallback_ms=3.926 worker_ms=243.329 heap_push=1184731 heap_redist=8389 heap_scan=1417962 heap_move=1417962 max_heap=2373\nD_PROFILE query_ms=243.595\nD_PROFILE total_ms=306.711\n"
+    },
+    {
+      "pair": 0,
+      "label": "baseline",
+      "wall_s": 0.28348887500033015,
+      "cpu_s": 1.681528,
+      "maxrss_native": 557465600,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e",
+      "stderr": ""
+    },
+    {
+      "pair": 0,
+      "label": "profile",
+      "wall_s": 0.3216599169973051,
+      "cpu_s": 1.852553,
+      "maxrss_native": 585187328,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e",
+      "stderr": "D_PROFILE parse_bucket_ms=39.862\nD_PROFILE csr_forward_ms=11.168\nD_PROFILE csr_backward_ms=9.274\nD_PROFILE load_total_ms=60.470 threads=8\nD_WORKER queries=253 reaches=2909716 improves=1211917 pops=1063825 stale=75246 cutoffs=2 exhausted=0 touched=1114473 fallback=1 fallback_ms=4.293 worker_ms=232.057 heap_push=1211917 heap_redist=8088 heap_scan=1453207 heap_move=1453207 max_heap=2744\nD_WORKER queries=284 reaches=2833261 improves=1186635 pops=1033412 stale=72162 cutoffs=3 exhausted=0 touched=1091794 fallback=3 fallback_ms=7.905 worker_ms=232.259 heap_push=1186635 heap_redist=8560 heap_scan=1416881 heap_move=1416881 max_heap=2415\nD_WORKER queries=266 reaches=2361998 improves=992262 pops=859838 stale=59411 cutoffs=2 exhausted=0 touched=913264 fallback=1 fallback_ms=4.778 worker_ms=232.382 heap_push=992262 heap_redist=7624 heap_scan=1177555 heap_move=1177555 max_heap=2259\nD_WORKER queries=197 reaches=2639373 improves=1087637 pops=970367 stale=70937 cutoffs=4 exhausted=0 touched=998779 fallback=1 fallback_ms=4.361 worker_ms=232.732 heap_push=1087637 heap_redist=5894 heap_scan=1320628 heap_move=1320628 max_heap=2633\nD_WORKER queries=252 reaches=2608915 improves=1089619 pops=953130 stale=66799 cutoffs=0 exhausted=0 touched=1002473 fallback=0 fallback_ms=0.000 worker_ms=232.936 heap_push=1089619 heap_redist=7414 heap_scan=1305696 heap_move=1305696 max_heap=2329\nD_WORKER queries=190 reaches=2597479 improves=1083139 pops=950196 stale=67069 cutoffs=0 exhausted=0 touched=995803 fallback=0 fallback_ms=0.000 worker_ms=235.677 heap_push=1083139 heap_redist=6545 heap_scan=1297852 heap_move=1297852 max_heap=2191\nD_WORKER queries=244 reaches=2874638 improves=1195870 pops=1051870 stale=74760 cutoffs=2 exhausted=0 touched=1099204 fallback=1 fallback_ms=12.710 worker_ms=237.954 heap_push=1195870 heap_redist=7301 heap_scan=1436938 heap_move=1436938 max_heap=2688\nD_WORKER queries=314 reaches=3069064 improves=1282608 pops=1120925 stale=79020 cutoffs=1 exhausted=0 touched=1179403 fallback=1 fallback_ms=4.149 worker_ms=238.744 heap_push=1282608 heap_redist=8653 heap_scan=1532542 heap_move=1532542 max_heap=2609\nD_PROFILE query_ms=238.978\nD_PROFILE total_ms=299.998\n"
+    },
+    {
+      "pair": 1,
+      "label": "baseline",
+      "wall_s": 0.2672222499968484,
+      "cpu_s": 1.660651,
+      "maxrss_native": 555483136,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e",
+      "stderr": ""
+    },
+    {
+      "pair": 1,
+      "label": "profile",
+      "wall_s": 0.2818232919962611,
+      "cpu_s": 1.7727769999999998,
+      "maxrss_native": 557481984,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e",
+      "stderr": "D_PROFILE parse_bucket_ms=35.157\nD_PROFILE csr_forward_ms=7.745\nD_PROFILE csr_backward_ms=7.641\nD_PROFILE load_total_ms=50.741 threads=8\nD_WORKER queries=235 reaches=2807559 improves=1166982 pops=1027322 stale=73029 cutoffs=0 exhausted=0 touched=1072880 fallback=0 fallback_ms=0.000 worker_ms=214.634 heap_push=1166982 heap_redist=7430 heap_scan=1406788 heap_move=1406788 max_heap=2744\nD_WORKER queries=318 reaches=2773382 improves=1169929 pops=1008848 stale=69406 cutoffs=2 exhausted=0 touched=1076759 fallback=2 fallback_ms=3.602 worker_ms=215.034 heap_push=1169929 heap_redist=9063 heap_scan=1385936 heap_move=1385936 max_heap=2258\nD_WORKER queries=231 reaches=2587899 improves=1075883 pops=947040 stale=67587 cutoffs=0 exhausted=0 touched=988714 fallback=0 fallback_ms=0.000 worker_ms=215.395 heap_push=1075883 heap_redist=6720 heap_scan=1290362 heap_move=1290362 max_heap=2633\nD_WORKER queries=272 reaches=2849332 improves=1187772 pops=1041609 stale=73592 cutoffs=3 exhausted=0 touched=1092379 fallback=2 fallback_ms=2.438 worker_ms=215.793 heap_push=1187772 heap_redist=7873 heap_scan=1422344 heap_move=1422344 max_heap=2609\nD_WORKER queries=305 reaches=2829228 improves=1180860 pops=1033059 stale=72632 cutoffs=2 exhausted=0 touched=1086304 fallback=1 fallback_ms=2.346 worker_ms=217.006 heap_push=1180860 heap_redist=8356 heap_scan=1417438 heap_move=1417438 max_heap=2688\nD_WORKER queries=273 reaches=2862573 improves=1193778 pops=1047556 stale=74416 cutoffs=1 exhausted=0 touched=1097644 fallback=0 fallback_ms=0.000 worker_ms=217.055 heap_push=1193778 heap_redist=8420 heap_scan=1433640 heap_move=1433640 max_heap=2334\nD_WORKER queries=196 reaches=2860359 improves=1189933 pops=1046326 stale=73997 cutoffs=4 exhausted=0 touched=1093784 fallback=2 fallback_ms=2.353 worker_ms=219.249 heap_push=1189933 heap_redist=6651 heap_scan=1427975 heap_move=1427975 max_heap=2322\nD_WORKER queries=170 reaches=2324112 improves=964550 pops=851803 stale=60745 cutoffs=2 exhausted=0 touched=886729 fallback=1 fallback_ms=10.845 worker_ms=220.141 heap_push=964550 heap_redist=5566 heap_scan=1156816 heap_move=1156816 max_heap=2519\nD_PROFILE query_ms=220.363\nD_PROFILE total_ms=271.594\n"
+    }
+  ],
+  "summary": {
+    "baseline": {
+      "wall_s": 0.2753555624985893,
+      "cpu_s": 1.6710895,
+      "maxrss_native": 556474368.0
+    },
+    "profile": {
+      "wall_s": 0.3017416044967831,
+      "cpu_s": 1.812665,
+      "maxrss_native": 571334656.0
+    }
+  }
+}
