@@ -147,3 +147,36 @@ Round 2 at `ccbfbc0`, `run-4a52a83d2464`: per-thread MADV_DONTNEED on each chunk
 Hash-only trial: endpoint identity by 64-bit hash plus length, no byte compare (collision odds ~1e-13 per dataset); compare against `a571dce` (K 37.34).
 Result: `run-93607a10da06` at `a9f6ae3`: T=0.037754 s, M=23.2 MB, S=299, K=35.78, below `a571dce` (37.34); exact byte compare restored.
 Result: `run-ab14ebe4067b` at `feadbcc`: T=0.038692 s, S=316, K=35.62; fixed split ran 0.0348-0.0352 s in 3 of 4 runs, so reverted.
+
+## Compact endpoint table (local x86 VM, branch a-x86-speed)
+
+Each thread's endpoint table now keeps its own compact arena of entries (hash, length, shared id, then the name bytes), so a probe reads one slot and one arena entry and the exact byte compare no longer reaches back to the endpoint's first occurrence in the mapped file. Shared ids are dense (one atomic counter, the 16 sharded maps kept), stored in the entry, so the `ids` indirection is gone. With `target-cpu=x86-64-v3` the space after the endpoint is found with one 64-byte AVX2 compare (word-at-a-time fallback past 64 bytes), the hash uses only the first, middle and last words plus length, and names under 64 bytes are compared with one masked AVX2 compare; other targets use a portable fallback of the same masks. Over-reads stay within the 4 KiB zero pad of `map_file` and the arena's 64-byte zero tail. Exact byte comparison is retained; more than 2,047 endpoints still escape to 64-bit records.
+
+Local x86 VM paired medians (61 rounds each, two invocations with shuffle seeds 31 and 32) against the prior source `experiments/a-x86-speed/baseline.rs`: 0.8514 and 0.8536 at 8 threads, 0.8414 and 0.8409 at 12. Parse phase 26.7 ms to about 22 ms at 8 threads. Passed `experiments/a-x86-speed/check.py` (full hash at 1, 2, 3, 6, 8, 12 threads and default, the three verification scripts, sample seeds 2, 98, 999, 4242) and `adversarial.py` on AVX2, forced-collision and scalar builds. These are not official scores. Details and rejected steps: `experiments/a-x86-speed/README.md`.
+
+Follow-up on the same branch: the hour now comes from one 8-byte load of `MM-DDTHH` with nibble arithmetic, and endpoints of 64 to 127 bytes use a second 64-byte AVX2 scan and masked compare instead of a word loop and `memcmp`. Local x86 VM paired medians against the previous source (81 rounds, two invocations): 0.9784 and 0.9842 at 8 threads, 0.9861 and 0.9904 at 12. Cumulative against the branch-point source (41 rounds): 0.8494 at 8 threads, 0.8303 at 12. Same correctness evidence as above. Rejected parse candidates (single shared map, atomic ids alone, dynamic ranges, two-word hash, push trims) are in `experiments/a-x86-speed/README.md`. Not official scores.
+
+## Local x86 VM speed pass (a-x86-speed)
+
+Summary phase, scheduling and build work on branch `a-x86-speed`, after the parse changes above. The parse threads now go on to summarize: they meet at a `Barrier`, one sorts the names and regroups the records by hour, and after a second barrier all take hours from the queue, so no second thread set is spawned. The summary lays each hour's groups out in rank order but indexes them by endpoint id (no `rank[id]` lookups), packs count and 5xx count into one `u64` per id, reuses the per-worker buffers across hours and formats numbers with a two-digit table into one line buffer. Groups of up to 64 values (most groups; the median group has 5 records) get their three nearest-rank percentiles from branch-free AVX2 rank counting: the value of rank r is the largest value with at most r values below it, so every value's count of smaller values replaces a sort. Larger groups and non-AVX2 builds keep `select_nth_unstable`. The endpoint hash now uses only the first and last words and the length with one multiply (the FEAT-002 near-miss `p6b`, kept in combination). The exact byte compare and the 64-bit escapes for ids above 2,047 or large latencies are unchanged.
+
+Local x86 VM measurements only (shared 8 vCPU Xeon Platinum 8488C KVM VM, 4 cores x 2 hyperthreads, not the i5-13500 scoring box; no board run was made for this source and no official score is claimed). Paired medians candidate/baseline, 41 interleaved rounds per invocation:
+
+| Change | 8 threads | 12 threads | Verdict |
+|---|---:|---:|---|
+| id-indexed groups, packed counts, buffer reuse, table formatting (`s1`) | 0.9876, 0.9948 | 0.9777, 0.9968 | folded into the kept bundle |
+| plus AVX2 small-group rank counting (`s1e`, vs `s1`) | 0.9775, 0.9575 | 0.9802, 0.9644 | folded |
+| plus parse threads reused for the summary (`s2b`, vs `s1e`) | 0.9954, 0.9675 | 1.0008, 0.9839 | folded; removing it from the bundle costs 1.0242 / 1.0061 |
+| bundle plus two-word hash (`s2c`) against the previous production source | 0.9319, 0.9341 | 0.9420, 0.9259 | **kept** |
+| lines written straight into reused output buffers (`s3a`/`s3b`) | 1.0101, 1.0266 (vs `s2b`); 0.9829, 1.0104 (vs `s2c`) | 0.9900, 1.0071; 1.0237, 0.9980 | rejected |
+| parse-side per-hour id counts (21 rounds) | 1.0112 | 1.0239 | rejected |
+| output buffer pool alone (21 rounds) | 0.9709 (earlier screen 1.0003) | 1.0017 | rejected, did not reproduce |
+| full sort up to 64 values (21 rounds) | 1.0084 | 1.0231 | rejected |
+| leaking records instead of freeing (21 rounds) | 1.0057 | 1.0020 | rejected |
+| largest hours first (21 rounds, vs `s1e`) | 1.0947 | 1.0375 | rejected (the in-order writer then runs as a serial tail) |
+| static glibc linking (`+crt-static`) | not measured | not measured | not applied: this host has no `libc.a` and cannot reach package repositories; the Dockerfile build was not run locally |
+
+Empty-input wall time (startup and exit, 300 rounds, includes about 0.92 ms of Python spawn cost measured with `/bin/true`): previous source 1.82 ms, new source 1.63 ms. Cumulative against the branch-point source `experiments/a-x86-speed/baseline.rs` (41 rounds, seed 501, every output hash verified): paired median 0.7848 at 8 threads (0.0379 s to 0.0296 s median wall), 0.7790 at 12 threads (0.0468 s to 0.0365 s) and 0.7800 at the default thread count (0.0377 s to 0.0294 s). These are local x86 VM numbers, not official scores.
+
+Correctness: `experiments/a-x86-speed/check.py` on the cargo build (full seed-1 SHA-256 `495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3` at `SD_THREADS` 1, 2, 3, 6, 8, 12 and default, `test.py`, `page_end_test.py`, `latency_grid_test.py`, sample seeds 2, 98, 999 and 4242 byte-identical to the official reference); `adversarial.py` at 1, 2, 3, 7 and 12 threads on the AVX2 build, a scalar build (also the full hash) and a forced-constant-hash build (`--quick`), including a new case with groups of every size 1 to 200 whose latencies are tied, equal, around 2^31 and 2^32 - 1 or spread over 32 bits; the full hash at 73 and 100 threads. Source SHA-256 of the new `track-a/src/main.rs`: `12589c3dfc134a6c45d8af28aa9470bdcfea2a0b2a54fbe3838eb29010b2ad6e`. Raw samples, variant sources and rejected candidates: `experiments/a-x86-speed/README.md`.
+

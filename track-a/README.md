@@ -1,6 +1,6 @@
 # Track A: Ingest
 
-This Rust standard-library solution maps the input, partitions it at line boundaries, and parses independent chunks into per-hour records. Endpoint hashes are checked against exact bytes before merging. Workers then group latencies by endpoint and select nearest-rank percentiles. Hours are written in order. It emits the required `/out/summary.txt`; `/data/requests.log` is read-only. `SD_DATA`, `SD_OUT`, and `SD_THREADS` are optional local-test overrides.
+This Rust standard-library solution maps the input, partitions it at line boundaries, and parses independent chunks into per-hour records. Endpoint hashes are checked against exact bytes before merging. The same threads then group each hour's latencies by endpoint and find the nearest-rank percentiles (AVX2 rank counting for small groups, selection for larger ones). Hours are written in order. It emits the required `/out/summary.txt`; `/data/requests.log` is read-only. `SD_DATA`, `SD_OUT`, and `SD_THREADS` are optional local-test overrides.
 
 The only dependencies are Rust's standard library and system C calls `mmap` and `madvise`. There are no third-party runtime dependencies. The included offline Docker build uses pinned image digests.
 
