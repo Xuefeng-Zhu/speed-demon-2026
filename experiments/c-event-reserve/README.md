@@ -1,0 +1,5 @@
+# C bounded event-vector reservation — not selected
+
+Baseline is exact salted-owner source SHA-256 `0aa4cbccf08b05a59aadbe7eaf23a931e468a95f76463a95100a142e8221bc08`. Each candidate lazily reserves per-owner-bin capacity from the parser chunk byte length divided by 32, 48 or 64 and owner count, capped at 262,144 total reserved events per parser. Actual event vectors still grow dynamically for skew, so no valid records are dropped. Initial reserve totals are bounded by the file size divided by that variant's byte estimate; empty chunks reserve zero. This is distinct from `c-lazy-reserve`, which reserved name-map capacity.
+
+Nine randomized native shared ARM pairs per variant plus warmups matched all 60 published full hashes. Candidate/baseline median wall was 0.16626/0.15732 s for 32, 0.10857/0.10215 for 48, and 0.10485/0.10342 for 64. Median CPU was 0.60335/0.55545, 0.54855/0.55145 and 0.51324/0.52132 s respectively. All raw samples are in JSON. No clear wall gain emerged; results are noisy, not x86 or official scoring. This prototype has no alternate-input tests or independent review and is not selected. No Mac Docker was used.

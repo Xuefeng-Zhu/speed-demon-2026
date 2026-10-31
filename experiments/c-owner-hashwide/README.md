@@ -1,0 +1,5 @@
+# Wide-load name hashing screen — unselected
+
+Baseline `0aa4cbccf08b05a59aadbe7eaf23a931e468a95f76463a95100a142e8221bc08` is the selected salted owner. Candidate `ac48e96ca0bb3cbaabd8c58d78453a36a7b8af15e9e63ed584776581d1a6ef12` specializes its producer-side Fx name hashing with guarded unaligned 64-bit loads, then retains the original scalar tail and falls back to the original standard-library hash on big-endian or non-64-bit targets. This is related to an earlier wide-Fx attempt on the older sharded architecture, which did not show a target win.
+
+An overflow-checked exact-hash property covered 32,800 length/alignment cases plus names through one million bytes, and 120 mixed input/reference cases passed. A single shared ARM 15-pair full-seed batch gave candidate/baseline median wall 0.09481/0.09678 s and CPU 0.50664/0.51570 s, with all 32 full hashes correct. This ~2% noisy wall difference is not a reliable or substantial win; no protected-page test, independent review, x86 performance or official result is available. The candidate remains unselected. Raw samples are in `arm-report.json`.

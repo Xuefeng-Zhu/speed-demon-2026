@@ -1,0 +1,5 @@
+# Independent review
+
+Candidate SHA-256: `7a4f30c3484fb58c552815dee7caccf32a2bf10aae4918893bcee50282462cd9`. Static review found no concrete concurrency or permutation defect under official graph bounds. Chunked fetch-add assigns each root once; the successful atomic false-to-true swap uniquely claims each vertex even if a preceding relaxed load is stale. Each successful claim is enqueued by its worker, and joining workers publishes their complete, disjoint lists. Their concatenation is a bijection. The same immutable permutation is applied to both CSR graphs and every query endpoint; u32 sums fit the official five-million-edge bound.
+
+`independent-review.py` compiled the exact source with optimization, overflow checks and debug assertions. Three suites passed: disconnected graphs of sizes 1, 2, 3, 7, 31, 255, 256, 257, 511, 512 and 513 with 1, 2, 3, 7 and 32 workers; 160 random directed multigraphs; and stars, chains, self-loops, duplicate arcs and zero/maximum weights at chunk boundaries. Each run checked permutation bijection and mapped forward and reverse edge multisets. Native stress does not exhaust thread schedules or establish x86 performance.
