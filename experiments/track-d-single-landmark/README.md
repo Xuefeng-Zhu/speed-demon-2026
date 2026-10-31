@@ -1,0 +1,9 @@
+# Single-landmark A* (not selected)
+
+This experimental graph-derived ALT baseline computes exact directed distances from node 0 at runtime, then uses `max(0, d(L,t)-d(L,v))` as a forward A* lower bound. If a landmark distance is unreachable, it uses zero instead. It runs forward A* rather than the current bidirectional search. It uses no cached answers, and does not assume node IDs encode coordinates. Candidate retains the backwards CSR only because it was an experimental replacement.
+
+The heuristic is admissible by the triangle inequality. For reachable landmark vertices it is consistent; a vertex reachable from the landmark cannot have an edge to an unreachable vertex, and an unreachable vertex's zero estimate cannot violate consistency on an outgoing edge. This allows a monotone radix queue. Randomized oracle testing covered 80 directed graphs / 16,000 queries using `experiments/track-d-balanced-frontier/oracle.py` (passing the candidate path twice). Both implementations matched the full seed-1 published SHA-256 in all six runs.
+
+After one warmup in a randomized native Mac ARM screen, five paired medians were 0.9007 s candidate versus 0.2839 s selected, with CPU about 4.3 versus 1.85 s; `mac-arm-report.json` has the raw measurements. Landmark preprocessing and single-direction search were clearly more expensive on this screen. It is not selected, is not an official x86 result, and has not been independently validated for every edge case. No Mac Docker was used.
+
+Compile `baseline.rs` and `landmark.rs` with identical Rust release flags, set `SD_DATA`/`SD_OUT`, alternate runs on generated full data, verify the published output hash, and capture official cgroup memory separately. This negative screen does not warrant target-machine benchmarking without a substantive algorithm change.

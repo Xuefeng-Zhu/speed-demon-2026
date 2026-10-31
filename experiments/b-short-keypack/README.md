@@ -1,0 +1,5 @@
+# B occupied-word key packing (not selected)
+
+This experimental Rust candidate computes and masks only the 64-bit words occupied by a 1–32 byte token, leaving remaining key words zero; dictionary hashing and exact equality remain unchanged. It is independent of the previously tested length-aware hashing experiment. Baseline is selected AVX source SHA-256 `c8ccf63c9c423986ff51bcb8c2f40a41288ebcc26d54e36bc43ee9005ed99518`, candidate SHA-256 `570e600ff062464d5d229f0ddf3834bc20c41eb25983ffe9146189b943999877`.
+
+Nine randomized measured full-seed pairs after one warmup on a shared macOS ARM host matched the published hash. Median candidate/baseline wall was 0.430381/0.363967 s; median CPU was 1.754329/1.763816 s. Samples and native process RSS are in `mac-arm-report.json`. Other processes were active, so these results are noisy, not official cgroup or x86 scores. Candidate also passed the 40-corpus `experiments/b-bounded-fuzz.py` reference suite using the Rust positional adapter. The Mac ran only the scalar classifier, not the x86 AVX2 path. No promotion is justified by these results, and target correctness/AVX2 tests remain outstanding.

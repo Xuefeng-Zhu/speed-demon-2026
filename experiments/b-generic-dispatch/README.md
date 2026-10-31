@@ -1,0 +1,7 @@
+# B generic classifier dispatch (not selected)
+
+Relative to selected AVX2 source SHA-256 `c8ccf63c9c423986ff51bcb8c2f40a41288ebcc26d54e36bc43ee9005ed99518`, this candidate SHA-256 `783e2a60f5d08073093c60b4ba2d3fc2e360ca0dbd28b85b320b2e05d5b38609` chooses the classifier once per corpus scan and monomorphizes the document loop rather than calling a classifier function pointer for each 32-byte block. The tokenizer, phrase summaries, bitmap cap and query logic are otherwise unchanged.
+
+Seven randomized measured full seed-1 pairs after one warmup each on a shared macOS ARM host matched the published output hash. Candidate versus baseline median wall was 0.307405 versus 0.311090 seconds, and median CPU 1.743178 versus 1.772649 seconds. Raw observations, including warmups and native process RSS (not cgroup memory), are in `mac-arm-report.json`; other workers were active. The approximately 1.2% wall difference is too small/noisy for a speed claim or promotion. The candidate also passed the 40-corpus `experiments/b-bounded-fuzz.py` reference suite using the Rust positional adapter.
+
+These Mac tests exercised the scalar classifier path only. The x86 AVX2 path was neither compiled for Linux nor run. No Mac Docker was used. Compare both implementations on an AVX2 target, run the guard-page/classifier and alternate-reference tests and measure official cgroup memory before reconsidering. The full-seed benchmark can be reproduced with `experiments/b-rust-lengthhash/compare.py` after compiling `baseline.rs` and `candidate.rs` with identical release flags.

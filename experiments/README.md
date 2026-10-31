@@ -158,3 +158,7 @@ All tracks passed every gate; see `board-147.json`. B's eight-byte transition sc
 ## Official practice run for b07315c
 
 All tracks passed every gate; see `board-b073.json`. B's guarded AVX2 tokenizer measured T=0.341042 s, M=222,486,528 bytes, S=427, K=16.120054, versus the prior 0.381505 s, 222,068,736 bytes, S=399, K=15.402876. A/C/D measured 0.048257/0.127346/0.378481 s respectively. The separate public-seed practice runs are not final or controlled paired scores.
+
+## Official practice run for 23ffdfc
+
+All tracks passed every gate; see `board-23f.json`. B's exact short-token table measured T=0.346703 s, M=223,195,136 bytes, S=478, K=15.709610, compared with the previous run's T=0.341042 s, M=222,486,528 bytes, S=427, K=16.120054. Two prior dot VM paired passes favored the candidate by 7.8–9.3% wall; the official single-run difference is small and opposite, so a repeat on the scoring box is warranted before deciding. These are separate public-seed practices, not final holdout scores.

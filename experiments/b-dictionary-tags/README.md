@@ -1,0 +1,5 @@
+# B tagged dictionary slots (not selected)
+
+This experiment augments the general 32-byte-key dictionary's slots with a hash tag and term ID, avoiding a full key read on occupied slots whose tags differ. Exact full-key comparison still resolves matching tags. It doubles slot entry width to 64 bits. It retains the selected short-token lookup, bounded phrase summaries and bitmap cap. Baseline SHA-256 `d0f0d79f3f646275d2e33ef34659eba5bca56fb2bb16504025f10a800e88cc49`; candidate SHA-256 `d892769d5fc14f4beb5aef3f3875fd21123bb9434e20e121748cde18f86829f4`.
+
+Nine randomized measured full seed-1 pairs after warmup each matched the published hash on a shared macOS ARM host. Median candidate/baseline wall was 0.319262/0.302864 s and CPU 1.664938/1.625259 s; other work was active. Candidate passed the 40-corpus `experiments/b-bounded-fuzz.py` reference suite. Raw samples and native process RSS are in `mac-arm-report.json`, not cgroup memory. No promotion is justified; no Linux/x86 AVX2 execution or broader adversarial testing was performed. No Mac Docker was used.
