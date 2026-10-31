@@ -1,0 +1,11 @@
+# Blocked radix queue experiment (rejected)
+
+This isolated prototype replaces the selected hybrid Dijkstra's per-item linked radix nodes with a fixed pool of 64-entry blocks. Each of the 33 narrow-key buckets owns a list of blocks, with one partially filled head at most. Keys and vertices are packed in a `u64`. Existing pool exhaustion still requests the exact wide-search fallback. The intended benefit was sequential scans during redistribution with bounded storage rather than reserving a large vector for every bucket.
+
+Baseline source SHA-256: `671c639be3400209e83e080dfb54947affd30ca71dc34ec17804d24d70292d9c`. Candidate source SHA-256: `185bda0cb6490bca251d4c1a497725b9e416df81a0d570242ba2341223d7b7f5`. The selected source was not changed.
+
+On the shared ARM Mac, Rust 1.95.0, nine randomized paired warm-cache full seed-1 runs after one warmup each, all 20 output hashes matched `a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e`. Median elapsed time was 0.286534 s baseline versus 0.318025 s candidate (11.0% slower); median CPU was 1.839894 s versus 2.117885 s. Maximum reported process RSS was 584,499,200 versus 613,040,128 bytes. These are native shared-machine measurements, not official target timing or cgroup memory, and are not evidence of an x86 outcome. Raw measurements are in `arm-results.json`.
+
+Build flags for this screen: `--edition=2021 -O -C lto=fat -C codegen-units=1 -C panic=abort`. Additionally, a debug-assertions-and-overflow-enabled `rustc --test -O` build passed the existing 1,000,000-operation randomized queue-vs-multiset test and `stress-tail.rs`'s full-capacity, duplicate, partial-block refill, redistribution, and live/free-list accounting test. Rust defaults to edition 2015 if omitted; this source requires `--edition=2021`.
+
+The block bound is intended to cover full blocks plus at most one partial block per bucket, including during redistribution, but it has not received independent review. Cap 0/1, forced exact fallback, comprehensive graph-oracle tests, target x86 timing and cgroup memory were not tested. Do not promote this prototype based on the above checks. It was rejected for the observed ARM speed regression, and no claim is made that it is ready for official practice.
