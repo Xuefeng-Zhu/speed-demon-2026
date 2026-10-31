@@ -214,3 +214,7 @@ Eight-thread cost breakdown of this commit (sandbox, 25 interleaved rounds, trim
 ## Hash and group set in one five-word slot (2026-10-31)
 
 Each dictionary slot is now five consecutive words, the name hash followed by its 256-bit group set, in one 5.2 MB map with `MADV_HUGEPAGE` (previously a 1 MB hash table and a separate 4.2 MB set array). The record's home slot is `prefetchw`ed when its hash is computed, so the probe and the later `fetch_or` usually hit the same line or the next one. Total size is unchanged. Sandbox, 8 threads, 30 interleaved rounds, trimmed means: 60.4 ms vs 61.7 ms for the previous commit. Variants in the same batch: also prefetching the slot's last word 60.7 ms, read rather than write prefetch 60.9 ms, and no huge-page advice 63.6 ms. One thread is unchanged (about 215 ms). All reference checks and the forced-restart build pass. Board run pending.
+
+## Line trims (2026-10-31)
+
+No behaviour change: the aarch64 prefetch branch is gone (prefetch is a no-op off x86-64), the quoted-length arithmetic takes one shared difference, a redundant block scope is removed, and the file is now rustfmt-clean. Formatted code lines by the local count fall from 318 to 308 (about +0.5% K from the size term). Sandbox 8-thread timing is identical (59.72 vs 59.72 ms, 25 interleaved rounds). A carry-less-multiply prefix XOR (`pclmulqdq`) for the in-quotes mask was also tried and made no difference, so it was not kept.

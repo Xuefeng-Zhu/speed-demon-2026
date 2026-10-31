@@ -41,10 +41,6 @@ fn prefetch<T>(p: &T) {
     unsafe {
         asm!("prefetcht0 [{}]", in(reg) p, options(nomem, nostack))
     };
-    #[cfg(target_arch = "aarch64")]
-    unsafe {
-        asm!("prfm pldl1keep, [{}]", in(reg) p, options(nomem, nostack))
-    };
 }
 
 /// Like `prefetch`, but for a line about to be written.
@@ -89,9 +85,9 @@ struct Names {
 impl Names {
     /// The hash of the name `b[s..e]` and its first slot, whose cache line starts loading now.
     fn key(&self, b: &[u8], s: usize, e: usize) -> (u64, usize) {
-        let h = (s..e.max(s + 1))
-            .step_by(8)
-            .fold(K, |h, o| (h ^ word(b, o, e)).wrapping_mul(K).rotate_left(31));
+        let h = (s..e.max(s + 1)).step_by(8).fold(K, |h, o| {
+            (h ^ word(b, o, e)).wrapping_mul(K).rotate_left(31)
+        });
         let h = ((h ^ h >> 33).wrapping_mul(0xff51afd7ed558ccd) ^ h >> 29).max(1);
         let i = (h >> (64 - self.len.trailing_zeros())) as usize;
         prefetchw(&self.table[5 * i]);
@@ -251,102 +247,98 @@ fn main() {
             let mut agg = vec![EMPTY; 256];
             let mut ring = [((0, 0), 0, [0; 4]); RING];
             let mut sets_ring = [(sets.len() - 1, 0); RING / 2]; // (set word, group) to mark
-            let mut finish =
-                |(key, rid, [n_id, c, nl, tl]): (_, usize, [i64; 4]), agg: &mut Vec<Agg>, r: usize| {
-                    let (w, g) = sets_ring[r % (RING / 2)];
-                    let (word, bit) = (&sets[w], 1 << (g % 64));
-                    if word.load(Relaxed) & bit == 0 {
-                        agg[g][5] += (word.fetch_or(bit, Relaxed) & bit == 0) as i64;
-                    }
-                    sets_ring[r % (RING / 2)] = (sets.len() - 1, 0);
-                    if n_id > 0 {
-                        let (id, g) = (
-                            names.id(key, cap),
-                            region.get(rid).map_or(0, |r| r.load(Relaxed)) as usize,
-                        );
-                        merge(&mut agg[g], [1, n_id, c, c, c, 0, nl, tl]);
-                        sets_ring[r % (RING / 2)] = (5 * id + 1 + g / 64, g);
-                        prefetchw(&sets[5 * id + 1 + g / 64]);
-                    }
-                };
+            let mut finish = |(key, rid, [n_id, c, nl, tl]): (_, usize, [i64; 4]),
+                              agg: &mut Vec<Agg>,
+                              r: usize| {
+                let (w, g) = sets_ring[r % (RING / 2)];
+                let (word, bit) = (&sets[w], 1 << (g % 64));
+                if word.load(Relaxed) & bit == 0 {
+                    agg[g][5] += (word.fetch_or(bit, Relaxed) & bit == 0) as i64;
+                }
+                sets_ring[r % (RING / 2)] = (sets.len() - 1, 0);
+                if n_id > 0 {
+                    let (id, g) = (
+                        names.id(key, cap),
+                        region.get(rid).map_or(0, |r| r.load(Relaxed)) as usize,
+                    );
+                    merge(&mut agg[g], [1, n_id, c, c, c, 0, nl, tl]);
+                    sets_ring[r % (RING / 2)] = (5 * id + 1 + g / 64, g);
+                    prefetchw(&sets[5 * id + 1 + g / 64]);
+                }
+            };
             let mut r = 0;
-            {
-                let claim = || Some(next.fetch_add(1, Relaxed)).filter(|&c| c < chunks);
-                while let Some(c) = claim() {
-                    // Masks of quotes, commas and LFs, 64 bytes at a time. A byte is inside quotes
-                    // when an odd number of quotes precede it in the record, so the commas and LFs
-                    // outside quotes are the field and record ends. f holds the field ends, q the
-                    // number of quotes before each.
-                    let (mut base, end) = (bound(c), bound(c + 1));
-                    let (mut rs, mut k, mut f, mut q, mut qs, mut carry) =
-                        (base, 0, [0; 4], [0; 4], 0, 0);
-                    let last = (end == recs.len()) as usize; // whose last record may lack its LF
-                    while base < end + last {
-                        let mut pad = [0; 64]; // the end of the file, padded, then an LF
-                        let block = recs.get(base..base + 64).unwrap_or_else(|| {
-                            pad[..recs.len() - base].copy_from_slice(&recs[base..]);
-                            pad[recs.len() - base] = b'\n';
-                            &pad
-                        });
-                        let [quote, comma, lf] = masks(block.try_into().unwrap());
-                        let mut inside =
-                            [1, 2, 4, 8, 16, 32].iter().fold(quote, |x, s| x ^ x << s) ^ carry;
-                        carry = 0u64.wrapping_sub(inside >> 63);
-                        inside |= u64::MAX
-                            .checked_shl((end + last - base) as u32)
-                            .unwrap_or(0);
-                        let mut ends = (comma | lf) & !inside;
-                        while ends != 0 {
-                            let (t, p) =
-                                (ends.trailing_zeros(), base + ends.trailing_zeros() as usize);
-                            ends &= ends - 1;
-                            if k < 4 {
-                                (f[k], q[k], k) = (
-                                    p,
-                                    qs + (quote & ((1 << t) - 1)).count_ones() as usize,
-                                    k + 1,
-                                );
-                                continue;
-                            }
-                            // A record: [BOM] id , name , note , region , amount [CR] LF
-                            // Each number is read from the eight bytes that end where it ends (ids
-                            // have at most 8 digits, regions 7 and amounts 7 with the cents).
-                            let i = rs + 3 * (recs[rs] == 0xEF) as usize;
-                            let id = num(ld(recs, f[0] - 8), f[0] - i) as i64;
-                            let len = |j: usize| {
-                                f[j + 1]
-                                    - f[j]
-                                    - 1
-                                    - (q[j + 1] - q[j]) / 2
-                                    - (q[j + 1] > q[j]) as usize
-                            };
-                            let quoted = (q[1] > q[0]) as usize;
-                            let (s, e) = (f[0] + 1 + quoted, f[1] - quoted);
-                            let rid = num(ld(recs, f[3] - 8), f[3] - f[2] - 1) as usize;
-                            region.get(rid).map(prefetch);
-                            let neg = recs[f[3] + 1] == b'-';
-                            let ae = p - (recs[p - 1] == b'\r') as usize;
-                            let x = ld(recs, ae - 8); // ...ddd.dd: drop the '.'
-                            let x = (x & 0xFF_FFFF_FFFF) << 8 | x & 0xFFFF << 48;
-                            let cents = num(x, ae - f[3] - 2 - neg as usize) as i64;
-                            let cents = [cents, -cents][neg as usize];
-                            let rec = [id, cents, len(0) as i64, len(1) as i64];
-                            finish(ring[r], &mut agg, r);
-                            (ring[r], r) = ((names.key(recs, s, e), rid, rec), (r + 1) % RING);
-                            (rs, k) = (p + 1, 0);
+            let claim = || Some(next.fetch_add(1, Relaxed)).filter(|&c| c < chunks);
+            while let Some(c) = claim() {
+                // Masks of quotes, commas and LFs, 64 bytes at a time. A byte is inside quotes
+                // when an odd number of quotes precede it in the record, so the commas and LFs
+                // outside quotes are the field and record ends. f holds the field ends, q the
+                // number of quotes before each.
+                let (mut base, end) = (bound(c), bound(c + 1));
+                let (mut rs, mut k, mut f, mut q, mut qs, mut carry) =
+                    (base, 0, [0; 4], [0; 4], 0, 0);
+                let last = (end == recs.len()) as usize; // whose last record may lack its LF
+                while base < end + last {
+                    let mut pad = [0; 64]; // the end of the file, padded, then an LF
+                    let block = recs.get(base..base + 64).unwrap_or_else(|| {
+                        pad[..recs.len() - base].copy_from_slice(&recs[base..]);
+                        pad[recs.len() - base] = b'\n';
+                        &pad
+                    });
+                    let [quote, comma, lf] = masks(block.try_into().unwrap());
+                    let mut inside =
+                        [1, 2, 4, 8, 16, 32].iter().fold(quote, |x, s| x ^ x << s) ^ carry;
+                    carry = 0u64.wrapping_sub(inside >> 63);
+                    inside |= u64::MAX
+                        .checked_shl((end + last - base) as u32)
+                        .unwrap_or(0);
+                    let mut ends = (comma | lf) & !inside;
+                    while ends != 0 {
+                        let (t, p) = (ends.trailing_zeros(), base + ends.trailing_zeros() as usize);
+                        ends &= ends - 1;
+                        if k < 4 {
+                            (f[k], q[k], k) = (
+                                p,
+                                qs + (quote & ((1 << t) - 1)).count_ones() as usize,
+                                k + 1,
+                            );
+                            continue;
                         }
-                        qs += quote.count_ones() as usize;
-                        base += 64;
+                        // A record: [BOM] id , name , note , region , amount [CR] LF
+                        // Each number is read from the eight bytes that end where it ends (ids
+                        // have at most 8 digits, regions 7 and amounts 7 with the cents).
+                        let i = rs + 3 * (recs[rs] == 0xEF) as usize;
+                        let id = num(ld(recs, f[0] - 8), f[0] - i) as i64;
+                        // A quoted field has 2 + 2k quotes for k "" escapes, and 2 + k bytes fewer.
+                        let len = |j: usize| {
+                            let d = q[j + 1] - q[j];
+                            f[j + 1] - f[j] - 1 - d / 2 - (d > 0) as usize
+                        };
+                        let quoted = (q[1] > q[0]) as usize;
+                        let (s, e) = (f[0] + 1 + quoted, f[1] - quoted);
+                        let rid = num(ld(recs, f[3] - 8), f[3] - f[2] - 1) as usize;
+                        region.get(rid).map(prefetch);
+                        let neg = recs[f[3] + 1] == b'-';
+                        let ae = p - (recs[p - 1] == b'\r') as usize;
+                        let x = ld(recs, ae - 8); // ...ddd.dd: drop the '.'
+                        let x = (x & 0xFF_FFFF_FFFF) << 8 | x & 0xFFFF << 48;
+                        let cents = num(x, ae - f[3] - 2 - neg as usize) as i64;
+                        let cents = [cents, -cents][neg as usize];
+                        let rec = [id, cents, len(0) as i64, len(1) as i64];
+                        finish(ring[r], &mut agg, r);
+                        (ring[r], r) = ((names.key(recs, s, e), rid, rec), (r + 1) % RING);
+                        (rs, k) = (p + 1, 0);
                     }
-                    // MADV_DONTNEED the chunk's pages now, in parallel, not at exit on one thread
-                    // (a read past the chunk's end faults the page back in).
-                    let page = bound(c) & !4095;
-                    unsafe { madvise(recs.as_ptr().add(page) as _, end - page, 4) };
+                    qs += quote.count_ones() as usize;
+                    base += 64;
                 }
-                for j in 0..RING + RING / 2 {
-                    finish(ring[(r + j) % RING], &mut agg, r + j);
-                    ring[(r + j) % RING].2[0] = 0; // id 0: no record to finish
-                }
+                // MADV_DONTNEED the chunk's pages now, in parallel, not at exit on one thread
+                // (a read past the chunk's end faults the page back in).
+                let page = bound(c) & !4095;
+                unsafe { madvise(recs.as_ptr().add(page) as _, end - page, 4) };
+            }
+            for j in 0..RING + RING / 2 {
+                finish(ring[(r + j) % RING], &mut agg, r + j);
+                ring[(r + j) % RING].2[0] = 0; // id 0: no record to finish
             }
             agg
         });
