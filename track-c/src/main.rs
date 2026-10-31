@@ -1,6 +1,6 @@
 //! Speed Demon 2026, Track C (Join): std-only Rust. README.md explains the design.
 use std::arch::asm;
-use std::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering::*};
+use std::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering::*};
 use std::{collections::HashMap, env, fs, os::fd::AsRawFd, sync::Barrier, sync::Mutex, thread};
 
 extern "C" {
@@ -32,22 +32,15 @@ fn par<T: Send>(n: usize, f: impl Fn(usize) -> T + Sync) -> Vec<T> {
     })
 }
 
-/// Asks the CPU to start loading the cache line at `p` without waiting: ready to be written
-/// (taking it from other cores) if `W`, else shared, for lines that every thread only reads.
-fn prefetch<const W: bool, T>(p: &T) {
+/// Asks the CPU to start loading the cache line at `p`, ready to be written, without waiting.
+fn prefetch<T>(p: &T) {
     #[cfg(target_arch = "x86_64")]
     unsafe {
-        match W {
-            true => asm!("prefetchw [{}]", in(reg) p, options(nomem, nostack)),
-            _ => asm!("prefetcht0 [{}]", in(reg) p, options(nomem, nostack)),
-        }
+        asm!("prefetchw [{}]", in(reg) p, options(nomem, nostack))
     };
     #[cfg(target_arch = "aarch64")]
     unsafe {
-        match W {
-            true => asm!("prfm pstl1keep, [{}]", in(reg) p, options(nomem, nostack)),
-            _ => asm!("prfm pldl1keep, [{}]", in(reg) p, options(nomem, nostack)),
-        }
+        asm!("prfm pstl1keep, [{}]", in(reg) p, options(nomem, nostack))
     };
 }
 
@@ -84,81 +77,67 @@ fn digits(b: &[u8], p: &mut usize) -> u64 {
     v
 }
 
-/// The shared name dictionary. `index` is a small open-addressing table (under half full)
-/// of u32s: a hash tag in the high bits and 1 + the name's number in the low `bits`. Each
-/// number owns one 64-byte line in `names`: [key words 0..4, group bitset 0..4]. The key is a
-/// name of up to 32 bytes, zero-padded (names hold no zero bytes), or a longer one's number
-/// in `long` followed by !0.
+/// The shared name dictionary: an open-addressing table with one 64-byte cache line per
+/// name, holding [state, key words 0..3, group bitset 0..4]. State 0 is empty, 1 is being
+/// written, 2 + len is a name of `len` <= 24 bytes kept inline in the key words, and 27 a
+/// longer name, whose key is its number in `long`.
 struct Names {
-    index: &'static [AtomicU32],
-    names: &'static [[AtomicU64; 8]],
-    bits: u32,
+    slots: &'static [[AtomicU64; 8]],
     long: Mutex<HashMap<Box<[u8]>, u64>>,
-    used: Own<AtomicUsize>, // written on every insert, so kept off the lines read per record
+    used: Own<AtomicUsize>, // written on every insert, so kept off the line read per record
 }
 #[repr(align(128))]
 struct Own<T>(T);
 impl Names {
-    /// The key of the name `b[s..e]` and its slot and number; its line starts loading now.
-    fn key(&self, b: &[u8], s: usize, e: usize) -> ([u64; 4], usize, usize) {
-        let mut key = [0, 8, 16, 24].map(|o| word(b, s + o, e));
-        if e - s > 32 {
-            let mut long = self.long.lock().unwrap();
-            let id = long.len() as u64;
-            key = [*long.entry(b[s..e].into()).or_insert(id), !0, 0, 0];
-        }
-        let i = (hash(key) >> (63 - self.bits)) as usize;
-        prefetch::<false, _>(&self.index[i]);
-        (key, i, 0)
+    fn full(&self) -> bool {
+        self.used.0.load(Relaxed) > self.slots.len() / 8 * 7
     }
-    /// Looks up a key's number, once its slot has loaded, and starts loading its line.
-    fn locate(&self, (key, i, id): &mut ([u64; 4], usize, usize)) {
-        (*i, *id) = self.find(*key, *i);
-        self.names.get(*id).map(prefetch::<true, _>);
+    /// The key of the name `b[s..e]` and its first slot, whose cache line starts loading now.
+    fn key(&self, b: &[u8], s: usize, e: usize) -> ([u64; 4], usize) {
+        let (len, w) = ((e - s) as u64, [0, 8, 16].map(|o| word(b, s + o, e)));
+        let key = match len {
+            0..=24 => [w[0], w[1], w[2], 2 + len],
+            _ => {
+                let mut long = self.long.lock().unwrap();
+                let id = long.len() as u64;
+                [*long.entry(b[s..e].into()).or_insert(id), 0, 0, 27]
+            }
+        };
+        let h = key
+            .into_iter()
+            .fold(0, |h: u64, w| (h.rotate_left(5) ^ w).wrapping_mul(K));
+        let i = (h >> (64 - self.slots.len().trailing_zeros())) as usize;
+        prefetch(&self.slots[i]);
+        prefetch(&self.slots[(i + 1) & (self.slots.len() - 1)]); // a probe may go on
+        (key, i)
     }
-    /// The first slot from `i` on whose tag matches `key` (inserting it if a free slot comes
-    /// first) and the number there; usize::MAX once the table is full.
-    fn find(&self, key: [u64; 4], mut i: usize) -> (usize, usize) {
-        let tag = hash(key) as u32 >> self.bits << self.bits;
-        loop {
-            let slot = &self.index[i];
-            let mut v = slot.load(Acquire);
-            if v == 0 {
-                let id = self.used.0.fetch_add(1, Relaxed);
-                let Some(line) = self.names.get(id) else {
-                    return (i, usize::MAX);
-                };
-                (0..4).for_each(|j| line[j].store(key[j], Relaxed));
-                match slot.compare_exchange(0, tag | (id + 1) as u32, Release, Acquire) {
-                    Ok(_) => return (i, id),
-                    Err(now) => v = now,
-                }
+    /// Notes that the name with this key occurs in group `g`; returns 1 the first time, else
+    /// 0. Once the table is too full it stops inserting, and the run starts over.
+    fn see(&self, (key, mut i): ([u64; 4], usize), g: usize) -> i64 {
+        let slot = loop {
+            let slot = &self.slots[i];
+            let mut state = slot[0].load(Acquire);
+            if state == 0 && self.full() {
+                return 0;
+            } else if state == 0 && slot[0].compare_exchange(0, 1, Acquire, Acquire).is_ok() {
+                (0..3).for_each(|j| slot[j + 1].store(key[j], Relaxed));
+                slot[0].store(key[3], Release);
+                self.used.0.fetch_add(1, Relaxed);
+                break slot;
             }
-            if v >> self.bits << self.bits == tag {
-                return (i, (v & ((1 << self.bits) - 1)) as usize - 1);
+            while state <= 1 {
+                state = slot[0].load(Acquire); // wait while another thread writes the slot
             }
-            i = (i + 1) & (self.index.len() - 1);
-        }
-    }
-    /// Notes that the name occurs in group `g`; returns 1 the first time, else 0.
-    fn see(&self, (key, mut i, mut id): ([u64; 4], usize, usize), g: usize) -> i64 {
-        loop {
-            let Some(line) = self.names.get(id) else {
-                return 0; // full: the run starts over
-            };
-            if (0..4).all(|j| line[j].load(Relaxed) == key[j]) {
-                let (bit, w) = (1 << (g % 64), &line[4 + g / 64]);
-                return (w.load(Relaxed) & bit == 0 && w.fetch_or(bit, Relaxed) & bit == 0) as i64;
+            if state == key[3] && (0..3).all(|j| slot[j + 1].load(Relaxed) == key[j]) {
+                break slot;
             }
-            (i, id) = self.find(key, (i + 1) & (self.index.len() - 1)); // a tag collision
-        }
+            i = (i + 1) & (self.slots.len() - 1);
+        };
+        let (bit, w) = (1 << (g % 64), &slot[4 + g / 64]);
+        (w.load(Relaxed) & bit == 0 && w.fetch_or(bit, Relaxed) & bit == 0) as i64
     }
 }
-fn hash(key: [u64; 4]) -> u64 {
-    key.into_iter().fold(0, |h: u64, w| {
-        (h.rotate_left(5) ^ w).wrapping_mul(0x517cc1b727220a95)
-    }) // FxHash
-}
+const K: u64 = 0x517cc1b727220a95; // FxHash's multiplier
 const RING: usize = 16;
 
 /// Bit i of each mask is set where byte i of the block is a quote, a comma or an LF.
@@ -207,8 +186,7 @@ fn code(c: &[u8]) -> usize {
 fn main() {
     let dir = |k, d: &str| env::var(k).unwrap_or(d.into());
     let (data, out) = (dir("SD_DATA", "/data"), dir("SD_OUT", "/out"));
-    let file = fs::File::open(format!("{data}/records.csv")).unwrap();
-    let len = file.metadata().unwrap().len() as usize;
+    let recs = map(format!("{data}/records.csv"));
     let regs = map(format!("{data}/regions.csv"));
     let n = thread::available_parallelism().map_or(1, |n| n.get());
     // regions.csv is sorted, so its last line holds the largest region id.
@@ -219,11 +197,21 @@ fn main() {
         + 1;
     let region: &[AtomicU8] = zeroed(digits(regs, &mut { last }) as usize + 1);
     let seen: Vec<AtomicU8> = (0..17577).map(|_| AtomicU8::new(0)).collect();
-    // Records are read in 32 KB chunks, each moved to start after a CRLF: CR only ever
-    // occurs in a record terminator (spec 2.2), the header's included, so this needs no
-    // knowledge of quotes.
-    let chunks = (len >> 15).max(1);
-    let crlf = |b: &[u8], i| Some(i + 2 + b.get(i..b.len() - 1)?.iter().position(|&c| c == 13)?);
+    // Records are cut into 64 chunks per thread, each moved to start after a CRLF: CR only
+    // ever occurs in a record terminator (spec 2.2), so this needs no knowledge of quotes.
+    let start = recs.iter().position(|&c| c == b'\n').unwrap() + 1;
+    let chunks = 64 * n;
+    let bound = |c: usize| match c {
+        0 => start,
+        _ if c == chunks => recs.len(),
+        _ => {
+            let cut = start + (recs.len() - start) * c / chunks;
+            recs[cut..]
+                .iter()
+                .position(|&c| c == b'\r')
+                .map_or(recs.len(), |i| cut + i + 2)
+        }
+    };
     let rstart = regs.iter().position(|&c| c == b'\n').unwrap() + 1;
     let rcut = |t: usize| match t {
         0 => rstart,
@@ -231,12 +219,10 @@ fn main() {
             .find(|&i| regs[i - 1] == b'\n')
             .unwrap_or(regs.len()),
     };
-    let mut bits = 17; // room for 2^17 names; four times as many whenever they run out
+    let mut bits = 17; // 2^17 slots; four times as many whenever 7/8 of them fill up
     let aggs = loop {
         let names = Names {
-            index: zeroed(2 << bits),
-            names: zeroed(7 << bits >> 3),
-            bits,
+            slots: zeroed(1 << bits),
             long: Default::default(),
             used: Own(0.into()),
         };
@@ -268,7 +254,7 @@ fn main() {
             // A record is finished (its group and name looked up) 16 records after it is
             // parsed, so that the cache lines it needs have time to arrive.
             let mut agg = vec![EMPTY; 256];
-            let mut ring = [(([0; 4], 0, 0), 0, EMPTY); RING];
+            let mut ring = [(([0; 4], 0), 0, EMPTY); RING];
             let mut finish = |(key, rid, mut rec): (_, usize, Agg)| {
                 let g = region.get(rid).map_or(0, |r| r.load(Relaxed)) as usize;
                 if rec[0] > 0 {
@@ -276,29 +262,17 @@ fn main() {
                     merge(&mut agg[g], rec);
                 }
             };
-            let (mut r, mut buf) = (0, vec![]);
+            let mut r = 0;
             let claim = || Some(next.fetch_add(1, Relaxed)).filter(|&c| c < chunks);
             while let Some(c) = claim() {
-                // The chunk, and as much more as it takes to reach the CRLF its last record ends
-                // with, is read into buf (its pages stay in the shared page cache, unmapped).
-                let (lo, hi, mut pad) = (len * c / chunks, len * (c + 1) / chunks, 1 << 12);
-                let end = loop {
-                    buf.resize((hi + pad).min(len) - lo, 0);
-                    std::os::unix::fs::FileExt::read_exact_at(&file, &mut buf, lo as u64).unwrap();
-                    match crlf(&buf, hi - lo) {
-                        Some(e) => break e,
-                        None if lo + buf.len() == len => break buf.len(),
-                        None => pad *= 2,
-                    }
-                };
                 // Masks of quotes, commas and LFs, 64 bytes at a time. A byte is inside quotes
                 // when an odd number of quotes precede it in the record, so the commas and LFs
                 // outside quotes are the field and record ends. f holds the field ends, q the
                 // number of quotes before each.
-                let (recs, mut base) = (&buf[..], crlf(&buf, 0).unwrap_or(end).min(end));
+                let (mut base, end) = (bound(c), bound(c + 1));
                 let (mut rs, mut k, mut f, mut q, mut qs, mut carry) =
                     (base, 0, [0; 4], [0; 4], 0, 0);
-                let last = (lo + end == len) as usize; // whose last record may lack its LF
+                let last = (end == recs.len()) as usize; // whose last record may lack its LF
                 while base < end + last {
                     let mut pad = [0; 64]; // the end of the file, padded, then an LF
                     let block = recs.get(base..base + 64).unwrap_or_else(|| {
@@ -334,7 +308,7 @@ fn main() {
                         let quoted = (q[1] > q[0]) as usize;
                         let (s, e) = (f[0] + 1 + quoted, f[1] - quoted);
                         let rid = digits(recs, &mut { f[2] + 1 }) as usize;
-                        region.get(rid).map(prefetch::<false, _>);
+                        region.get(rid).map(prefetch);
                         let neg = recs[f[3] + 1] == b'-';
                         let mut i = f[3] + 1 + neg as usize;
                         let int = digits(recs, &mut i) as i64;
@@ -343,10 +317,6 @@ fn main() {
                         let cents = [cents, -cents][neg as usize];
                         let rec = [1, id, cents, cents, cents, 0, len(0) as i64, len(1) as i64];
                         finish(ring[r]);
-                        let m = &mut ring[(r + RING / 2) % RING];
-                        if m.2[0] > 0 {
-                            names.locate(&mut m.0);
-                        }
                         (ring[r], r) = ((names.key(recs, s, e), rid, rec), (r + 1) % RING);
                         (rs, k) = (p + 1, 0);
                     }
@@ -354,16 +324,10 @@ fn main() {
                     base += 64;
                 }
             }
-            for j in 0..RING {
-                let m = &mut ring[(r + j + RING / 2) % RING];
-                if m.2[0] > 0 && j < RING / 2 {
-                    names.locate(&mut m.0);
-                }
-                finish(ring[(r + j) % RING]);
-            }
+            ring.into_iter().for_each(finish);
             agg
         });
-        if names.used.0.load(Relaxed) <= names.names.len() {
+        if !names.full() {
             break aggs;
         }
         bits += 2;
