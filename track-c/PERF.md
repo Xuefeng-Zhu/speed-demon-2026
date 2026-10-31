@@ -1,27 +1,24 @@
-# Track C performance log
+# Track C: performance log
 
-| Step | Change | Run ID | T (s) | M (MB) |
-|---|---|---|---|---|
-| 0 | Organizers' Python reference | — | 14.44 | 367 |
-| 1 | C++ byte parser, direct region map, per-country distinct-name sets | Not run on board | Not measured on board | Not measured on board |
+Every step from the reference to the current version. **Board run IDs are still to be added**: every number below was measured locally, on a shared 2-vCPU arm64 VM that other jobs were also using, so wall times there vary by about 2x from run to run. The local numbers show direction only. The board numbers are the ones that count.
 
-Local validation and local timings are in README.md. No live-board runs have been made; do not substitute laptop timings for board measurements.
+- "Wall" and "CPU" are the best of 3 to 5 runs on seed 1 `full` (3,320,000 records, 202 MB).
+- "Heap" is the polled peak `RssAnon`, which is what the harness's cgroup `memory.peak` charges. Mapped page-cache pages are not charged to the run.
 
-Local revision after step 1: keep canonical name byte views into the input buffer, count note bytes without allocation, and read files directly into a sized buffer. Three interleaved Mac runs improved from 2.833–4.802 s to 1.611–2.730 s; measured peak RSS fell from 687.5–808.9 MB to 354.9–359.3 MB. Other experiments ran concurrently, so repeat on an idle machine. Published seed 1 full and sample hashes and independent reference comparisons still match. These are not board measurements.
+| Step | Change | Run ID | Wall (s) | CPU (s) | Heap (MB) | Hash |
+|---|---|---|---|---|---|---|
+| 0 | The reference, unchanged. Board: 14.44 s, 367 MB | (board) | 27.9 | 16.2 | 347 | ok |
+| 1 | Rust, std only: `mmap`, two-pass quote-parity split across threads, a hand-written parser, per-thread aggregates. Distinct names in 64 mutex shards keyed by slices of the mapped file, plus one global atomic group×name bitset | pending | 1.9 | 1.9 | 9.6 | ok (after fix below) |
+| 2 | Copy names into `Box<[u8]>` keys. Per-shard row bitsets that count a distinct name when they first set its bit, so no global id counter and no final popcount. 256 shards, each aligned to 128 bytes | pending | 5.0 | 2.4 | 12.7 | ok |
+| 3 | Fix step 2's shard index (see failed experiments): shard on hash bits 32–39 | pending | 1.0 | 1.8 | 12.6 | ok |
+| 4 | Restructure for size: one `merge` for records and threads, `par` helper, unified `field`. 241 → 154 code lines after rustfmt | pending | 0.97 | 1.67 | 12.6 | ok |
 
-## Controlled local comparison
+`sample` with the current version: 0.17–0.35 s wall and 12.4 MB heap, against the reference's 2.8 s and 66 MB.
 
-Five interleaved full-data pairs after warmup on macOS ARM: original median 2.636044 s, then-current serial median 1.499528 s (1.76×). Every output matched the full hash. Details: `experiments/bench-c.json`. These are local measurements, not board scores.
+## Failed experiments and bugs
 
-Local revision after the hash-set variant: append name views to per-country vectors, then sort and deduplicate. Two interleaved full-data pairs produced 2.641/1.938 s and 352.0/354.6 MB peak RSS for the hash-set version versus 1.142/0.709 s and 293.5/293.0 MB for this variant. All outputs matched the published SHA-256. Other work ran concurrently. That serial candidate also passed the restricted ARM Linux Docker full-data check in 1.27 s including startup; these figures are not board measurements.
-
-## Native x86 dot VM
-
-The candidate and original were tested on the full seed-1 dataset with GCC 14. See `experiments/dot-vm.md` for the five-run medians and limitations. This was not a board run.
-
-
-## Parallel country sorting
-
-A six-worker pool sorts and deduplicates independent country vectors; ordered output begins only after every worker joins. On a shared native x86 dot VM with GCC 14, the full seed-1 output and alternate-reference cases passed. Five-run median wall time was 0.4376 s versus 0.9685 s for the serial candidate (2.21×); maximum RSS was 269276 KiB for both and median CPU time was 1.007 s versus 0.968 s. These process metrics are local, not official board timings or cgroup memory. The time contribution to K is approximately 1.49× at equal memory; the source-size factor and actual harness results remain unmeasured. The serial implementation is preserved as `experiments/c-serial.cpp`. No live-board run ID exists.
-
-The promoted candidate passed `python3 check.py c --data /tmp/sdc-full --expected d8088b1cd42ba1338b1345b107b55db7b96ef1f5066f3ff64fd26a8912a0f536` under the restricted ARM Linux container: output matched and wall time was 0.84 s including startup. Fresh tiny seeds 2, 17, 99 and 4242 and sample seeds 13, 42 and 76543 matched the official reference; worked and extended parser fixtures passed.
+- **Skipped the first record (bug, caught by the hash).** Chunk 0 also went through `sync`, which skips to the end of the first LF and so dropped record 1. Chunk 0 now starts right after the header.
+- **Shard index from the top hash bits.** With `hash >> 56` picking the shard, every key in a shard shared hashbrown's 7-bit control tag, which is also taken from the top bits. Every probe then matched and fell through to a full key comparison. That ran about 2.5x slower than step 3. Moving the shard index to bits 32–39 fixed it.
+- **Keys pointing into the mapped file (step 1).** These save the `Box` copies, about 3 MB of heap, but every lookup compares against a random spot in a 200 MB file, which means a cache miss and often a TLB miss. Step 3's boxed keys were clearly faster.
+- **Group bitset stored inline as `[u64; 4]` in the map value.** This removes the row lookup, but 48-byte buckets made the table bigger and it measured no faster. It would also cap the number of groups at 256. Dropped.
+- **SipHash (`std` default) instead of the Fx-style hasher.** About 15% more CPU, so the 13-line hasher stays.

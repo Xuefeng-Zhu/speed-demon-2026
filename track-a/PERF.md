@@ -1,51 +1,38 @@
-# Performance and correctness log
+# Track A: performance log
 
-No official board run IDs have been recorded; timings below are local, not official scores. The board app is installed.
+Every step from the reference to the current version. The board run IDs will be added once each step has run on the live board. Until then, the numbers below come from local runs.
 
-- Replaced general timestamp parsing and per-line split with direct fixed-field parsing, endpoint interning, and a compact collection of uint32 latencies per hour and endpoint. All latencies are retained; exact percentiles are obtained by sorting each group. This is the initial candidate, not a measured comparison of individual optimizations.
-- Official generator seed 1, full: input SHA-256 `7ec80ba45bceef51ac7f79d3a14521fc6187b2dcb87b5e5542d08063fe5d962a`; output SHA-256 `495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3`, matching the published expected digest. Five consecutive native runs took 0.496, 0.411, 0.553, 0.411 and 0.411 seconds on this Mac, with peak child RSS 26,689,536 bytes. Other processes were active; these are not official measurements, and Linux cgroup memory accounting may differ.
-- Official generator seed 999, sample: candidate and official reference both produced SHA-256 `04168fcd480940157d8221e2ce79e49a3e8f41d4c66cbc3634edd1cb5c91c242`.
-- Independent synthetic differential checks passed empty input and 1,000, 100,000 and 100,000 records on different seeds, including day/month boundaries, duplicates, methods, uint32 extremes, statuses 499/500/599 and endpoint byte ordering.
-- Official generator seed 1, tiny: output SHA-256 `c24fa507c963eaeac9224fd8435019b4f4e8c002ece7e32f316681a3957eb92f`, matching the published digest.
+**How these were measured.** The local machine is arm64 (Neoverse-V2) with 2 cores and about 7 GB of RAM, and other workloads were running on it (load average 2 to 4). Wall times there are noisy and only relative. Each "wall" figure is the minimum of 8 to 10 runs on full seed 1 (3.1M lines, 239 MB, file in page cache). "CPU" is process CPU time per phase, from a separately instrumented build (`clock_gettime(CLOCK_PROCESS_CPUTIME_ID)` at phase boundaries), with `SD_THREADS=1` and the minimum of 8 to 10 runs. "RssAnon" is the peak anonymous RSS read from `/proc/self/status` at phase boundaries. The board measures cgroup `memory.peak`. Our mapped input pages are already charged to the pre-warm, so they do not count there, but about 10 MB of page cache for `summary.txt` will.
 
-## Local comparison: chunked parsing and percentile selection
+| Step | Change | Run ID | Local wall (2 threads) | CPU (1 thread) | RssAnon peak | Board T (s) | Board M (MB) |
+|---|---|---|---|---|---|---|---|
+| 0 | Reference, unchanged (Python) | (calibration) | 51.0 s (full seed 2, same machine) | – | – | 32.05 | 228 |
+| 1 | Rust, std only: mmap, a parse thread per chunk making `(key, latency)` records, a global counting-sort scatter, per-group selection, parallel formatting | to add | 191 ms | about 180 ms total | about 42 MB | | |
+| 2 | Records bucketed by hour, work handed out by hour; no global cursor or latency arrays; per-thread `MADV_POPULATE_READ` in place of serial `MAP_POPULATE` | to add | 130 ms | parse 142, summarise+write 49 | 25 MB | | |
+| 3 | Unchecked word loads (one assert, then `read_unaligned`); endpoint compare by words, not a `memcmp` call | to add | about the same | parse 134 to 143 (noise) | 25 MB | | |
+| 4 | Write overlapped with summarising: workers send finished hours over `mpsc`, main writes them in order | to add | 128 ms | summarise+write 47 | 25 MB | | |
+| 5 | Selection order p50, then p95 on the right part, then p99 on its right part (about n + n/2 + n/20 values in place of about 3n) | to add | 117 to 128 ms | summarise+write 43 to 46 | 25 MB | | |
 
-The original full-sort/line-reader baseline is preserved at `track-a-agent/main.cpp` in this workspace. We compared it with selection alone, 1 MiB chunked reads alone, and both together on the official seed-1 full dataset. Eight runs of each variant were rotated across positions, every output was hashed, and the lowest and highest times for each variant were discarded. Other agents were running concurrently, so these are exploratory Mac timings, not a controlled or official ranking. Middle-six means: baseline 0.380 s, selection only 0.381 s, chunking only 0.269 s, combined 0.256 s. All 32 runs produced the published full hash. The initial selection-only comparison was noisy, so selection's benefit on the scoring CPU is still unproven.
+## What the phases cost (step 5, 1 thread, CPU ms)
 
-Final code passed the tiny published hash and matched the official reference on sample seed 999. It also passed the synthetic differential tests described above. The parser keeps partial lines between reads and handles empty input; percentile selection retains exact nearest ranks.
+| Phase | CPU ms | Note |
+|---|---|---|
+| parse (includes page-table population, about 25 to 50 ms of it sys time) | 129 | parallel, scales with threads |
+| merge endpoint tables and sort the names | 0.3 | serial |
+| summarise and write | 41 to 50 | parallel, plus a serial write that overlaps it |
 
-From the workspace root, rebuild the preserved baseline and final candidate with the same local compiler and run a paired, alternating comparison:
+## Where step 1's time went, and why step 2 exists
 
-```sh
-c++ -O3 -std=c++17 -o /tmp/track-a-baseline track-a-agent/main.cpp
-c++ -O3 -std=c++17 -o /tmp/track-a-final track-a/main.cpp
-python3 official/generators/a_ingest.py --seed 1 --scale full --out /tmp/speed-demon-a-full
-python3 - <<'PYBENCH'
-import hashlib, subprocess, time
-expected = "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3"
-times = {name: [] for name in ("baseline", "final")}
-for i in range(8):
-    order = ("baseline", "final") if i % 2 == 0 else ("final", "baseline")
-    for name in order:
-        start = time.perf_counter()
-        subprocess.run([f"/tmp/track-a-{name}", "/tmp/speed-demon-a-full/requests.log", "/tmp/track-a-output.txt"], check=True)
-        times[name].append(time.perf_counter() - start)
-        with open("/tmp/track-a-output.txt", "rb") as f:
-            assert hashlib.file_digest(f, "sha256").hexdigest() == expected
-for name, samples in times.items():
-    print(name, samples, "middle-six mean", sum(sorted(samples)[1:-1]) / 6)
-PYBENCH
-INGEST_BINARY=/tmp/track-a-final python3 track-a-verification/test.py
-```
+Step 1, as wall ms on 2 loaded cores: map with `MAP_POPULATE` 17 to 25 (serial); parse 140; merge and cursor computation 12 (serial: 12 threads × 132k counters); scatter 10 to 18; selection and formatting 30 to 45; write 10 (serial). The serial parts would dominate on a 12-thread box. Step 2 removed the cursor merge. Each hour's latencies are now counting-sorted by the worker that owns that hour, so the global `(thread, group)` prefix sums are gone. It also dropped the 12 MB global latency array and moved page-table population into the threads.
 
-Re-run this comparison when the machine is otherwise idle, then profile and validate again in the official Linux container. This does not substitute for live-board run IDs.
+## Failed or neutral experiments
 
-Additional generator sample seeds 2 and 98 matched the official reference byte for byte: seed 2 `fd26778fa5e70fac2905a0a0f0142bd26ca4e6f510dfe182a881e525286ff12f`; seed 98 `50d8b76cb16a56df1aaa017a843ee615d5d198fd43eda73bc45b3df768969df2`.
+- **Branch-free first 48 bytes of the endpoint.** Six word loads, a movemask built with multiplies, independent per-word multiplies for the hash, and a loop only past 48 bytes. The aim was to remove the loop-exit misprediction. Parse CPU went from 145 and 131 ms to 154 and 155 ms on alternating runs, so it was slower. The fixed extra work cost more than the misprediction it saved. Reverted.
+- **Word-wise name compare in place of `memcmp`.** No measurable change (143 against 142 ms). It is kept because it avoids a library call for 20 to 80-byte strings. Replacing the compare with a length-only check (wrong, timing only) saved about 18 ms of parse CPU. That is the price of exact matching rather than trusting a 64-bit hash, and we pay it on purpose.
+- **Sort threshold for small groups.** 64 instead of 16 made no difference. Fully sorting every group in place of selecting cost +13 ms CPU (57 against 44).
+- **Lazy page faults against `MAP_POPULATE`.** No clear difference given the noise. The final version uses per-thread `MADV_POPULATE_READ`, which falls back to lazy faults on kernels older than 5.14.
+- **No selection at all** (wrong, timing only): summarise went from about 46 to 29 ms CPU, so selection is about 17 ms of CPU per 3.1M values.
 
-## Controlled local comparison
+## Board estimate (not measured)
 
-Five interleaved full-data pairs after warmup on macOS ARM: original median 0.365936 s, current median 0.244733 s (1.50×). Every output matched the full hash. Also passed nine deliberately positioned 1 MiB chunk boundaries. Details: `experiments/bench-a.json` and `experiments/a_chunk_boundaries.py`. These are local measurements, not board scores.
-
-## Native x86 dot VM
-
-The candidate and original were tested on the full seed-1 dataset with GCC 14. See `experiments/dot-vm.md` for the five-run medians and limitations. This was not a board run.
+Total CPU is about 170 to 190 ms. With 6 P-cores and 12 threads at 2.5 GHz (turbo off), and a serial part of under 1 ms plus process start, we expect T of roughly 25 to 45 ms, against a T_ref of 32 s. M should be about 25 MB of anonymous memory plus about 10 MB of output page cache plus container overhead. These are estimates until the board run IDs are in.

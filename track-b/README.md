@@ -1,14 +1,30 @@
 # Track B: Index
 
-This C++17 implementation reads the queries first and indexes only terms they use. A buffered `pread` scan finds document boundaries; six workers tokenize disjoint, contiguous document ranges into local postings, which are merged in ascending document ID order. A second worker pool evaluates queries into their original positions before ordered output. Boolean operators retain strict left-to-right semantics; phrase queries scan token sequences for exact adjacency. There are no non-standard runtime dependencies. The Docker build uses `-pthread` and pinned allowlisted images.
+Frank Zhu, solo entry. Rust, standard library only. The task, the input files and the exact output format are in the [spec](https://github.com/hackathon-raptors/speed-demon-2026/blob/main/specs/b-index.md).
 
-On a shared native x86 dot VM, the selected streaming candidate's full-seed median was 1.445 s versus 5.750 s for the previous selected candidate, with process peak RSS about 470 versus 337 MiB. All full hashes and alternate-reference cases in that comparison passed. These are local results, not official board time or cgroup memory; see `experiments/dot-vm.md`. The prior serial candidate is retained in `experiments/b-serial.cpp`.
+## Approach
 
-The candidate passed the restricted ARM Linux Docker full-data hash check and fresh tiny reference cases, a 1,000-query edge fixture, and a test placing 32-byte tokens across six 1 MiB read boundaries. To reproduce the fixtures from the repository root:
+The queries are part of the input, so the program reads them first and builds the index around them. Everything is in `src/main.rs`.
 
-```sh
-python3 experiments/b-stream-boundary.py
-python3 experiments/b-edge-fixture.py /tmp/b-stream-boundary-review official/reference/b_index.py
-```
+1. **Query-term dictionary.** Each term used by a query gets a dense id. It goes into an open-addressing table keyed by the token packed into 32 bytes (four `u64`). Tokens contain only `[a-z0-9]` bytes, so the key of a corpus token is built straight from the raw bytes with one OR (`| 0x20` lowercases `A`–`Z` and leaves digits unchanged). Corpus tokens that no query uses get no id and cost one probe.
+2. **Phrase anchors.** A 512 KB sample at the start of the corpus is tokenized to estimate how common each term is. Each phrase is anchored on its rarest term. Which term is chosen affects only speed, never the answer.
+3. **One parallel scan.** `docs.txt` is mapped with `mmap` (declared through `extern "C"`, so there is no crate) and split at line boundaries into one chunk per hardware thread. Each thread tokenizes its chunk exactly as the spec says (§2.2):
+   - For BOOL terms it writes a stream of the distinct term ids in each document, then counting-sorts that stream into CSR posting lists (doc ids ascending).
+   - Phrases are checked right there. The thread keeps the term-id sequence of the current document. At the end of the document it compares each anchor occurrence against the phrases anchored on that term, at the right offset. No positions are stored and no document is read twice.
+   - Each thread hands its scanned 4 MB slices back to the kernel (`madvise(MADV_DONTNEED)`), so at any moment only a few pages of the corpus are resident.
+4. **BOOL on bitmaps.** Each query runs strictly left to right on a dense bitmap with one bit per document (31 KB at full scale). A term with df > N/32 is turned into a shared bitmap the first time a query uses it (`OnceLock`). That makes `the OR of OR ...` a word-wise OR instead of 200,000 single-bit writes. Rarer terms set, clear or mask bits straight from their posting lists. Count, sum and the first ten ids come from one pass over the bitmap.
+5. **Output.** Queries are split into four blocks per thread. Each block is formatted into its own string, and the strings are joined in order and written once.
 
-Set the team name before entering. Live-board timings, cgroup memory, and formatted source-size measurements remain outstanding; no board score or run ID is implied.
+## Correctness
+
+The output is byte-identical (sha256) to the Python reference on seed 1 `sample`, seed 2 `sample` and seed 1 `full` (`f86973c2…4e80927`, the hash published in the spec). NOT is a set difference applied to the running result. Duplicate query lines each get their own output line. A phrase needs its terms at consecutive token positions inside one document.
+
+## Dependencies
+
+None. `std` only, plus `mmap` and `madvise` declared from libc, which `std` links anyway.
+
+## With another 24 hours
+
+- Lookups are memory-latency bound (about 40 ns each on the dev VM, even though only about 1 in 6 needs a second probe). Next steps: a small cache-resident front table for the few thousand most frequent terms, and batched lookups so several cache misses are in flight at once.
+- Compress the posting lists, or skip lists for terms that become bitmaps anyway. This would cut memory below the current ~150 MB peak.
+- Tune `DENSE`, `SLICE` and the sample size on the real box.
