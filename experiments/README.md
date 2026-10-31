@@ -134,3 +134,7 @@ All four tracks passed every gate; `board-b9.json` records the exact run IDs. A 
 ## Official practice run for e8e828a
 
 All four tracks passed every gate; see `board-e8.json`. A auto workers measured 0.051316 s, compared with 0.050492 s for six workers at b9c2b54 and 0.047562 s for auto at 15c6be0. These separate runs do not establish a reliable ordering, and the auto default is retained pending controlled target measurements. B/C/D measured 1.466380 / 0.139036 / 0.713930 s respectively. This is public-seed practice, not final hidden-seed scoring.
+
+## Official practice run for e6e72ac
+
+All four tracks passed every gate; `board-e6.json` records all run IDs and measurements. B length-aware hashing with nine workers measured T=1.124940 s, M=274,243,584 bytes, S=379, K=8.665777, versus the preceding 1.466380 s and K=7.698133. Separate public-seed practice runs are not paired or final hidden-seed scores.
