@@ -12,13 +12,16 @@ extern "C" {
 fn map(path: String) -> &'static [u8] {
     let f = fs::File::open(&path).expect(&path);
     let len = f.metadata().unwrap().len() as usize;
-    unsafe { std::slice::from_raw_parts(mmap(0 as _, len, 1, 2, f.as_raw_fd(), 0), len) }
+    let p = unsafe { mmap(0 as _, len, 1, 2, f.as_raw_fd(), 0) };
+    assert!(p as isize != -1, "cannot map {path}");
+    unsafe { std::slice::from_raw_parts(p, len) }
 }
 
 /// `n` zeroed atomics from an anonymous map, so pages are only touched when used.
 fn zeroed<T>(n: usize, advice: i32) -> &'static [T] {
     let len = n * std::mem::size_of::<T>();
     let p = unsafe { mmap(0 as _, len, 3, 0x22, -1, 0) };
+    assert!(p as isize != -1, "out of memory");
     unsafe { madvise(p, len, advice) }; // 14 = MADV_HUGEPAGE: fewer TLB misses
     unsafe { std::slice::from_raw_parts(p as _, n) }
 }
@@ -243,22 +246,22 @@ fn main() {
             // A record is finished (its group and name looked up) 16 records after it is
             // parsed, so that the cache lines it needs have time to arrive.
             let mut agg = vec![EMPTY; 256];
-            let mut ring = [((0, 0), 0, EMPTY); RING];
+            let mut ring = [((0, 0), 0, [0; 4]); RING];
             let mut sets_ring = [(sets.len() - 1, 0); RING / 2]; // (set word, group) to mark
             let mut finish =
-                |(key, rid, rec): (_, usize, Agg), agg: &mut Vec<Agg>, r: usize| {
+                |(key, rid, [n_id, c, nl, tl]): (_, usize, [i64; 4]), agg: &mut Vec<Agg>, r: usize| {
                     let (w, g) = sets_ring[r % (RING / 2)];
                     let (word, bit) = (&sets[w], 1 << (g % 64));
                     if word.load(Relaxed) & bit == 0 {
                         agg[g][5] += (word.fetch_or(bit, Relaxed) & bit == 0) as i64;
                     }
                     sets_ring[r % (RING / 2)] = (sets.len() - 1, 0);
-                    if rec[0] > 0 {
+                    if n_id > 0 {
                         let (id, g) = (
                             names.id(key, cap),
                             region.get(rid).map_or(0, |r| r.load(Relaxed)) as usize,
                         );
-                        merge(&mut agg[g], rec);
+                        merge(&mut agg[g], [1, n_id, c, c, c, 0, nl, tl]);
                         sets_ring[r % (RING / 2)] = (4 * id + g / 64, g);
                         prefetchw(&sets[4 * id + g / 64]);
                     }
@@ -324,7 +327,7 @@ fn main() {
                             let x = (x & 0xFF_FFFF_FFFF) << 8 | x & 0xFFFF << 48;
                             let cents = num(x, ae - f[3] - 2 - neg as usize) as i64;
                             let cents = [cents, -cents][neg as usize];
-                            let rec = [1, id, cents, cents, cents, 0, len(0) as i64, len(1) as i64];
+                            let rec = [id, cents, len(0) as i64, len(1) as i64];
                             finish(ring[r], &mut agg, r);
                             (ring[r], r) = ((names.key(recs, s, e), rid, rec), (r + 1) % RING);
                             (rs, k) = (p + 1, 0);
@@ -339,7 +342,7 @@ fn main() {
                 }
                 for j in 0..RING + RING / 2 {
                     finish(ring[(r + j) % RING], &mut agg, r + j);
-                    ring[(r + j) % RING].2[0] = 0;
+                    ring[(r + j) % RING].2[0] = 0; // id 0: no record to finish
                 }
             }
             agg
