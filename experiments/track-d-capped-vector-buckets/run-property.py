@@ -1,0 +1,9 @@
+#!/usr/bin/env python3
+from pathlib import Path
+import subprocess, tempfile
+p=Path(__file__).resolve().parent
+with tempfile.TemporaryDirectory(prefix='d-vector-property-') as t:
+    t=Path(t); src=t/'property.rs'; binary=t/'property'
+    src.write_text((p/'candidate.rs').read_text()+'\n'+(p/'pool-property-tail.rs').read_text())
+    subprocess.run(['rustc','--edition=2021','--test','-O','-C','overflow-checks=yes','-C','debug-assertions=yes',str(src),'-o',str(binary)],check=True)
+    subprocess.run([str(binary)],check=True)
