@@ -32,3 +32,5 @@ None (`dependency_count = 0`). `.cargo/config.toml` sets `target-cpu=x86-64-v3` 
 - Reduce event traffic or imbalance between owner reductions without compromising exact collision handling.
 - Investigate more compact dictionaries and faster scanning while measuring both wall time and cgroup peak on the scoring box.
 - Continue holdout-oriented tests of long names, collision promotion and the large-file fallback. The full seed-1 practice at `5afd571` reported a 77,950,976-byte cgroup peak; that is a measurement for that run, not a worst-case bound.
+
+The build-time PGO trial generates sample training data offline from the organizer's byte-identical generator, then discards the data and profile from the final image. The prior non-PGO build remains documented in PERF.md.

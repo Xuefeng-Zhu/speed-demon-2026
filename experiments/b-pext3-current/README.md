@@ -42,3 +42,5 @@ Include these repository-relative paths, preserving directories. They contain so
 - `experiments/b-rust-lengthhash/compare.py`.
 
 Provide the independent full corpus separately; the archive must not include datasets or executables. The preserved pre-mask PEXT3 source is SHA-256 `8effc44c29b00e12464e370ee3dfe9ce611d601b606669efec2a06151bd5d8d0`; only the final direct-mask candidate is checked by the property runner.
+
+Parent-run x86 dot VM paired testing found wall changes of −1.7% and +2.5% versus the exact current AVX2 baseline, with higher CPU. Across this and C PGO testing, 144 full hashes and 20 alternate-reference cases passed. The wall result is not a stable win; this remains unselected. These are native results, not official cgroup measurements.
