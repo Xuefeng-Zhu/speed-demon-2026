@@ -100,4 +100,6 @@ A temporary Darwin-adapted build matched the full seed-1 hash at default and for
 
 Official practice `run-39ea5704e350` at b9c2b54 passed every gate, with six workers T=0.050492 s, M=41,328,640 bytes, S=273, K=27.952360 (`experiments/board-b9.json`). The previous auto-worker practice measured 0.047562 s. Since the objective is wall speed, auto workers have been restored for a further comparison; the tested six-worker version is `experiments/a-six-b9/main.rs`. The separate runs are subject to noise.
 
+The restored auto default passed all gates in official practice `run-2ff15013ed39` at e8e828a: T=0.051316 s, M=50,696,192 bytes, S=273, K=26.616965 (`experiments/board-e8.json`). Auto's two results bracket the six-worker result, so separate practice runs do not establish a reliable ordering.
+
 `track-a-verification/latency_grid_test.py` additionally checked 132,624 singleton groups across all 72 hours and 1,842 endpoints, random unsigned-32-bit latencies of every decimal width, 0 and 4294967295, and 1, 2, 6, 12 and 64 workers. This used the same Darwin-only test adaptation.

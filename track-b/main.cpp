@@ -19,8 +19,8 @@
 using namespace std;
 struct alignas(32) Key { uint64_t v[4]{}; };
 static Key key_of(const char* p,size_t n) { Key k; memcpy(&k,p,n); return k; }
-static uint64_t khash(const Key& k){ uint64_t h=0x9e3779b97f4a7c15ULL; for(uint64_t word:k.v){h^=word;h*=0xbf58476d1ce4e5b9ULL;h^=h>>29;}return h; }
-struct Dict { vector<int> slots; vector<Key> keys; explicit Dict(size_t n):keys(n) { size_t cap=1; while(cap<n*2)cap*=2; slots.assign(cap,-1); } void add(const string& s,int id){Key k=key_of(s.data(),s.size());keys[id]=k;size_t i=(khash(k)>>32)&(slots.size()-1);while(slots[i]!=-1)i=(i+1)&(slots.size()-1);slots[i]=id;} int get(const char* p,size_t n) const {Key k=key_of(p,n);size_t i=(khash(k)>>32)&(slots.size()-1);while(slots[i]!=-1){int id=slots[i];if(!memcmp(&k,&keys[id],sizeof(k)))return id;i=(i+1)&(slots.size()-1);}return -1;} };
+static uint64_t khash(const Key& k,size_t n){ uint64_t h=0x9e3779b97f4a7c15ULL; for(size_t j=0;j<(n+7)/8;++j){h^=k.v[j];h*=0xbf58476d1ce4e5b9ULL;h^=h>>29;}return h; }
+struct Dict { vector<int> slots; vector<Key> keys; explicit Dict(size_t n):keys(n) { size_t cap=1; while(cap<n*2)cap*=2; slots.assign(cap,-1); } void add(const string& s,int id){Key k=key_of(s.data(),s.size());keys[id]=k;size_t i=(khash(k,s.size())>>32)&(slots.size()-1);while(slots[i]!=-1)i=(i+1)&(slots.size()-1);slots[i]=id;} int get(const char* p,size_t n) const {Key k=key_of(p,n);size_t i=(khash(k,n)>>32)&(slots.size()-1);while(slots[i]!=-1){int id=slots[i];if(!memcmp(&k,&keys[id],sizeof(k)))return id;i=(i+1)&(slots.size()-1);}return -1;} };
 struct Query { bool phrase; vector<int> terms; vector<string> ops; };
 struct PhraseStats { uint64_t sum=0; uint32_t count=0; int last=-1; array<int,10> first{}; };
 int main(int argc,char**argv){
@@ -74,7 +74,7 @@ int main(int argc,char**argv){
   phrase_pairs[pair_key(terms[anchor],terms[anchor+1])].emplace_back(group,anchor);
  }
  const auto& immutable_pairs=phrase_pairs;
- constexpr int n_workers=6;
+ constexpr int n_workers=9;
  vector<vector<vector<int>>> local(n_workers, vector<vector<int>>(ids.size()));
  vector<vector<PhraseStats>> phrase_results(n_workers,vector<PhraseStats>(phrase_rep.size()));
  vector<thread> indexers;
@@ -124,7 +124,7 @@ int main(int argc,char**argv){
  local.clear(); local.shrink_to_fit();
  ofstream out(argv[3]);if(!out){cerr<<"Cannot open output\n";return 1;}
  vector<string> outputs(qs.size()); atomic<size_t> next{0}; vector<thread> workers;
- for(int worker=0;worker<6;worker++) workers.emplace_back([&]{
+ for(int worker=0;worker<9;worker++) workers.emplace_back([&]{
  for(size_t n;(n=next.fetch_add(1,memory_order_relaxed))<qs.size();){const auto& q=qs[n];vector<int> result;
   if(!q.phrase){result=postings[q.terms[0]];for(size_t k=1;k<q.terms.size();++k){vector<int> next;auto& p=postings[q.terms[k]];if(q.ops[k-1]=="AND")set_intersection(result.begin(),result.end(),p.begin(),p.end(),back_inserter(next));else if(q.ops[k-1]=="OR")set_union(result.begin(),result.end(),p.begin(),p.end(),back_inserter(next));else set_difference(result.begin(),result.end(),p.begin(),p.end(),back_inserter(next));result.swap(next);}}
   ostringstream os;
