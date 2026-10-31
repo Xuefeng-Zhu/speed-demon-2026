@@ -18,3 +18,7 @@ python3 compare.py --baseline /tmp/a-baseline --candidate /tmp/a-range16 --data 
 ```
 
 The comparator randomizes paired order, warms both, uses fresh outputs and verifies every published full hash. It reports native process RSS, not official warmed cgroup peak. Run alternate-seed/reference and adversarial tests before selecting a variant; official scoring decides. This package has no credentials, datasets, binaries or cached answers. `official/LICENSE` covers copied official files.
+
+## Dot VM results
+
+The parent-run shared native x86 VM comparison found no consistent winner among the dynamic scheduling variants. Across that investigation, 350 full-hash executions, 80 alternate-reference comparisons and the boundary grid passed. The selected static scheduling was retained. These are native VM checks, not official measurements.

@@ -129,7 +129,7 @@ struct Chunk {
 fn parse(d: &[u8], mut i: usize, end: usize) -> Chunk {
     const MADV_POPULATE_READ: i32 = 22; // Linux 5.14+; on older kernels pages fault in lazily.
     let page = i & !4095;
-    unsafe { madvise(d.as_ptr().add(page), end - page, MADV_POPULATE_READ) };
+    let _ = (page, MADV_POPULATE_READ);
     let (table, hours) = (Table::default(), vec![Vec::new(); HOURS]);
     let mut c = Chunk { table, hours };
     while i < end {

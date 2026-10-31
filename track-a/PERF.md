@@ -107,3 +107,9 @@ The restored auto default passed all gates in official practice `run-2ff15013ed3
 ## Proposed hardened PR line reduction
 
 The isolated merge candidate adapts PR 385a930 with dynamic endpoint-table growth, exact-byte collision comparison, explicit SWAR wrapping and a guard before tail shifts. Its full seed-1 hash, 5,020-endpoint forced-collision/growth cases, page boundaries, latency grid and overflow-check-enabled synthetic suite passed using a temporary Darwin mmap flag adjustment. On the shared x86 dot VM it measured 0.05938 s versus 0.05436 s for the existing source. The speed-first merge retains the existing implementation; the tested rewrite is `experiments/pr1-c634/trimmed-a-hardened.rs`. These are native VM observations, not official scores.
+
+## Optional prefault ablation
+
+The selected A source removes the per-shard `MADV_POPULATE_READ` hint; parsing and output are unchanged. The previous source is `experiments/a-ablation/baseline-linux.rs`. On the shared native x86 dot VM the no-hint variant was 14.1–21.6% faster across warm-cache comparisons with similar process RSS. Cold-cache performance was not established. The [official scoring harness](https://github.com/hackathon-raptors/speed-demon-2026/blob/ad1f06063a76bf94066f169e133ec0c2e1485b65/harness/README.md) warms the dataset into the page cache before timing. Official practice comparison is pending; native VM and official cgroup results are distinct.
+
+The exact no-hint candidate, with only the anonymous-map flag adapted for Darwin, passed the full seed-1 hash, 14 page-edge sizes at six worker counts, the 132,624-group latency grid at five worker counts, the independent 0/1,000/100,000/100,000-record synthetic oracle, and 1,803 adversarial endpoints at six worker counts against the official reference. These checks do not execute Linux memory-advice behavior.
