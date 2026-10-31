@@ -1,0 +1,7 @@
+# Independent short-name equality review
+
+Reviewed `../c-rowcache-short-eq/candidate.rs`, SHA-256 `8ab8977bb9956a686792769eb6cd758726538b8dcac4f4336b74539fba23104c`, against baseline `76b341e2b7e880fe4ceeee220206a63b48cd247bba4448aa7991a7ad825e8dd2`. The only change is exact byte comparison on a cache hit. No defect was identified.
+
+Both slices are compared only after their lengths match. When `8 <= n <= 16`, unaligned eight-byte loads from offsets 0 and `n - 8` are wholly within each slice. Their union covers `[0, n)` including overlap; comparisons of native-endian words are equality-equivalent on either endian, and every `u64` bit pattern is valid. All other lengths use Rust slice equality. The slice pointers derive from valid immutable byte slices; no stronger alignment or aliasing assumption is required. The caller still requires the same full hash, and misses use the unchanged exact dictionary/collision handling.
+
+`python3 experiments/c-short-eq-independent/run.py` checks the frozen SHA and appends a separate test module. An optimized macOS ARM build with overflow and debug checks passed 8,650,752 single-byte replacement cases across lengths 0–32 and 64 pairs of offsets, unequal lengths, and 500,000 randomized cases including overlapping and identical slices. The author separately reported protected-page and reference tests. These independent tests do not execute Linux x86 code, prove all possible compiler behavior, test full >4 GiB parsing, establish cgroup memory, or measure speed.
