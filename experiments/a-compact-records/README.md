@@ -29,3 +29,7 @@ python3 experiments/a-compact-records/all-escape.py --baseline /tmp/a-compact-ba
 ```
 
 `run-properties.py` intentionally compiles with release overflow semantics because the original SWAR arithmetic wraps. Test files and the comparator have no datasets, credentials or cached answers; the independent all-escape expected line is calculated from its test construction. Select only after target correctness, repeated wall-time, memory and official practice checks.
+
+## Dot VM x86 comparison
+
+The parent-run shared native x86 VM paired comparison reported 4.0–13.6% lower wall time and 4.4% lower native RSS for the full generated dataset. A separate all-escape stress was 11.6–13.1% slower with 6.5% higher native RSS. Across this and C owner-reduction work, 276 full hashes, 16 full-size all-escape runs, 20 alternate references, collision, fallback and guard checks passed. VM process RSS is not official cgroup peak; the candidate is selected for its own official practice after the independent C run.

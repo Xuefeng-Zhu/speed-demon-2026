@@ -123,15 +123,16 @@ impl Table {
 /// One thread's chunk: its endpoint table and, per hour, records `id << 33 | is_5xx << 32 | latency`.
 struct Chunk {
     table: Table,
-    hours: Vec<Vec<u64>>,
+    hours: Vec<Vec<u32>>,
+    escapes: Vec<Vec<u64>>,
 }
 
 fn parse(d: &[u8], mut i: usize, end: usize) -> Chunk {
     const MADV_POPULATE_READ: i32 = 22; // Linux 5.14+; on older kernels pages fault in lazily.
     let page = i & !4095;
     let _ = (page, MADV_POPULATE_READ);
-    let (table, hours) = (Table::default(), vec![Vec::new(); HOURS]);
-    let mut c = Chunk { table, hours };
+    let (table, hours, escapes) = (Table::default(), vec![Vec::new(); HOURS], vec![Vec::new(); HOURS]);
+    let mut c = Chunk { table, hours, escapes };
     while i < end {
         let digit = |k: usize| (d[i + k] - b'0') as usize;
         // October 30, 31 and November 1, 2 become day indexes 0..=3.
@@ -154,7 +155,12 @@ fn parse(d: &[u8], mut i: usize, end: usize) -> Chunk {
         let id = c.table.find(d, h, s, e) as u64;
         let (latency, next) = parse_latency(d, e + 5);
         let is_5xx = (d[e + 1] == b'5') as u64;
-        c.hours[hour].push(id << 33 | is_5xx << 32 | latency);
+        if id < 2048 && latency < 0x000f_ffff {
+            c.hours[hour].push(((id as u32) << 21) | ((is_5xx as u32) << 20) | latency as u32);
+        } else {
+            c.hours[hour].push(u32::MAX);
+            c.escapes[hour].push(id << 33 | is_5xx << 32 | latency);
+        }
         i = next;
     }
     c
@@ -179,11 +185,17 @@ fn summarize(hour: usize, chunks: &[Chunk], ranks: &[Vec<u32>], names: &[&[u8]])
     let mut start = vec![0u32; names.len() + 1];
     let mut errors = vec![0u32; names.len()];
     for (c, chunk) in chunks.iter().enumerate() {
+        let mut escapes = chunk.escapes[hour].iter();
         for &r in &chunk.hours[hour] {
-            let g = ranks[c][(r >> 33) as usize] as usize;
+            let (id, error) = if r == u32::MAX {
+                let r = *escapes.next().expect("missing escaped record");
+                ((r >> 33) as usize, (r >> 32) as u32 & 1)
+            } else { ((r >> 21) as usize, (r >> 20) & 1) };
+            let g = ranks[c][id] as usize;
             start[g + 1] += 1;
-            errors[g] += (r >> 32) as u32 & 1;
+            errors[g] += error;
         }
+        debug_assert!(escapes.next().is_none());
     }
     for g in 1..start.len() {
         start[g] += start[g - 1];
@@ -191,11 +203,17 @@ fn summarize(hour: usize, chunks: &[Chunk], ranks: &[Vec<u32>], names: &[&[u8]])
     let mut lat = vec![0u32; *start.last().unwrap() as usize];
     let mut next = start.clone();
     for (c, chunk) in chunks.iter().enumerate() {
+        let mut escapes = chunk.escapes[hour].iter();
         for &r in &chunk.hours[hour] {
-            let slot = &mut next[ranks[c][(r >> 33) as usize] as usize];
-            lat[*slot as usize] = r as u32;
+            let (id, latency) = if r == u32::MAX {
+                let r = *escapes.next().expect("missing escaped record");
+                ((r >> 33) as usize, r as u32)
+            } else { ((r >> 21) as usize, r & 0x000f_ffff) };
+            let slot = &mut next[ranks[c][id] as usize];
+            lat[*slot as usize] = latency;
             *slot += 1;
         }
+        debug_assert!(escapes.next().is_none());
     }
     let (day, hh) = ((18 + hour) / 24, (18 + hour) % 24);
     let (month, dd) = (10 + day / 2, [30, 31, 1, 2][day]);
