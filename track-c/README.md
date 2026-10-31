@@ -1,37 +1,35 @@
 # Track C: Join
 
-A standalone C++17 solution. It memory-maps the records input read-only, reads the two official files from `/data` and writes `/out/aggregates.txt`. The program uses a direct region-id lookup, parses CSV quoting and embedded newlines, collects views of canonical escaped names per country, then counts distinct names in a six-worker pool using per-country open-addressed tables with full-byte collision checks, and aggregates amounts in integer cents. It has no runtime dependencies beyond the standard library. It relies on the input generator guarantees in section 2.2 of the official spec, including region IDs in the lookup below one million, unquoted numeric fields, and valid records. It does not use a SQL or dataframe library.
+The task, the input files and the exact output format are in the [spec](https://github.com/hackathon-raptors/speed-demon-2026/blob/main/specs/c-join.md).
 
-## Reproduce local checks
+## Approach
 
-From the workspace root, with Python 3.11+ and a C++17 compiler:
+One std-only Rust file, `src/main.rs`, with no crates.
 
-```sh
-c++ -std=c++17 -O3 -DNDEBUG -pthread track-c/main.cpp -o /tmp/c-join
-python3 official/generators/c_join.py --seed 1 --scale full --out /tmp/c-data
-mkdir -p /tmp/c-out
-/tmp/c-join /tmp/c-data /tmp/c-out
-shasum -a 256 /tmp/c-out/aggregates.txt
-```
+1. **Map, don't read.** Both files are mapped read-only; mapping failures are checked before the resulting slices are used. The harness prewarms `/data` into the page cache, and measured cgroup memory depends on the kernel's accounting of mapped pages.
+2. **Regions.** `regions.csv` becomes a `Vec<u16>` indexed by `region_id` and holding a group number. Countries get group numbers in order of first appearance. A hole or an id past the end of the table maps to `_UNMATCHED`, which is the last group.
+3. **Split the CSV safely.** The records after the header are cut into one chunk per hardware thread. A cut can land inside a quoted note, so the threads first count the `"` bytes in their chunk, in parallel. By the grammar in spec 2.1, an LF is a record terminator exactly when an even number of quotes comes before it: quotes appear only in quoted fields, every complete quoted field holds an even number of them (open, close, and `""` pairs), and an LF can never fall between the two quotes of a `""` pair. So the prefix sum of the counts gives each cut its parity, and `sync` moves the cut forward to the byte after the first LF with even parity. That byte is a true record start. Both neighbouring threads compute the same boundary, so every record is parsed exactly once. This is an exact two-pass method, not a guess.
+4. **Parse each chunk with a hand-written state machine.** A record start may carry a byte order mark, which is skipped. `number` reads `-?[0-9.]+`, ignoring the dot, so `-5.25` comes out as -525 integer cents with no floating point. It then steps over `,`, LF or CRLF. `field` reads an unquoted field up to the comma, or a quoted field up to the closing quote that is not part of a `""` pair, counting the pairs as it goes. Commas, LFs and BOM bytes inside quotes are plain data.
+5. **Never unescape.** The byte length of a value is its raw length minus the number of `""` pairs. For counting distinct names, the raw bytes between the quotes serve as the key, because escaping is one-to-one, and an unquoted name (which cannot contain a quote) is byte-identical to its quoted form. `""` and an empty unquoted field both give the empty key.
+6. **Distinct names, shared and exact.** All threads share one name dictionary, split into 256 mutex shards chosen by the name's hash. Each shard is aligned to 128 bytes, so no two locks share a cache line. It maps a name (copied into a small `Box`, so lookups stay in a few MB of cache-friendly heap instead of jumping around the 200 MB file) to a row holding one bit per group. The thread that sets a group's bit for a name counts it as a new distinct name for that group. Because this happens under the shard lock, the total is exact, and nothing has to be merged at the end.
+7. **Aggregate per thread, merge at the end.** Each thread keeps `[count, id_sum, amount_sum, amount_min, amount_max, names_distinct, name_bytes, note_bytes]` per group. One `merge` function folds a record into its group, and a thread's totals into the final line. Lines are formatted, sorted (key bytes, then a space, so this is key order), and written once.
 
-The optional arguments are input and output directories; the defaults are `/data` and `/out`. Seed 1 full matched the published answer: `d8088b1cd42ba1338b1345b107b55db7b96ef1f5066f3ff64fd26a8912a0f536`. Earlier implementations also matched the published sample hash and several fresh reference seeds. The current hash candidate passed fresh tiny seeds 2, 17 and 4242, sample seed 271828, and the VM alternate-reference campaign.
+The hash is a small FxHash-style hasher, eight bytes per step. It replaces SipHash, which cost about 15% more CPU in the hot loop.
 
-A two-pair interleaved local comparison on macOS ARM used the full seed-1 data. The prior name hash-set variant took 2.641 and 1.938 s with 352.0 and 354.6 MB peak RSS; the later serial sort-and-deduplicate variant took 1.142 and 0.709 s with 293.5 and 293.0 MB peak RSS. Other work was active, so these are exploratory measurements, not board scores. All four outputs matched the published full-data hash.
+## Correctness
 
-The prior heap-copy parallel candidate built offline and passed the restricted ARM Linux Docker full-data check in 0.84 s including container startup. It matched the published full-data hash and alternate-reference cases on a native x86 dot VM. Fresh tiny seeds 2, 17, 99 and 4242, sample seeds 13, 42 and 76543, and worked and extended parser fixtures also matched the official reference or expected output. Its median wall time was 0.4376 s versus 0.9685 s for the prior serial candidate; both reported 269276 KiB maximum RSS. These shared-VM numbers are not official board results. See `experiments/dot-vm.md`.
+The checked-mapping variant was compared with the official reference on generated and adversarial cases, including quote-boundary and forced-hash-collision tests. Native x86 tests of a disposable dataset dropped its file cache and confirmed zero resident pages before each of three runs; each cold run produced the correct full hash. A reported SIGBUS in the original PR was not reproduced, and the report did not include an environment or reproduction steps. Checking `MAP_FAILED` does not prevent a SIGBUS after a successful mapping.
 
-## Remaining checks
+- Byte-identical to the reference on seed 1 `full`, seed 1/2/3 `sample` and seed 7 `tiny`. Seed 1 `full` gives `d8088b1cd42ba1338b1345b107b55db7b96ef1f5066f3ff64fd26a8912a0f536`, and seed 1 `sample` gives `9035fed36823232dd41ae2d1b9d6d21aa7c73f49d8e95647e953a89d5ebe9a66`.
+- Also checked against the reference on hand-written inputs, each run with 1, 2, 3, 5, 8, 12, 64 and 500 threads: the spec's worked example, no final terminator, unquoted non-empty names, runs of quotes (`""""`, `"""a"""`), a BOM inside quoted fields, and LF-heavy notes. 500 threads means more chunks than records.
 
-The first live-board practice measurement is recorded in `PERF.md`. Run additional generated seeds and record subsequent board run IDs there. Verify any change against the reference and measure on the board.
+## Dependencies
 
+None (`dependency_count = 0`). `.cargo/config.toml` sets `target-cpu=x86-64-v3` (AVX2, which the i5-13500 has) only when building for x86-64.
 
-## Input mapping and scoring
+## With another 24 hours
 
-The selected mapping variant matched the full hash in the pinned restricted ARM container and fresh reference/edge tests. In three alternating ARM Docker pairs with a separate prewarmer, cgroup peaks were approximately 75.6–76.1 MB versus 277.0–277.2 MB for the prior heap-copy version, with every hash correct. The host prewarms `/data` before the official run cgroup, so process RSS alone does not represent the official memory metric. Combined with a prior shared-x86 VM comparison (0.415 s mmap versus 0.462 s heap) and pinned formatted S 198 versus 167, those cross-machine observations suggest about 1.33× K, but are not an official board score. The prior heap-copy code is `experiments/c-heap-664.cpp`; local raw peaks are in `experiments/c-cgroup-report.json`.
-
-On the live public-seed board, the mmap candidate at `2fc9110` passed all gates with T=0.527238 s, M=76,075,008 bytes, S=198 and K=6.548517 (`run-a9d0b9f55766`). The preceding heap-copy run reported T=0.526909 s, M=277,127,168 bytes, S=167 and K=5.188997. These are single practice runs, not final scores.
-
-
-## Exact hash counting
-
-The selected version replaces per-country sorting with open-addressed tables. Each slot stores an index into the immutable mapped input, and hash collisions are resolved by comparing complete encoded name bytes; the six workers own separate country tables. On a shared native x86 VM, this version had median 0.311 s versus 0.466 s for an independently verified f45 heap baseline. The comparison package's `selected` and `mmap` sources were identical, so comparisons inside it are against mmap, not f45. Local warmed ARM cgroup peaks for mmap+hash were around 79 MB versus 76 MB for mmap+sort, and pinned S was 213 versus 198. These cross-run and cross-machine measurements are not an official score. Full hash, alternate reference seeds, BOM/EOF cases, and a forced-all-hashes-collide ASan/UBSan build over 40 mixed corpora passed. The previous mmap+sort source is `experiments/c-mmap-2fc.cpp`.
+- Replace the mutex shards with a lock-free open-addressing table (CAS on 64-bit slots), so a lookup that finds its name never writes a shared cache line.
+- Keep short names inline in the table slot, which removes the last pointer chase per record.
+- Use a SIMD (SSE2/AVX2) quote/comma/LF scanner in place of the byte loops in `field` and `sync`.
+- Shrink the memory peak (now about 12 MB of heap, mostly the name dictionary) toward the 50x memory cap.

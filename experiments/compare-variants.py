@@ -40,6 +40,7 @@ def main():
     ap.add_argument('--runs', type=int, default=5)
     ap.add_argument('--warmups', type=int, default=1)
     ap.add_argument('--report', type=Path, help='write results as JSON')
+    ap.add_argument('--root', type=Path, default=ROOT, help='repository root containing tracks and experiments')
     args = ap.parse_args()
     if args.variant not in VARIANTS[args.track]:
         ap.error(f"variants for {args.track}: {', '.join(VARIANTS[args.track])}")
@@ -52,26 +53,44 @@ def main():
     if len(expected) != 64 or any(c not in '0123456789abcdef' for c in expected):
         ap.error('expected must be a SHA-256 hex digest')
     track = args.track
+    root = args.root.resolve()
     with tempfile.TemporaryDirectory(prefix='speed-demon-compare-') as td:
         tmp = Path(td)
-        base = ROOT / VARIANTS[track][args.baseline_variant] if args.baseline_variant else ROOT / ('track-' + track)
-        sources = {'baseline': base, 'variant': ROOT / VARIANTS[track][args.variant]}
+        base = root / VARIANTS[track][args.baseline_variant] if args.baseline_variant else root / ('track-' + track)
+        sources = {'baseline': base, 'variant': root / VARIANTS[track][args.variant]}
         binaries = {}
         source_hashes = {}
+        interfaces = {}
+        compilers = {}
         for label, src in sources.items():
-            if track == 'd':
-                manifest = src / 'Cargo.toml' if src.is_dir() else src
-                source_file = manifest.parent / 'src/main.rs'
-                source_hashes[label] = hashlib.sha256(source_file.read_bytes()).hexdigest()
+            manifest = src / 'Cargo.toml' if src.is_dir() else src
+            if manifest.name == 'Cargo.toml' and manifest.is_file():
                 target = tmp / ('target-' + label)
                 env = dict(os.environ, CARGO_TARGET_DIR=str(target))
-                subprocess.run(['cargo', 'build', '--release', '--offline', '--manifest-path', str(manifest)], env=env, check=True)
-                binaries[label] = target / 'release' / 'traverse'
+                metadata = json.loads(subprocess.check_output(
+                    ['cargo', 'metadata', '--offline', '--no-deps', '--format-version', '1',
+                     '--manifest-path', str(manifest)], cwd=manifest.parent, env=env, text=True))
+                packages = [p for p in metadata['packages']
+                            if Path(p['manifest_path']).resolve() == manifest.resolve()]
+                if len(packages) != 1:
+                    raise RuntimeError(f'{manifest}: expected exactly one package')
+                bins = [t for t in packages[0]['targets'] if 'bin' in t['kind']]
+                if len(bins) != 1:
+                    raise RuntimeError(f'{manifest}: expected exactly one binary target')
+                source_file = Path(bins[0]['src_path'])
+                source_hashes[label] = hashlib.sha256(source_file.read_bytes()).hexdigest()
+                subprocess.run(['cargo', 'build', '--release', '--offline', '--manifest-path', str(manifest),
+                                '--bin', bins[0]['name']], cwd=manifest.parent, env=env, check=True)
+                binaries[label] = target / 'release' / bins[0]['name']
+                interfaces[label] = 'directories'
+                compilers[label] = subprocess.check_output(['rustc', '--version'], text=True).splitlines()[0]
             else:
                 file = src / 'main.cpp' if src.is_dir() else src
                 source_hashes[label] = hashlib.sha256(file.read_bytes()).hexdigest()
                 binaries[label] = tmp / label
                 subprocess.run(['c++', '-std=c++17', '-O3', '-DNDEBUG', '-pthread', str(file), '-o', str(binaries[label])], check=True)
+                interfaces[label] = 'paths'
+                compilers[label] = subprocess.check_output(['c++', '--version'], text=True).splitlines()[0]
         outdir = tmp / 'out'
         outdir.mkdir()
         output = outdir / OUTPUT[track]
@@ -79,7 +98,8 @@ def main():
                   'baseline': args.baseline_variant or 'selected', 'data': str(data), 'expected_sha256': expected, 'runs': args.runs,
                   'warmups': args.warmups,
                   'source_sha256': source_hashes,
-                  'compiler': subprocess.check_output(['rustc' if track == 'd' else 'c++', '--version'], text=True).splitlines()[0],
+                  'compiler': compilers['baseline'] if compilers['baseline'] == compilers['variant'] else 'mixed',
+                  'compilers': compilers, 'interfaces': interfaces,
                   'measurements': {'baseline': [], 'variant': []},
                   'rss_note': 'Per-process maximum RSS; Linux reports KiB, macOS reports bytes. Not cgroup memory.',
                   'wall_note': 'Wall time includes process startup; this is not the official harness.'}
@@ -88,8 +108,10 @@ def main():
             for label in order:
                 output.unlink(missing_ok=True)
                 binary = str(binaries[label])
-                env = os.environ.copy()
-                if track == 'a':
+                env = dict(os.environ, DATA_DIR=str(data), OUT_DIR=str(outdir), SD_DATA=str(data), SD_OUT=str(outdir))
+                if interfaces[label] == 'directories':
+                    cmd = [binary]
+                elif track == 'a':
                     cmd = [binary, str(data / 'requests.log'), str(output)]
                 elif track == 'b':
                     cmd = [binary, str(data / 'docs.txt'), str(data / 'queries.txt'), str(output)]
@@ -97,7 +119,6 @@ def main():
                     cmd = [binary, str(data), str(outdir)]
                 else:
                     cmd = [binary]
-                    env.update(DATA_DIR=str(data), OUT_DIR=str(outdir))
                 started = time.perf_counter()
                 proc = subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL)
                 _, status, usage = os.wait4(proc.pid, 0)

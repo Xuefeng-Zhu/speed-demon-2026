@@ -1,0 +1,11 @@
+--- a/track-a/src/main.rs
++++ b/track-a/src/main.rs
+@@ -209,7 +209,7 @@
+         }
+         let rank = |p: usize| (p * n + 99) / 100 - 1;
+         let (r50, r95, r99) = (rank(50), rank(95), rank(99));
+-        if n <= 16 {
++        if n <= 128 {
+             v.sort_unstable();
+         } else {
+             // Each selection leaves larger values to the right, so later ones search less.
