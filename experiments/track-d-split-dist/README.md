@@ -1,0 +1,7 @@
+# Track D split direction distance arrays (not selected)
+
+The candidate stores the two directional distance arrays separately, tracks first touches separately per direction, and resets only the affected direction. The selected baseline source SHA-256 is `1022f4d9c9956b17fd054e96a26d09551eff61936a851edf88505e12e2b1946c`; the candidate source SHA-256 is `201d0b0b4560f5b749c5100d2f668097a34cea89c0090cd30d41d202c2e24e95`. All searches compute from runtime input.
+
+All 16 full seed-1 warmup and measured outputs matched the published hash. Seven randomized measured native Mac ARM pairs had median wall 0.309842 s candidate versus 0.301317 s baseline, median CPU 2.065414 versus 1.844245 s, and peak process RSS 534167552 versus 534560768 bytes. The machine was shared and results do not establish x86 or official cgroup scores. The candidate passed 80 random directed graph fixtures (16000 independent oracle queries) and all 4096 three-node directed graphs (36864 Floyd–Warshall queries). It is not selected; the screen found no speed gain.
+
+To reproduce, generate full data separately and run `python3 experiments/track-d-split-dist/compare.py --data /path/to/full-d --build-dir /tmp/d-split --report /tmp/d-split.json --runs 7`, then `python3 experiments/track-d-balanced-frontier/oracle.py /tmp/d-split/meeting` and `python3 experiments/track-d-balanced-frontier/exhaustive.py /tmp/d-split/meeting`. See `report.json` for all native observations. No Docker was used.

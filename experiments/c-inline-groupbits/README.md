@@ -1,0 +1,9 @@
+# C inline per-name group bitsets — unselected
+
+Baseline SHA-256 `3e181c76981348a96b48470844ee0f8988847d32164ff935a211024861c86ad4` is the restored CRLF candidate. Candidate SHA-256 `4b240fce797d486316e3998756f30cc4bc25818ecc15fba7c332756db4c428fa` stores four group words directly in each standard HashMap entry (240 generated countries plus unmatched need four), rather than storing an index into a separate vector. When more than 256 groups occur it stores a dynamically sized exact vector instead. Both retain exact name equality, shard locks and input-derived computations. This is isolated and needs independent review and target measurement.
+
+Two randomized, full-seed paired ARM Mac runs (7 then 9 measured pairs, one warmup pair in each) matched every full output hash. Median baseline/candidate wall: 0.139114/0.125198 s (10.0% lower); repeat 0.126938/0.114338 s (9.9% lower). CPU medians 0.821079/0.739467 s and 0.798643/0.710867 s. Max process RSS 226.2/227.2 MB in each run, not cgroup RSS. The shared host is noisy and ARM is not the scoring CPU. Raw results are `arm-report.json` and `repeat-arm-report.json`. No Mac Docker was used.
+
+`python3 experiments/c-rust-independent.py --source experiments/c-inline-groupbits/candidate.rs --seeds 24` passed 120 alternate-reference checks across five worker counts. `python3 experiments/c-inline-groupbits/overflow-collisions.py` passed eight reference comparisons using 310-country inputs, exercising the vector fallback at worker counts 1/2/7/16 with normal hash and a forced constant hash. Exact full-field name equality is tested; full hashes alone are insufficient. Candidate has not been verified on x86, with cgroup metrics, or on the official board.
+
+For repeat native timing use `rustc --edition 2021 -O -C lto=fat -C codegen-units=1` for both sources, then `experiments/c-nameowned/compare.py --baseline <baseline> --variant <candidate> --data <full-seed1> --runs 9 --report <report.json>`.

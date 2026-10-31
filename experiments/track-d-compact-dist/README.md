@@ -1,0 +1,9 @@
+# D compact distances with lazy wide table (not selected)
+
+The candidate stores each direction's tentative distances in complemented u32 fields, reserving zero for untouched and one as a marker for an exact u64 value in a lazily allocated per-worker wide table. The wide table is indexed only for marked entries; resetting the narrow table also invalidates old wide entries. The original u64 radix heap and bidirectional search are retained, so unlike a rerun-based cutoff the candidate handles wide and narrow distances in the same query. Baseline SHA-256 `1022f4d9c9956b17fd054e96a26d09551eff61936a851edf88505e12e2b1946c`, candidate SHA-256 `2da52ecff85c1c251daeb7f666de549c4378cd663c4e7ffae77d9a40c1488515`. This is an unreviewed experiment and is not selected.
+
+All 16 full seed-1 executions, including warmups, matched the published hash. Seven randomized paired native Mac ARM runs gave candidate median wall 0.302674 s versus baseline 0.285901 s and median CPU 2.096516 versus 1.858341 s. Peak native process RSS was 424542208 versus 535412736 bytes. The host was shared; these are not official x86 or cgroup measurements. The memory reduction does not meet the speed-first goal in this screen.
+
+The candidate passed 80 directed random graphs (16000 independent Dijkstra answers), all 4096 three-node directed graphs (36864 independent Floyd–Warshall answers), a max-size maximum-weight chain, 6000 repeated/unreachable queries, and cutoff-adjacent, zero and unreachable cases. These checks do not replace independent review or testing of all legal inputs.
+
+Generate full data independently and run `python3 experiments/track-d-compact-dist/compare.py --data /path/to/full-d --build-dir /tmp/d-compact-dist --report /tmp/d-compact-dist.json --runs 7`; then use `experiments/track-d-balanced-frontier/oracle.py`, `exhaustive.py`, and `extremes.py`, and `experiments/track-d-u32-fallback/thresholds.py` against `/tmp/d-compact-dist/meeting`. No Docker was used.

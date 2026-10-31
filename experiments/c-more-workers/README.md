@@ -1,0 +1,9 @@
+# Track C worker and shard screen — unselected
+
+Baseline is the restored CRLF parser (SHA-256 `3e181c76981348a96b48470844ee0f8988847d32164ff935a211024861c86ad4`). `double.rs` doubles `available_parallelism`; `double-4096.rs` also changes the number of dictionary shards from 1024 to 4096. Both compute outputs from the input. These are preliminary experiments, not official results or selected solutions.
+
+An initial randomized shared macOS ARM screen of seven measured full-seed runs plus warmup for each candidate matched the published hash for all 48 executions. Median baseline wall/CPU was 0.156833/0.855291 s; double-worker 0.129968/0.817054 s; double plus 4096 shards 0.129219/0.778092 s. A nine-pair repeat of the latter against baseline had 0.119166/0.794868 versus 0.128381/0.829189 s (7.2% lower wall), all 20 full hashes correct including warmups. Peak native process RSS in the repeat remained around 225–226 MB. Individual samples and six-variant screen are in the JSON reports. ARM and a busy shared host do not establish x86 or official performance; oversubscribing a target with different physical cores could regress. No Mac Docker was used.
+
+The combined variant passed `python3 experiments/c-rust-independent.py --source experiments/c-more-workers/double-4096.rs --seeds 24`: 120 byte-exact reference comparisons over five effective worker counts (2, 4, 6, 14 and 32). The simpler double-worker variant was not separately differential tested. Both remain unreviewed on x86.
+
+Reproduce using `rustc --edition 2021 -O -C lto=fat -C codegen-units=1` for each source and `experiments/c-nameowned/compare.py --baseline <baseline-bin> --variant <candidate-bin> --data <full-data> --runs 9 --report <report>`. Confirm full hashes, alternate-reference/worker cases, CPU, peak memory and official scores on the intended machine before any decision.
