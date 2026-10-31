@@ -1,0 +1,46 @@
+{
+  "platform": "native macOS ARM, other work running",
+  "benchmark": "one warmup followed by six rotated runs per variant, full seed 1; all output hashes verified",
+  "output_sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+  "runs_s": {
+    "current": [
+      0.282819709,
+      0.311854,
+      0.304523875,
+      0.344943167,
+      0.314673833,
+      0.328075917
+    ],
+    "hottest": [
+      0.292651666,
+      0.522600584,
+      0.326009583,
+      0.412983166,
+      0.299028084,
+      0.337892666
+    ],
+    "buffered": [
+      0.269527084,
+      0.260219708,
+      0.292188458,
+      0.295905167,
+      0.2869495,
+      0.395923583
+    ],
+    "parallel": [
+      0.234912084,
+      0.230209541,
+      0.377408667,
+      0.245320958,
+      0.258660167,
+      0.312478375
+    ]
+  },
+  "median_s": {
+    "current": 0.3132639165,
+    "hottest": 0.33195112449999997,
+    "buffered": 0.289568979,
+    "parallel": 0.2519905625
+  },
+  "notes": "hottest is a discarded warmup-selected hot-endpoint cache; buffered and parallel are existing repository experiments; memory not measured in this run"
+}
