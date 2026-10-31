@@ -1,0 +1,3 @@
+# Degree-two shortcut length profile (diagnostic only)
+
+An instrumented copy of the safe joint chain candidate printed successful shortcut transition counts for separately generated full seed-1 data. The hash matched the official output. One shared ARM run (`stats.txt`) recorded 1,174,596 one-transition, 194,133 two-transition, 27,302 three-transition and 4,830 four-transition shortcuts; 897 skipped more than four transitions. Another 5,489 attempted walks made at least one transition but fell back. Counts depend on runtime query pins and the input and are not an official benchmark or a target timing. No Mac Docker was used.

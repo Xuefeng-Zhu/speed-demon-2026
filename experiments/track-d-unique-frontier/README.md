@@ -1,0 +1,5 @@
+# Unique unsettled frontier scheduling (experimental, not selected)
+
+Baseline is positioned-read Track D. Candidate tracks each direction's number of discovered-but-not-yet-settled vertices, excluding stale duplicate heap entries, and expands the side with the smaller unique frontier (ties still use heap minima). It increments only on first side discovery and decrements on a non-stale pop; nonnegative weights preclude improving a settled vertex. Queue order and exact stopping test are unchanged.
+
+Overflow/debug-checked build passed 16,000 independent random queries, 36,864 exhaustive small-graph queries, a maximum-size max-weight chain and 6,000 repeated/unreachable queries; every full seed-1 hash matched. Nine shared ARM native pairs (`report.json`) gave median 0.29419 vs 0.29377 s baseline, CPU 1.86801 vs 1.86477 s, max native RSS 534,937,600 vs 535,035,904 B. No meaningful win was observed; this is not official x86 or cgroup evidence. Candidate remains unselected and has not received independent proof review. No Mac Docker was used.

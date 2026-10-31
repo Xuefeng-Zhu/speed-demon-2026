@@ -1,0 +1,5 @@
+# Snapshot opposite-frontier cutoff (unproven experiment, not selected)
+
+This variant of `../track-d-opposite-bound/` computes the tentative cutoff once per popped node; a later improved best can only lower the cutoff, so the snapshot may miss pruning. **Correctness of the underlying opposite-frontier pruning remains unresolved** because earlier pruning in both directions can invalidate the standard unpruned-Dijkstra unseen-distance invariant. Do not use or promote without independent proof.
+
+Overflow/debug-checked tests passed 16,000 random queries, 36,864 exhaustive small-graph queries, maximum-size maximum-weight chain and 6,000 repeated/unreachable queries; all full-seed hashes matched. Nine shared ARM native pairs (`report.json`) gave median 0.28274 vs 0.30156 s baseline, CPU 1.84484 vs 1.82601 s. A separate 11-pair repeat (`repeat.json`) reversed the wall ordering: 0.27958 vs 0.27357 s, CPU 1.86002 vs 1.82741 s. Host contention is substantial. No consistent speed gain or target x86/official cgroup result is established. No Mac Docker was used.

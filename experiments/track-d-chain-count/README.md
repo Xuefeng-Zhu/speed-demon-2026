@@ -1,0 +1,5 @@
+# Degree-two links fused into CSR count pass (experimental, not selected)
+
+This variant of `../track-d-chain-scatter/` updates the per-node directed link summary during the CSR degree-count pass, rather than the scatter pass, while each worker owns the same disjoint node blocks. Query endpoints are pinned before graph construction, and the reverse pass finalizes invalid/fewer-than-two nodes. Later joint shortcut rewriting uses immutable links and disjoint mutable CSR slices; no new unsafe code. Baseline is positioned-read D at b4f634b.
+
+Overflow/debug-checked candidate passed 16,000 independent random graph queries, 36,864 exhaustive three-node queries, 376 directed chain/cycle fixtures, the maximum-size max-weight chain and 6,000 repeated/unreachable queries; all full seed-1 hashes matched. Nine randomized shared ARM native pairs (`report.json`) had median wall 0.29030 s vs 0.26822 s baseline, CPU 1.89521 vs 1.84366 s, peak native RSS 552,419,328 vs 535,625,728 B. This slower screen is not target x86 or official cgroup evidence, and full independent graph-equivalence review has not been performed. Candidate remains unselected. No Mac Docker was used.

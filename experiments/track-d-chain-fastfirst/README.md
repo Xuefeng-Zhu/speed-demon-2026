@@ -1,0 +1,5 @@
+# One-step chain shortcut fast path (experimental, not selected)
+
+This variant unrolls the first degree-two transition in the reviewed safe joint shortcut candidate (`baseline.rs`), immediately handling the overwhelmingly common case where the next vertex is a core. It retains the original loop and exact fallback for longer paths, missing directed arcs and u32 overflow. Both files derive from positioned-read D at b4f634b; no new unsafe code is added.
+
+Exact-source boundary and independent shortcut checks passed, including 16,384 mostly-unpinned exhaustive four-node chain/multiedge graphs, 1,200 random sparse graphs × 1/2/7 workers, 1,024 reachable chains × 1/2/7, pinned endpoints, zero/max weights and 16-step/overflow fallbacks. Every full hash matched. Nine randomized shared native ARM pairs (`report.json`) measured 0.27529 s candidate vs 0.27779 s unrolled baseline, CPU 1.65825 vs 1.69585 s, peak RSS 555,155,456 vs 554,401,792 B. This small/noisy difference is not x86 or official cgroup evidence; candidate remains unselected, and the original safe shortcut package remains the subject of target evaluation. No Mac Docker was used.
