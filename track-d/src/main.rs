@@ -294,15 +294,20 @@ impl Search32 {
             let side=match self.heaps[0].count.cmp(&self.heaps[1].count) {
                 std::cmp::Ordering::Less=>0,std::cmp::Ordering::Greater=>1,std::cmp::Ordering::Equal=>(a>b) as usize
             };
-            let (d,u)=self.heaps[side].pop();
-            if d>(!self.dist[u as usize][side]) as u64 {continue;}
-            for (v,w) in graphs[side].edges(u) {
-                let nd=d+w;
-                if nd>=u32::MAX as u64 {dropped=true;continue;}
-                match self.reach(side,v,nd) {
-                    Err(())=>{exhausted=true;break 'search;},
-                    Ok(true)=>{let other=self.dist[v as usize][1-side];if other!=0 {best=best.min(nd+(!other) as u64);}},
-                    Ok(false)=>{}
+            // Every entry in bucket zero has this side's current minimum.
+            // Recheck scheduling and the stopping bound after a bounded batch.
+            for _ in 0..16 {
+                if self.heaps[side].head[0]==END {break;}
+                let (d,u)=self.heaps[side].pop();
+                if d>(!self.dist[u as usize][side]) as u64 {continue;}
+                for (v,w) in graphs[side].edges(u) {
+                    let nd=d+w;
+                    if nd>=u32::MAX as u64 {dropped=true;continue;}
+                    match self.reach(side,v,nd) {
+                        Err(())=>{exhausted=true;break 'search;},
+                        Ok(true)=>{let other=self.dist[v as usize][1-side];if other!=0 {best=best.min(nd+(!other) as u64);}},
+                        Ok(false)=>{}
+                    }
                 }
             }
         }

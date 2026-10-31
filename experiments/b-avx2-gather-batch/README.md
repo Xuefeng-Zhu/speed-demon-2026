@@ -37,3 +37,7 @@ full output hash and uses randomized paired order; VM timing is non-official and
 must not be conflated with official cgroup scoring. Run target-specific guarded
 tests and benchmark before considering promotion. The AVX2 branch is only
 enabled at compile time with `target_feature=avx2`; generic builds use scalar.
+
+## Native x86 outcome
+
+Parent-run shared dot VM paired full-seed testing exercised the actual AVX2 gather path: the candidate was 14.0–16.4% slower in wall time and used 18.9–20.1% more CPU. Across the B, A and D packages, 308 full hashes, 28 alternate references, 48 all-escape runs and actual ISA/guard/fallback tests passed. These are native VM, not official scoring-box or cgroup measurements. The candidate remains unselected.

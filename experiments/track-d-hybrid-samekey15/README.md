@@ -18,3 +18,7 @@ python3 experiments/track-d-hybrid-samekey15/compare.py --data /path/to/full-d -
 ```
 
 The comparator builds x86-64-v3 on x86, randomizes paired order and checks the published full output hash. Test output and process RSS do not prove hidden-data correctness or cgroup peak. Measure the latter only where the parent-cgroup interface actually exists. No dataset, credentials or binaries belong in the archive. No Mac Docker was used.
+
+## Native x86 outcome
+
+Parent-run shared dot VM paired full-seed batches against the exact selected hybrid found `batch16.rs` 2.4–5.3% lower wall and 3.9–4.6% lower CPU; batch4 had a smaller gain. Across the D, A and B packages, 308 full hashes, 28 alternate references, 48 all-escape runs and actual ISA/guard/fallback tests passed. These are native VM results, not official scoring-box or parent-cgroup measurements. Batching may alter which hidden queries exhaust a pool and cause wide fallback; the all-input 8 GiB cgroup peak remains unproved.
