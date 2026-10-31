@@ -167,3 +167,5 @@ Sandbox CPU min: 3.95 s -> 1.92 s.
 ## Round 2 trial: global bitmaps + 16-bit postings (2026-10-31)
 
 Board `run-225241b20c9f` at `ccbfbc0`: T=0.381388 s, M=76.1 MB, S=496, K=18.47, below v23 (K 19.6). Memory halved but time rose; v23 source restored.
+
+Round-3 trial (c2): queries answered once over doc-aligned chunks claimed dynamically; shared bitmaps for frequent terms, per-chunk 16-bit postings otherwise; list terms renumbered first (16-bit token stream); 16-byte inline-key hash slots; AVX2 movemask tokenizer; prefetched phrase anchors; df-based sampling; exit right after write. Local: CPU -22%, heap 113 -> 55 MB, S 387 -> 619.
