@@ -192,6 +192,10 @@ fn parse(d: &[u8], mut i: usize, end: usize, shared: &[Shared], next_id: &Atomic
     let page = i & !4095;
     let mut table = Table::default();
     let mut hours = vec![(Vec::new(), Vec::new()); HOURS];
+    // The current hour's records, swapped out of `hours`: consecutive lines almost always share
+    // an hour, so most lines push to this local pair without indexing `hours`.
+    let (mut cur_h, mut cur): (usize, Records) = (HOURS, (Vec::new(), Vec::new()));
+    let mut n = 0; // length of `cur.0`, kept in a register and stored only when the hour changes
     while i < end {
         // Bytes 5..13 are "MM-DDTHH"; their low nibbles x make 10 * x[k] + x[k + 1] in byte k of
         // y without carries. October 30, 31 and November 1, 2 become day indexes 0..=3.
@@ -218,17 +222,36 @@ fn parse(d: &[u8], mut i: usize, end: usize, shared: &[Shared], next_id: &Atomic
         }) as u64;
         let (latency, next) = parse_latency(d, e + 5);
         let is_5xx = (d[e + 1] == b'5') as u64;
-        let (records, escapes) = &mut hours[hour];
-        if records.capacity() == 0 {
-            records.reserve(1 << 15); // mapped directly, not grown through the allocator's heap
+        if hour != cur_h {
+            unsafe { cur.0.set_len(n) };
+            if cur_h < HOURS {
+                std::mem::swap(&mut hours[cur_h], &mut cur);
+            }
+            std::mem::swap(&mut hours[hour], &mut cur);
+            cur_h = hour;
+            if cur.0.capacity() == 0 {
+                cur.0.reserve(1 << 15); // mapped directly, not grown through the allocator's heap
+            }
+            n = cur.0.len();
         }
-        if id < 2048 && latency < 0x000f_ffff {
-            records.push(((id as u32) << 21) | ((is_5xx as u32) << 20) | latency as u32);
+        let r = if id < 2048 && latency < 0x000f_ffff {
+            ((id as u32) << 21) | ((is_5xx as u32) << 20) | latency as u32
         } else {
-            records.push(u32::MAX);
-            escapes.push(id << 33 | is_5xx << 32 | latency);
+            cur.1.push(id << 33 | is_5xx << 32 | latency);
+            u32::MAX
+        };
+        if n == cur.0.capacity() {
+            unsafe { cur.0.set_len(n) };
+            cur.0.reserve(n.max(1 << 15));
         }
+        // SAFETY: n < capacity, checked above; the length is set before the vector is used.
+        unsafe { cur.0.as_mut_ptr().add(n).write(r) };
+        n += 1;
         i = next;
+    }
+    if cur_h < HOURS {
+        unsafe { cur.0.set_len(n) };
+        hours[cur_h] = cur;
     }
     // Drop this chunk's file pages from the mapping now, in parallel, instead of at exit on one
     // thread. Nothing reads these pages again (a read would fault the file back in).
