@@ -1,22 +1,18 @@
 //! Speed Demon 2026, Track C (Join): std-only Rust. README.md explains the design.
-use std::collections::HashMap;
-use std::hash::{BuildHasher, BuildHasherDefault, Hasher};
-use std::{env, fs, os::fd::AsRawFd, sync::Mutex, thread};
+use std::arch::asm;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering::*};
+use std::{collections::HashMap, env, fs, os::fd::AsRawFd, sync::Mutex, thread};
 
 extern "C" {
     fn mmap(addr: *mut u8, len: usize, prot: i32, flags: i32, fd: i32, off: i64) -> *mut u8;
-    fn memchr(s: *const u8, c: i32, n: usize) -> *const u8;
+    fn madvise(addr: *mut u8, len: usize, advice: i32) -> i32;
 }
 
 /// Maps a file read-only (PROT_READ, MAP_PRIVATE): its pages stay in the shared page cache.
 fn map(path: String) -> &'static [u8] {
     let f = fs::File::open(&path).expect(&path);
     let len = f.metadata().unwrap().len() as usize;
-    assert!(len > 0 && len <= isize::MAX as usize, "invalid input length: {path}");
-    let ptr = unsafe { mmap(std::ptr::null_mut(), len, 1, 2, f.as_raw_fd(), 0) };
-    if ptr as isize == -1 { panic!("mmap {path}: {}", std::io::Error::last_os_error()); }
-    assert!(!ptr.is_null(), "null mmap pointer: {path}");
-    unsafe { std::slice::from_raw_parts(ptr, len) }
+    unsafe { std::slice::from_raw_parts(mmap(0 as _, len, 1, 2, f.as_raw_fd(), 0), len) }
 }
 
 /// Runs `f(0)..f(n - 1)` on n scoped threads and returns the results in order.
@@ -28,124 +24,112 @@ fn par<T: Send>(n: usize, f: impl Fn(usize) -> T + Sync) -> Vec<T> {
     })
 }
 
-/// FxHash-style hasher, eight bytes per step: every record hashes its name twice.
-#[derive(Default)]
-struct Fx(u64);
-impl Hasher for Fx {
-    fn write(&mut self, s: &[u8]) {
-        for c in s.chunks(8) {
-            let w = c.iter().rev().fold(0, |w, &b| w << 8 | b as u64);
-            self.0 = (self.0.rotate_left(5) ^ w).wrapping_mul(0x517cc1b727220a95);
-        }
-    }
-    fn finish(&self) -> u64 {
-        self.0 ^ self.0 >> 29
+/// Asks the CPU to start loading the cache line at `p` without waiting for it.
+fn prefetch<T>(p: &T) {
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        asm!("prefetcht0 [{}]", in(reg) p, options(nomem, nostack))
+    };
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        asm!("prfm pldl1keep, [{}]", in(reg) p, options(nomem, nostack))
+    };
+}
+
+/// Bytes `s..e` of `b`, at most eight of them, as a little-endian word padded with zeros.
+fn word(b: &[u8], s: usize, e: usize) -> u64 {
+    let n = e.saturating_sub(s).min(8);
+    match b.get(s..s + 8) {
+        Some(w) => u64::from_le_bytes(w.try_into().unwrap()) & ((1u128 << (8 * n)) - 1) as u64,
+        None => (s..s + n).rev().fold(0, |w, i| w << 8 | b[i] as u64),
     }
 }
 
-/// One of 1024 shards of the shared name dictionary: name -> row, and per row a bitset of
-/// the groups the name occurs in. Aligned so that no two shard locks share a cache line.
-#[derive(Default)]
+/// The shared name dictionary: an open-addressing table with one 64-byte cache line per
+/// name, holding [state, key words 0..3, group bitset 0..4]. State 0 is empty, 1 is being
+/// written, 2 + len is a name of `len` <= 24 bytes kept inline in the key words, and 27 a
+/// longer name, whose key is its number in `long`.
+struct Names {
+    slots: &'static [[AtomicU64; 8]],
+    long: Mutex<HashMap<Box<[u8]>, u64>>,
+    used: Own<AtomicUsize>, // written on every insert, so kept off the line read per record
+}
 #[repr(align(128))]
-struct Shard(Mutex<(HashMap<Box<[u8]>, usize, BuildHasherDefault<Fx>>, Vec<u64>)>);
-impl Shard {
-    /// Notes that `name` occurs in group `g`; returns 1 the first time, else 0.
-    fn see(&self, name: &[u8], g: usize, words: usize) -> i64 {
-        let (map, bits) = &mut *self.0.lock().unwrap();
-        let row = match map.get(name) {
-            Some(&row) => row,
-            None => *map.entry(name.into()).or_insert(bits.len() / words),
+struct Own<T>(T);
+impl Names {
+    /// 2^bits zeroed slots from an anonymous map, so pages are only touched when used.
+    fn new(bits: u32) -> Names {
+        let p = unsafe { mmap(0 as _, 64 << bits, 3, 0x22, -1, 0) };
+        unsafe { madvise(p, 64 << bits, 14) }; // MADV_HUGEPAGE: fewer TLB misses
+        let slots = unsafe { std::slice::from_raw_parts(p as _, 1 << bits) };
+        let (long, used) = (Default::default(), Own(0.into()));
+        Names { slots, long, used }
+    }
+    fn full(&self) -> bool {
+        self.used.0.load(Relaxed) > self.slots.len() / 8 * 7
+    }
+    /// The key of the name `b[s..e]` and its first slot, whose cache line starts loading now.
+    fn key(&self, b: &[u8], s: usize, e: usize) -> ([u64; 4], usize) {
+        let (len, w) = ((e - s) as u64, [0, 8, 16].map(|o| word(b, s + o, e)));
+        let key = match len {
+            0..=24 => [w[0], w[1], w[2], 2 + len],
+            _ => {
+                let mut long = self.long.lock().unwrap();
+                let id = long.len() as u64;
+                [*long.entry(b[s..e].into()).or_insert(id), 0, 0, 27]
+            }
         };
-        bits.resize(bits.len().max((row + 1) * words), 0);
-        let (w, bit) = (row * words + g / 64, 1 << (g % 64));
-        let new = bits[w] & bit == 0;
-        bits[w] |= bit;
-        new as i64
+        let h = key
+            .into_iter()
+            .fold(0, |h: u64, w| (h.rotate_left(5) ^ w).wrapping_mul(K));
+        let i = (h >> (64 - self.slots.len().trailing_zeros())) as usize;
+        prefetch(&self.slots[i]);
+        prefetch(&self.slots[(i + 1) & (self.slots.len() - 1)]); // a probe may go on
+        (key, i)
+    }
+    /// Notes that the name with this key occurs in group `g`; returns 1 the first time, else
+    /// 0. Once the table is too full it stops inserting, and the run starts over.
+    fn see(&self, (key, mut i): ([u64; 4], usize), g: usize) -> i64 {
+        let slot = loop {
+            let slot = &self.slots[i];
+            let mut state = slot[0].load(Acquire);
+            if state == 0 && self.full() {
+                return 0;
+            } else if state == 0 && slot[0].compare_exchange(0, 1, Acquire, Acquire).is_ok() {
+                (0..3).for_each(|j| slot[j + 1].store(key[j], Relaxed));
+                slot[0].store(key[3], Release);
+                self.used.0.fetch_add(1, Relaxed);
+                break slot;
+            }
+            while state <= 1 {
+                state = slot[0].load(Acquire); // wait while another thread writes the slot
+            }
+            if state == key[3] && (0..3).all(|j| slot[j + 1].load(Relaxed) == key[j]) {
+                break slot;
+            }
+            i = (i + 1) & (self.slots.len() - 1);
+        };
+        let bit = 1 << (g % 64);
+        (slot[4 + g / 64].fetch_or(bit, Relaxed) & bit == 0) as i64
     }
 }
+const K: u64 = 0x517cc1b727220a95; // FxHash's multiplier
 
-/// Find the first matching byte using guarded unaligned eight-byte loads.
-#[inline(always)]
-fn field_delim(b: &[u8], mut i: usize, c: u8) -> usize {
-    // Compile the vector path only when the build target itself guarantees AVX2.
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-    {
-        use std::arch::x86_64::*;
-        let needle = unsafe { _mm256_set1_epi8(c as i8) };
-        while b.len() - i >= 32 {
-            let word = unsafe { _mm256_loadu_si256(b.as_ptr().add(i).cast()) };
-            let mask = unsafe { _mm256_movemask_epi8(_mm256_cmpeq_epi8(word, needle)) } as u32;
-            if mask != 0 { return i + mask.trailing_zeros() as usize; }
-            i += 32;
-        }
-    }
-    let splat = u64::from(c).wrapping_mul(0x0101_0101_0101_0101);
-    while b.len() - i >= 8 {
-        let x = unsafe { u64::from_le(std::ptr::read_unaligned(b.as_ptr().add(i).cast::<u64>())) } ^ splat;
-        let zeros = x.wrapping_sub(0x0101_0101_0101_0101) & !x & 0x8080_8080_8080_8080;
-        if zeros != 0 { return i + (zeros.trailing_zeros() as usize / 8); }
-        i += 8;
-    }
-    i + b[i..].iter().position(|&x| x == c).unwrap()
-}
-
-/// Parses the text field at `p` and steps past the comma after it. Returns the bytes
-/// between the quotes, still escaped (escaping is one-to-one, so equal raw bytes mean
-/// equal values, and unquoted text never contains a quote), and the unescaped length.
-fn field(b: &'static [u8], p: &mut usize) -> (&'static [u8], i64) {
+/// Parses the text field at `p` and steps past the comma after it. Returns where the bytes
+/// between the quotes start and end, still escaped (escaping is one-to-one, so equal raw
+/// bytes mean equal values, and unquoted text never contains a quote), and the unescaped length.
+fn field(b: &[u8], p: &mut usize) -> (usize, usize, i64) {
     let (s, q) = (*p, (b[*p] == b'"') as usize);
     let (mut i, mut pairs) = (s + q, 0);
     loop {
-        i = field_delim(b, i, [b',', b'"'][q]);
+        i += b[i..].iter().position(|&c| c == [b',', b'"'][q]).unwrap();
         if q == 0 || b[i + 1] != b'"' {
             break;
         }
         (i, pairs) = (i + 2, pairs + 1); // a "" escape
     }
     *p = i + 1 + q;
-    (&b[s + q..i], (i - s - q - pairs) as i64)
-}
-
-/// Deterministic streaming hash of the exact raw encoded name bytes.
-#[inline]
-fn name_hash(name: &[u8]) -> u64 {
-    let mut h = 0u64;
-    let mut chunks = name.chunks_exact(8);
-    for word in &mut chunks {
-        h = (h.rotate_left(5) ^ u64::from_le_bytes(word.try_into().unwrap())).wrapping_mul(0x517cc1b727220a95);
-    }
-    let rest = chunks.remainder();
-    let mut tail = [0u8; 8]; tail[..rest.len()].copy_from_slice(rest);
-    h = (h.rotate_left(5) ^ u64::from_le_bytes(tail) ^ name.len() as u64).wrapping_mul(0x517cc1b727220a95);
-    h ^ (h >> 29)
-}
-/// Common unescaped quoted name: scan and hash each full word once.
-/// Escapes, unquoted empties and near-EOF tails use the exact general path.
-fn field_name_hash(b: &'static [u8], p: &mut usize) -> (&'static [u8], i64, u64) {
-    let original = *p;
-    if b[original] == b'"' {
-        let start = original + 1; let (mut i, mut h) = (start, 0u64);
-        while b.len() - i >= 8 {
-            let word = unsafe { u64::from_le(std::ptr::read_unaligned(b.as_ptr().add(i).cast::<u64>())) };
-            let x = word ^ 0x2222_2222_2222_2222;
-            let mask = x.wrapping_sub(0x0101_0101_0101_0101) & !x & 0x8080_8080_8080_8080;
-            if mask == 0 {
-                h = (h.rotate_left(5) ^ word).wrapping_mul(0x517cc1b727220a95);
-                i += 8; continue;
-            }
-            let k = mask.trailing_zeros() as usize / 8;
-            let end = i + k;
-            if b.get(end + 1) == Some(&b'"') { break; }
-            let len = end - start;
-            let tail = word & ((1u64 << (8 * k)) - 1);
-            h = (h.rotate_left(5) ^ tail ^ len as u64).wrapping_mul(0x517cc1b727220a95);
-            *p = end + 2;
-            return (&b[start..end], len as i64, h ^ (h >> 29));
-        }
-    }
-    *p = original;
-    let (name, len) = field(b, p);
-    (name, len, name_hash(name))
+    (s + q, i, (i - s - q - pairs) as i64)
 }
 
 /// Parses `-?[0-9.]+` as an integer, skipping the dot (so an amount comes out in cents),
@@ -163,117 +147,14 @@ fn number(b: &[u8], p: &mut usize) -> i64 {
     [v, -v][neg as usize]
 }
 
-/// Parse an unsigned comma-terminated id. Fast path handles up to seven digits;
-/// guarded loads and scalar fallback cover all other legal lengths.
-#[inline(always)]
-fn positive_fast(b: &[u8], p: &mut usize) -> i64 {
-    if b.len() - *p >= 8 {
-        let raw = unsafe { u64::from_le(std::ptr::read_unaligned(b.as_ptr().add(*p).cast::<u64>())) };
-        let x = raw ^ 0x2c2c_2c2c_2c2c_2c2c;
-        let mask = x.wrapping_sub(0x0101_0101_0101_0101) & !x & 0x8080_8080_8080_8080;
-        if mask != 0 {
-            let n = mask.trailing_zeros() as usize / 8;
-            if n > 0 {
-                let mut v = raw.wrapping_shl(((8 - n) * 8) as u32) & 0x0f0f_0f0f_0f0f_0f0f;
-                v = (v.wrapping_mul(10).wrapping_add(v >> 8)) & 0x00ff_00ff_00ff_00ff;
-                v = (v.wrapping_mul(100).wrapping_add(v >> 16)) & 0x0000_ffff_0000_ffff;
-                v = (v.wrapping_mul(10000).wrapping_add(v >> 32)) & 0x0000_0000_ffff_ffff;
-                *p += n + 1;
-                return v as i64;
-            }
-        }
+/// The first record start at or after `p`, given the number of quotes before `p`: the byte
+/// after the first LF outside quotes, i.e. with an even number of quotes before it.
+fn sync(b: &[u8], mut p: usize, mut quotes: usize) -> usize {
+    while p < b.len() && (b[p] != b'\n' || quotes % 2 == 1) {
+        quotes += (b[p] == b'"') as usize;
+        p += 1;
     }
-    number(b,p)
-}
-
-/// Section 2.2 guarantees that every CR begins an outside-quote CRLF terminator.
-fn sync_crlf(b: &[u8], p: usize) -> usize {
-    if p >= b.len() { return b.len(); }
-    let found = unsafe { memchr(b.as_ptr().add(p), b'\r' as i32, b.len() - p) };
-    if found.is_null() { b.len() } else {
-        let at = unsafe { found.offset_from(b.as_ptr()) as usize };
-        debug_assert_eq!(b.get(at + 1), Some(&b'\n'));
-        (at + 2).min(b.len())
-    }
-}
-
-/// Compact event uses a byte offset and group; u16::MAX marks a long name.
-#[derive(Clone, Copy)]
-#[repr(C)]
-struct Event { offset: u32, len: u16, group: u16, hash: u64 }
-/// Per-owner exact table keyed by a salted full prehash. Genuine full-hash
-/// collision chains are capped and promoted to an independently salted map.
-const NONE: usize = usize::MAX;
-const PROMOTED: usize = usize::MAX - 1;
-const CACHE_SLOTS: usize = 32768;
-#[derive(Default)]
-struct OwnerDict {
-    heads: HashMap<u64, usize>,
-    cache: Vec<(u64, usize)>,
-    entries: Vec<(&'static [u8], usize)>,
-    bits: Vec<u64>,
-    promoted: HashMap<u64, HashMap<&'static [u8], usize>>,
-}
-impl OwnerDict {
-    fn add(&mut self, name: &'static [u8], next: usize, words: usize) -> usize {
-        let row = self.entries.len(); self.entries.push((name, next));
-        self.bits.resize((row + 1) * words, 0); row
-    }
-    fn row(&mut self, name: &'static [u8], hash: u64, words: usize) -> usize {
-        let head = self.heads.get(&hash).copied().unwrap_or(NONE);
-        if head == NONE { let row = self.add(name, NONE, words); self.heads.insert(hash,row); return row; }
-        if head == PROMOTED {
-            if let Some(&row) = self.promoted.get(&hash).unwrap().get(name) { return row; }
-            let row = self.add(name, NONE, words); self.promoted.get_mut(&hash).unwrap().insert(name,row); return row;
-        }
-        let (mut cur, mut count) = (head, 0);
-        while cur != NONE {
-            let (candidate, next) = self.entries[cur];
-            if candidate == name { return cur; }
-            cur = next; count += 1;
-        }
-        if count >= 8 {
-            let mut exact = HashMap::new(); let mut cur = head;
-            while cur != NONE { let (candidate, next) = self.entries[cur]; exact.insert(candidate,cur); cur=next; }
-            let row = self.add(name, NONE, words); exact.insert(name,row);
-            self.promoted.insert(hash,exact); *self.heads.get_mut(&hash).unwrap() = PROMOTED; row
-        } else {
-            let row = self.add(name, head, words); *self.heads.get_mut(&hash).unwrap() = row; row
-        }
-    }
-    fn see(&mut self, name: &'static [u8], hash: u64, g: usize, words: usize) -> i64 {
-        if self.cache.is_empty() { self.cache = vec![(0, NONE); CACHE_SLOTS]; }
-        let i = hash as usize & (CACHE_SLOTS - 1);
-        let (cached_hash, cached_row) = self.cache[i];
-        let row = if cached_row != NONE && cached_hash == hash && self.entries[cached_row].0 == name {
-            cached_row
-        } else {
-            let row = self.row(name, hash, words); self.cache[i] = (hash, row); row
-        };
-        let (w,bit)=(row*words+g/64,1u64<<(g%64));
-        let new=self.bits[w]&bit==0;self.bits[w]|=bit;new as i64
-    }
-}
-const MAX_PACKED_FILE: usize = u32::MAX as usize;
-const MAX_PACKED_GROUPS: usize = u16::MAX as usize;
-#[inline]
-fn can_pack(file_len: usize, groups: usize) -> bool {
-    file_len <= MAX_PACKED_FILE && groups < MAX_PACKED_GROUPS
-}
-
-/// Reconstructs an exact encoded name. Very long names use the sentinel; they
-/// are reparsed from the mmap, including doubled quotes, with no truncation.
-fn event_name(recs: &'static [u8], event: Event) -> &'static [u8] {
-    let start = event.offset as usize;
-    if event.len != u16::MAX { return &recs[start..start + event.len as usize]; }
-    if start > 0 && recs[start - 1] == b'"' {
-        let mut at = start - 1;
-        return field(recs, &mut at).0;
-    }
-    let found = unsafe { memchr(recs.as_ptr().add(start), b',' as i32, recs.len() - start) };
-    assert!(!found.is_null(), "unterminated name");
-    let end = unsafe { found.offset_from(recs.as_ptr()) as usize };
-    &recs[start..end]
+    b.len().min(p + 1)
 }
 
 /// One output line: count id_sum amount_sum amount_min amount_max names_distinct name_bytes note_bytes.
@@ -304,141 +185,92 @@ fn main() {
     let (data, out) = (dir("SD_DATA", "/data"), dir("SD_OUT", "/out"));
     let recs = map(format!("{data}/records.csv"));
     let regs = map(format!("{data}/regions.csv"));
-    // Country codes are exactly three uppercase ASCII bytes by §2.3.
-    let mut code_group = vec![u16::MAX; 26 * 26 * 26];
-    let last = regs.strip_suffix(b"\n").unwrap_or(regs).rsplit(|&c| c == b'\n').next().unwrap_or_default();
-    let mut p_last = 0;
-    let last_id = if last.first().is_some_and(u8::is_ascii_digit) { number(last, &mut p_last) as usize } else { 0 };
-    let (mut countries, mut region) = (Vec::<&[u8]>::new(), vec![u16::MAX; last_id + 1]);
-    for line in regs.split_inclusive(|&c| c == b'\n').skip(1) {
-        let mut p = 0;
-        let id = number(line, &mut p) as usize;
-        let code = &line[p..line.len() - 1];
-        let k = usize::from(code[0] - b'A') * 676 + usize::from(code[1] - b'A') * 26 + usize::from(code[2] - b'A');
-        let mut group = code_group[k];
-        if group == u16::MAX {
-            group = countries.len() as u16;
-            code_group[k] = group;
-            countries.push(code);
-        }
-        if id >= region.len() { region.resize(id + 1, u16::MAX); }
-        region[id] = group;
-    }
-    let unmatched = countries.len();
-    countries.push(b"_UNMATCHED");
-    let words = (unmatched + 1).div_ceil(64);
-    // Section 2.2 permits CRLF synchronization: every CR marks a record boundary,
-    // including when a note contains bare LF. Repeated cuts may map to the same end.
+    // Split the records after the header into 16 chunks per thread. Counting quotes tells
+    // each chunk's quote parity, so a chunk can move its start to a true record boundary:
+    // an LF outside quotes. One more thread reads the regions meanwhile.
     let start = recs.iter().position(|&c| c == b'\n').unwrap() + 1;
     let n = thread::available_parallelism().map_or(1, |n| n.get());
-    let cut = |t: usize| start + (recs.len() - start) * t / n;
-    let bound = |t: usize| match t {
+    let chunks = 16 * n;
+    let cut = |c: usize| start + (recs.len() - start) * c / chunks;
+    let count = |b: &[u8]| b.iter().fold(0u8, |a, &c| a + (c == b'"') as u8) as usize;
+    // Chunks go to whichever thread is free (see `claim`).
+    let (quotes, region, mut keys) = thread::scope(|s| {
+        let regions = s.spawn(|| {
+            // region -> group, and country code (as a number below 26^3) -> group
+            let (mut region, mut group, mut keys) = (vec![], vec![u8::MAX; 17576], vec![]);
+            for line in regs.split_inclusive(|&c| c == b'\n').skip(1) {
+                let mut p = 0;
+                let id = number(line, &mut p) as usize;
+                let code = line[p..p + 3]
+                    .iter()
+                    .fold(0, |a, &c| a * 26 + (c - b'A') as usize);
+                if group[code] == u8::MAX {
+                    assert!(keys.len() < 255, "at most 255 countries");
+                    group[code] = keys.len() as u8;
+                    keys.push(&line[p..p + 3]);
+                }
+                region.resize(region.len().max(id + 1), u8::MAX);
+                region[id] = group[code];
+            }
+            (region, keys)
+        });
+        // Thread t counts chunks t, t + n, ...; sums of u8 counts vectorize best.
+        let quotes = par(n, |t| {
+            let q = |c: usize| recs[cut(c)..cut(c + 1)].chunks(255).map(count).sum();
+            (t..chunks).step_by(n).map(q).collect::<Vec<usize>>()
+        });
+        let (region, keys) = regions.join().unwrap();
+        (quotes, region, keys)
+    });
+    let mut before = vec![0; chunks]; // quotes before each chunk
+    (1..chunks).for_each(|c| before[c] = before[c - 1] + quotes[(c - 1) % n][(c - 1) / n]);
+    let bound = |c: usize| match c {
         0 => start,
-        _ if t == n => recs.len(),
-        _ => sync_crlf(recs, cut(t)),
+        _ if c == chunks => recs.len(),
+        _ => sync(recs, cut(c), before[c]),
     };
-    // Choose the ordinary implementation before processing if compact fields
-    // cannot represent the mapping or group count. No output has been created.
-    let (aggs, distinct) = if can_pack(recs.len(), unmatched) {
-        let parts = n.saturating_mul(4).min(128).max(n);
-        let chunks = n.checked_mul(2).expect("too many parsing chunks");
-        let cut2 = |t: usize| start + (recs.len() - start) * t / chunks;
-        let bound2 = |t: usize| match t {
-            0 => start,
-            _ if t == chunks => recs.len(),
-            _ => sync_crlf(recs, cut2(t)),
-        };
-        let parsed = par(n, |t| {
-            let (mut p0, end0) = (bound2(t), bound2(t + 1));
-            let (mut p1, end1) = (bound2(t + n), bound2(t + n + 1));
-            let mut agg = vec![EMPTY; unmatched + 1];
-            let mut bins = vec![Vec::<Event>::new(); parts];
-            while p0 < end0 && p1 < end1 {
-                p0 += 3 * recs[p0..].starts_with(b"\xEF\xBB\xBF") as usize;
-                p1 += 3 * recs[p1..].starts_with(b"\xEF\xBB\xBF") as usize;
-                let id0 = positive_fast(recs, &mut p0);
-                let id1 = positive_fast(recs, &mut p1);
-                let (name0, name_len0, h0) = field_name_hash(recs, &mut p0);
-                let (name1, name_len1, h1) = field_name_hash(recs, &mut p1);
-                let (_, note_len0) = field(recs, &mut p0);
-                let (_, note_len1) = field(recs, &mut p1);
-                let rid0 = positive_fast(recs, &mut p0) as usize;
-                let rid1 = positive_fast(recs, &mut p1) as usize;
-                let g0 = unmatched.min(*region.get(rid0).unwrap_or(&u16::MAX) as usize);
-                let g1 = unmatched.min(*region.get(rid1).unwrap_or(&u16::MAX) as usize);
-                let cents0 = number(recs, &mut p0);
-                let cents1 = number(recs, &mut p1);
-                for (name, name_len, h, note_len, g, id, cents) in [
-                    (name0, name_len0, h0, note_len0, g0, id0, cents0),
-                    (name1, name_len1, h1, note_len1, g1, id1, cents1),
-                ] {
-                    let bucket = ((h as u128 * parts as u128) >> 64) as usize;
-                    let offset = (name.as_ptr() as usize - recs.as_ptr() as usize) as u32;
-                    let len = u16::try_from(name.len()).unwrap_or(u16::MAX);
-                    bins[bucket].push(Event { offset, len, group: g as u16, hash: h });
-                    merge(&mut agg[g], [1, id, cents, cents, cents, 0, name_len, note_len]);
-                }
-            }
-            for (mut p, end) in [(p0, end0), (p1, end1)] {
+    let unmatched = keys.len();
+    keys.push(&b"_UNMATCHED"[..]);
+    let mut bits = 17; // 2^17 slots; four times as many whenever 7/8 of them fill up
+    let aggs = loop {
+        let (names, next) = (Names::new(bits), AtomicUsize::new(0));
+        let aggs = par(n, |_| {
+            // A record is finished (its group and name looked up) while the next one is
+            // parsed, so that the cache lines it needs have time to arrive.
+            let (mut agg, mut last) = (vec![EMPTY; unmatched + 1], None);
+            let mut finish = |(key, rid, mut rec): (_, usize, Agg)| {
+                let g = unmatched.min(*region.get(rid).unwrap_or(&u8::MAX) as usize);
+                rec[5] = names.see(key, g);
+                merge(&mut agg[g], rec);
+            };
+            let claim = || Some(next.fetch_add(1, Relaxed)).filter(|&c| c < chunks);
+            while let Some(c) = claim() {
+                let (mut p, end) = (bound(c), bound(c + 1));
                 while p < end {
-                    p += 3 * recs[p..].starts_with(b"\xEF\xBB\xBF") as usize;
-                    let id = positive_fast(recs, &mut p);
-                    let (name, name_len, h) = field_name_hash(recs, &mut p);
-                    let (_, note_len) = field(recs, &mut p);
-                    let rid = positive_fast(recs, &mut p) as usize;
-                    let g = unmatched.min(*region.get(rid).unwrap_or(&u16::MAX) as usize);
+                    p += 3 * recs[p..].starts_with(b"\xEF\xBB\xBF") as usize; // a byte order mark
+                    let id = number(recs, &mut p);
+                    let ((s, e, name_len), (_, _, note_len)) =
+                        (field(recs, &mut p), field(recs, &mut p));
+                    let rid = number(recs, &mut p) as usize;
+                    region.get(rid).map(prefetch);
                     let cents = number(recs, &mut p);
-                    let bucket = ((h as u128 * parts as u128) >> 64) as usize;
-                    let offset = (name.as_ptr() as usize - recs.as_ptr() as usize) as u32;
-                    let len = u16::try_from(name.len()).unwrap_or(u16::MAX);
-                    bins[bucket].push(Event { offset, len, group: g as u16, hash: h });
-                    merge(&mut agg[g], [1, id, cents, cents, cents, 0, name_len, note_len]);
+                    let rec = [1, id, cents, cents, cents, 0, name_len, note_len];
+                    last.replace((names.key(recs, s, e), rid, rec))
+                        .map(&mut finish);
                 }
             }
-            (agg, bins)
-        });
-        let next = std::sync::atomic::AtomicUsize::new(0);
-        let distinct = par(n, |_t| {
-            let mut counts = vec![0i64; unmatched + 1];
-            loop {
-                let bucket = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                if bucket >= parts { break; }
-                let mut dict = OwnerDict::default();
-                for row in &parsed {
-                    for &event in &row.1[bucket] {
-                        let name = event_name(recs, event);
-                        let g = event.group as usize;
-                        counts[g] += dict.see(name, event.hash, g, words);
-                    }
-                }
-            }
-            counts
-        });
-        (parsed.into_iter().map(|row| row.0).collect::<Vec<_>>(), Some(distinct))
-    } else {
-        let names: Vec<Shard> = (0..1024).map(|_| Shard::default()).collect();
-        let aggs = par(n, |t| {
-            let (mut p, end, mut agg) = (bound(t), bound(t + 1), vec![EMPTY; unmatched + 1]);
-            while p < end {
-                p += 3 * recs[p..].starts_with(b"\xEF\xBB\xBF") as usize;
-                let id = positive_fast(recs, &mut p);
-                let ((name, name_len), (_, note_len)) = (field(recs, &mut p), field(recs, &mut p));
-                let rid = positive_fast(recs, &mut p) as usize;
-                let g = unmatched.min(*region.get(rid).unwrap_or(&u16::MAX) as usize);
-                let cents = number(recs, &mut p);
-                let shard = BuildHasherDefault::<Fx>::default().hash_one(name) >> 32 & 1023;
-                let new = names[shard as usize].see(name, g, words);
-                merge(&mut agg[g], [1, id, cents, cents, cents, new, name_len, note_len]);
-            }
+            last.take().map(&mut finish);
             agg
         });
-        (aggs, None)
+        if !names.full() {
+            break aggs;
+        }
+        bits += 2;
     };
     let mut lines: Vec<String> = Vec::new();
-    for (g, key) in countries.into_iter().enumerate() {
+    for (g, key) in keys.iter().enumerate() {
         let mut a = EMPTY;
-        aggs.iter().for_each(|agg| merge(&mut a, agg[g as usize]));
-        if let Some(distinct) = &distinct { a[5] = distinct.iter().map(|d| d[g]).sum(); }
+        aggs.iter().for_each(|agg| merge(&mut a, agg[g]));
         if a[0] > 0 {
             let cols: String = a.iter().enumerate().map(|(i, &v)| column(i, v)).collect();
             lines.push(format!("{}{cols}\n", String::from_utf8_lossy(key)));

@@ -178,3 +178,8 @@ The official PGO practice `run-9d4e5c591ec2` at `d9166c5` passed all gates, buil
 The same PGO source and Dockerfile passed every gate again at `261fc62`, `run-c118ea3261b3`, T=0.106485 s, M=87,379,968 bytes, S=526 and K=12.241088. Both PGO target batches (0.096613 and 0.106485 s) were slower than the immediately preceding non-PGO range recorded above, although other tracks also varied and the comparison is not paired. Given those target results, restore the exact previous non-PGO Dockerfile and retain the PGO experiment for future retesting. Full run details are in `experiments/board-261fc.json`.
 
 The restored non-PGO build passed all gates in `run-d973f581cb82` at `8520cf1`: T=0.081327 s, M=87,621,632 bytes, S=507 and K=14.076790. This is faster than both preceding PGO batches (0.096613 and 0.106485 s), though these are separate, variable runs. See `experiments/board-8520.json`.
+
+## Merge of speed-opt source (2026-10-31)
+
+`src/main.rs` replaced with the `speed-opt` version (Dockerfile, .speed-demon.toml and build flags unchanged). Sandbox A/B against `3b1126e` on full seed 1 (2-core arm64, noisy, min of alternating runs, hashes match): no official board run yet for this source. Add the run ID here once the board has scored it, and revert to `3b1126e` if the board T is not better.
+Sandbox CPU min: 0.90 s -> 0.63 s.

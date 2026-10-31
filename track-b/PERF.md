@@ -158,3 +158,8 @@ The first CRC+PGO official practice `run-4409c94d089f` at `ab28d6a` passed all g
 The same CRC+PGO source passed all gates again at `e196f1f`, `run-d6c4bff5e5da`, T=0.346498 s, M=195,661,824 bytes, S=750, K=15.079418. Its target batches of 0.299154 and 0.346498 s did not beat recent baseline PGO batches 0.290780, 0.294090 and 0.293197 s, despite the VM matched-PGO paired improvement; other tracks also varied, so the target batches are not a controlled pair. Restore the exact prior B source for a further single-variable target comparison. CRC remains available as a tested experiment. See `experiments/board-e196.json`.
 
 The restored baseline PGO build passed all official gates at `8001800`, `run-1e974d4576e2`: T=0.295238 s, M=225,869,824 bytes, S=604, K=16.397666. The previous CRC+PGO batches measured 0.299154 and 0.346498 s at S=750; this independent baseline run and earlier 0.290780–0.294090 s baseline batches support retaining the original source for target speed and score, while the matched native VM CRC gain remains documented. Separate official batches vary; no precise causal speedup is established. See `experiments/board-800180.json`.
+
+## Merge of speed-opt source (2026-10-31)
+
+`src/main.rs` replaced with the `speed-opt` version (Dockerfile, .speed-demon.toml and build flags unchanged). Sandbox A/B against `3b1126e` on full seed 1 (2-core arm64, noisy, min of alternating runs, hashes match): no official board run yet for this source. Add the run ID here once the board has scored it, and revert to `3b1126e` if the board T is not better.
+Sandbox CPU min: 3.95 s -> 1.92 s.
