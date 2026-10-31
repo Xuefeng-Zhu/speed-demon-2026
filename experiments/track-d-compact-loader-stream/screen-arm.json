@@ -1,0 +1,98 @@
+{
+  "platform": "macOS-26.7.2-arm64-arm-64bit-Mach-O",
+  "rustc": "rustc 1.95.0 (59807616e 2026-04-14)",
+  "flags": [
+    "--edition=2021",
+    "-C",
+    "opt-level=3",
+    "-C",
+    "lto=fat",
+    "-C",
+    "codegen-units=1",
+    "-C",
+    "panic=abort"
+  ],
+  "source_sha256": {
+    "baseline": "671c639be3400209e83e080dfb54947affd30ca71dc34ec17804d24d70292d9c",
+    "candidate": "d74c9104ddb3ce661e1e597276c2bb9da621a73bbe6846cd82f901de719c1d64"
+  },
+  "runs": [
+    {
+      "iteration": -1,
+      "name": "candidate",
+      "wall_s": 0.6575650419981685,
+      "cpu_s": 1.865423,
+      "maxrss_native": 535248896,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e"
+    },
+    {
+      "iteration": -1,
+      "name": "baseline",
+      "wall_s": 0.550021208000544,
+      "cpu_s": 1.8668,
+      "maxrss_native": 557268992,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e"
+    },
+    {
+      "iteration": 0,
+      "name": "baseline",
+      "wall_s": 0.2594445419963449,
+      "cpu_s": 1.808606,
+      "maxrss_native": 585269248,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e"
+    },
+    {
+      "iteration": 0,
+      "name": "candidate",
+      "wall_s": 0.25836058300046716,
+      "cpu_s": 1.763869,
+      "maxrss_native": 487505920,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e"
+    },
+    {
+      "iteration": 1,
+      "name": "candidate",
+      "wall_s": 0.25661466600286076,
+      "cpu_s": 1.7824309999999999,
+      "maxrss_native": 487243776,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e"
+    },
+    {
+      "iteration": 1,
+      "name": "baseline",
+      "wall_s": 0.27817912500177044,
+      "cpu_s": 1.851018,
+      "maxrss_native": 500498432,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e"
+    },
+    {
+      "iteration": 2,
+      "name": "baseline",
+      "wall_s": 0.2628709999989951,
+      "cpu_s": 1.787187,
+      "maxrss_native": 555466752,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e"
+    },
+    {
+      "iteration": 2,
+      "name": "candidate",
+      "wall_s": 0.25822216700180434,
+      "cpu_s": 1.763185,
+      "maxrss_native": 543539200,
+      "sha256": "a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e"
+    }
+  ],
+  "summary": {
+    "baseline": {
+      "median_wall_s": 0.2628709999989951,
+      "median_cpu_s": 1.808606,
+      "max_rss_native": 585269248
+    },
+    "candidate": {
+      "median_wall_s": 0.25822216700180434,
+      "median_cpu_s": 1.763869,
+      "max_rss_native": 543539200
+    }
+  },
+  "rss_note": "Linux KiB, macOS bytes; process RSS is not cgroup memory"
+}

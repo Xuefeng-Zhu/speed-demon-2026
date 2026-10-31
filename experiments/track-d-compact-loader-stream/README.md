@@ -1,0 +1,21 @@
+# D compact staging buckets (unselected)
+
+The baseline is the selected capped hybrid D source, SHA-256 `671c639be3400209e83e080dfb54947affd30ca71dc34ec17804d24d70292d9c`. The isolated candidate `candidate.rs` is SHA-256 `d74c9104ddb3ce661e1e597276c2bb9da621a73bbe6846cd82f901de719c1d64`. No selected code has been changed.
+
+For `n <= 2^21`, parser staging buckets store each edge as an eight-byte word with a 21-bit source, 21-bit destination and 11-bit weight tag. Tags 0–2046 carry their exact weights; tag 2047 consumes the next full-width u32 from that bucket's separate overflow vector. Both counting and scattering traverse each bucket in insertion order, so repeated and outlying weights preserve their exact positions. For `n > 2^21`, staging uses the original 12-byte edge tuples. Both forward and reverse streams are populated independently, and the final CSR, u32 cutoff, fixed queue pools and exact wide fallback are unchanged.
+
+`verify.py --extremes` ran on native macOS ARM with overflow checks and debug assertions. It passed 1.5 million direct packed/plain edge round trips across initial capacities 0, 1 and 7, exact source and overflow order checks, and 120 independently checked directed forward/reverse CSR multiset cases (24 deterministic graph configurations at 1, 2, 3, 7 and 12 parser workers). It also passed 16,000 randomized Dijkstra answers, 36,864 exhaustive all-pairs answers, node counts 2^21 and 2^21+1 with weights 2046, 2047, 2048 and `u32::MAX`, a full-size maximum-weight chain, and 6,000 repeated/unreachable queries. All tests exercise the exact candidate SHA above. Independent static review found no concrete encoding, ordinal, edge-order or ownership defect, and additional tests covered 750,000 mixed and 200,000 all-wide operations; see `../track-d-compact-loader-independent/README.md`. No x86 or hidden-seed correctness claim follows from these tests.
+
+Separately, `/tmp/speed-d-full/graph.txt` and `queries.txt` matched the official public seed-1 full input hashes `fe6471f2712d10b23c2ec58a4cbc7db1ea3e742daf6b6db62829e74d6c4a26c7` and `160f1ef48378dcb567a8d9ddd2676ee777b044a5ede3ad4c7b42e812aa4b3a6f`; the existing files were only read. A first randomized three-pair warm native ARM full-seed screen gave candidate/baseline median 0.258222/0.262871 s and CPU 1.763869/1.808606 s. A subsequent randomized 11-pair repeat gave 0.245867/0.253106 s, CPU 1.796086/1.818254 s, and maximum process RSS 571,457,536/612,548,608 bytes. All 32 warmup and measured outputs had the published full output hash `a23dbdf0a3e49cc8901310a9ee1dc6a9a569a85297b6da75c2a7002cb2ed277e`. Runs were serialized with known agents but the host remains shared; RSS is not the official cgroup peak and the first batch is small. Raw observations are `screen-arm.json` and `repeat-arm.json`.
+
+Most generated weights may fit the inline tag, but correctness does not assume that distribution. If all weights overflow, each staged edge needs eight bytes plus a full-width side entry and geometric capacity slack; the side vectors can reallocate, and their worst-case allocator/cgroup effects have not been formally bounded. Each bin also has two extra Vec headers. The selected search already has a conditional 8 GiB risk analysis; this change requires fresh accounting and target measurements rather than treating reduced staging size as a memory guarantee.
+
+For Linux x86-64-v3, independently generate or verify the official full input and serialize with other timing work:
+
+```sh
+python3 experiments/track-d-compact-loader-stream/verify.py --cpu x86-64-v3 --extremes
+python3 experiments/track-d-compact-loader-stream/compare.py --data /path/to/full-d --build-dir /tmp/d-compact-build --report /tmp/d-compact-x86-a.json --runs 15 --seed 1611
+python3 experiments/track-d-compact-loader-stream/compare.py --data /path/to/full-d --build-dir /tmp/d-compact-build --report /tmp/d-compact-x86-b.json --runs 15 --seed 2293
+```
+
+The test archive must contain this directory plus `experiments/track-d-balanced-frontier/{oracle,exhaustive,extremes}.py` and `experiments/track-d-packed32-adj/boundaries.py`. It contains no datasets, credentials or binaries. Check actual parent-cgroup memory separately if available; the dot VM may lack the cgroup interface. No Docker was run on the Mac.
