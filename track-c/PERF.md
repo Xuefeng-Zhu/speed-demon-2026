@@ -194,27 +194,3 @@ Result: `run-f78e7fd076e8` at `b2df83b`: T=0.055621 s, M=35.1 MB, S=339, K=21.71
 Result: `run-e3f84fdfdd7d` at `feadbcc`: T=0.055285 s, M=13.5 MB, S=312, K=26.67 (was 26.30-26.39). Kept.
 
 Round-4 trial (c5h): c5 with 64-bit hash name identity (collision ~3e-10 per dataset).
-
-## Unchecked loads and one hash for every name length (2026-10-31)
-
-`ld` now reads eight bytes unaligned without a bounds check or zero-padding fallback; every caller reads where eight bytes exist (numbers end at least eight bytes into each file, and a name is followed by at least its record's note, region id and amount). Names of any length are hashed by the same eight-byte fold, so the `Mutex<HashMap>` path for names over 24 bytes is gone (seed 1 full has 28 such records in 3,320,000). Shared x86 sandbox (AMD EPYC 7R13, 8 vCPUs), full seed 1, 11-run batches against the previous source: 1 thread median 233–236 ms vs 244–246 ms; 8 threads 60.2–61.3 ms vs 62.1–64.5 ms. Full hash, tiny seeds 2/3/7/99, sample seeds 5/42 and a 20,000-record fixture of 0–200-byte names with trailing-space, last-byte and embedded-quote near-twins all match the reference. These are sandbox measurements, not board results; board run pending.
-
-## Group sets per name instead of owner routing (2026-10-31)
-
-The owner hand-off (per-owner `Mutex` inboxes, 1,024-pair blocks and the `mark` pass over `seen_in`) is replaced by a 256-bit group set per name slot. A worker tests the (name, group) bit and, if clear, sets it with `fetch_or`; whoever finds it clear counts the name. The set's cache line is `prefetchw`ed eight records before the atomic. Memory is the same size (4 × 8 bytes per slot vs 256 × slots / 64 words), and the final barrier and mark disappear. A version without the write prefetch was 7% slower on one thread. Shared x86 sandbox, full seed 1, against the previous commit: 1 thread median 225 ms vs 233–236 ms; 8 threads 61–64 ms vs 60–61 ms, with 7% more CPU at 8 threads, so on this machine the gain is single-thread only. Process RSS 22–23 MB vs 24 MB at 8 threads (not cgroup peak). Same reference checks as above pass, plus a forced dictionary-restart build (2^8 starting slots). Formatted lines fall by 12. Board run pending; keep only if board K beats the previous commit.
-
-## Four-value ring entries and checked mappings (2026-10-31)
-
-Ring entries carry `[id, cents, name_bytes, note_bytes]` instead of a full eight-column aggregate, which is built only when the record is merged (entries fall from 88 to 56 bytes). `map` and `zeroed` now assert that `mmap` succeeded, as the README claimed. Shared x86 sandbox, full seed 1, 9-run medians against the previous commit: 1 thread 215 ms vs 224–227 ms; 4 threads on 4 separate cores 96.6 ms vs 99.5 ms; 8 threads 60.0–62.8 ms vs 63.4–64.6 ms. Phase timestamps on 8 threads show setup and regions finish by 1.8 ms, all workers finish within 0.6 ms of each other, and output takes 0.4 ms, so the parse loop is the whole cost. All reference checks pass. Board run pending.
-
-Rejected in the same session (sandbox only): splitting field-end extraction from record building (2–4% slower), wyhash-style multiply hash (no change), first/last-eight-byte name hash (about 1%, more lines), 2^18 starting slots (slower, +5 MB), ring depths 8 and 32 (no better than 16), `MADV_POPULATE_READ` per chunk and dropping the per-chunk `MADV_DONTNEED` (no wall-time change).
-
-Eight-thread cost breakdown of this commit (sandbox, 25 interleaved rounds, trimmed means; each ablation is incorrect and only removes work): full 61.4 ms; without the group-set `fetch_or` 51.1 ms; also without the dictionary probe (and so the random set-line prefetches) 40.3 ms; also without name hashing 36.3 ms; also without region lookup and merge 29.5 ms; the 64-byte delimiter scan alone 15.5 ms. Name handling is therefore about 25 ms of the 61, and the locked `fetch_or` on a prefetched line is the largest single piece. Against the board-measured source (`dddc0ea`), this commit measured 61.8 vs 63.1 ms in 40 interleaved rounds.
-
-## Hash and group set in one five-word slot (2026-10-31)
-
-Each dictionary slot is now five consecutive words, the name hash followed by its 256-bit group set, in one 5.2 MB map with `MADV_HUGEPAGE` (previously a 1 MB hash table and a separate 4.2 MB set array). The record's home slot is `prefetchw`ed when its hash is computed, so the probe and the later `fetch_or` usually hit the same line or the next one. Total size is unchanged. Sandbox, 8 threads, 30 interleaved rounds, trimmed means: 60.4 ms vs 61.7 ms for the previous commit. Variants in the same batch: also prefetching the slot's last word 60.7 ms, read rather than write prefetch 60.9 ms, and no huge-page advice 63.6 ms. One thread is unchanged (about 215 ms). All reference checks and the forced-restart build pass. Board run pending.
-
-## Line trims (2026-10-31)
-
-No behaviour change: the aarch64 prefetch branch is gone (prefetch is a no-op off x86-64), the quoted-length arithmetic takes one shared difference, a redundant block scope is removed, and the file is now rustfmt-clean. Formatted code lines by the local count fall from 318 to 308 (about +0.5% K from the size term). Sandbox 8-thread timing is identical (59.72 vs 59.72 ms, 25 interleaved rounds). A carry-less-multiply prefix XOR (`pclmulqdq`) for the in-quotes mask was also tried and made no difference, so it was not kept.
