@@ -341,22 +341,59 @@ fn main() {
     // cannot represent the mapping or group count. No output has been created.
     let (aggs, distinct) = if can_pack(recs.len(), unmatched) {
         let parts = n.saturating_mul(4).min(128).max(n);
+        let chunks = n.checked_mul(2).expect("too many parsing chunks");
+        let cut2 = |t: usize| start + (recs.len() - start) * t / chunks;
+        let bound2 = |t: usize| match t {
+            0 => start,
+            _ if t == chunks => recs.len(),
+            _ => sync_crlf(recs, cut2(t)),
+        };
         let parsed = par(n, |t| {
-            let (mut p, end, mut agg) = (bound(t), bound(t + 1), vec![EMPTY; unmatched + 1]);
+            let (mut p0, end0) = (bound2(t), bound2(t + 1));
+            let (mut p1, end1) = (bound2(t + n), bound2(t + n + 1));
+            let mut agg = vec![EMPTY; unmatched + 1];
             let mut bins = vec![Vec::<Event>::new(); parts];
-            while p < end {
-                p += 3 * recs[p..].starts_with(b"\xEF\xBB\xBF") as usize;
-                let id = positive_fast(recs, &mut p);
-                let (name, name_len, h) = field_name_hash(recs, &mut p);
-                let (_, note_len) = field(recs, &mut p);
-                let rid = positive_fast(recs, &mut p) as usize;
-                let g = unmatched.min(*region.get(rid).unwrap_or(&u16::MAX) as usize);
-                let cents = number(recs, &mut p);
-                let bucket = ((h as u128 * parts as u128) >> 64) as usize;
-                let offset = (name.as_ptr() as usize - recs.as_ptr() as usize) as u32;
-                let len = u16::try_from(name.len()).unwrap_or(u16::MAX);
-                bins[bucket].push(Event { offset, len, group: g as u16, hash: h });
-                merge(&mut agg[g], [1, id, cents, cents, cents, 0, name_len, note_len]);
+            while p0 < end0 && p1 < end1 {
+                p0 += 3 * recs[p0..].starts_with(b"\xEF\xBB\xBF") as usize;
+                p1 += 3 * recs[p1..].starts_with(b"\xEF\xBB\xBF") as usize;
+                let id0 = positive_fast(recs, &mut p0);
+                let id1 = positive_fast(recs, &mut p1);
+                let (name0, name_len0, h0) = field_name_hash(recs, &mut p0);
+                let (name1, name_len1, h1) = field_name_hash(recs, &mut p1);
+                let (_, note_len0) = field(recs, &mut p0);
+                let (_, note_len1) = field(recs, &mut p1);
+                let rid0 = positive_fast(recs, &mut p0) as usize;
+                let rid1 = positive_fast(recs, &mut p1) as usize;
+                let g0 = unmatched.min(*region.get(rid0).unwrap_or(&u16::MAX) as usize);
+                let g1 = unmatched.min(*region.get(rid1).unwrap_or(&u16::MAX) as usize);
+                let cents0 = number(recs, &mut p0);
+                let cents1 = number(recs, &mut p1);
+                for (name, name_len, h, note_len, g, id, cents) in [
+                    (name0, name_len0, h0, note_len0, g0, id0, cents0),
+                    (name1, name_len1, h1, note_len1, g1, id1, cents1),
+                ] {
+                    let bucket = ((h as u128 * parts as u128) >> 64) as usize;
+                    let offset = (name.as_ptr() as usize - recs.as_ptr() as usize) as u32;
+                    let len = u16::try_from(name.len()).unwrap_or(u16::MAX);
+                    bins[bucket].push(Event { offset, len, group: g as u16, hash: h });
+                    merge(&mut agg[g], [1, id, cents, cents, cents, 0, name_len, note_len]);
+                }
+            }
+            for (mut p, end) in [(p0, end0), (p1, end1)] {
+                while p < end {
+                    p += 3 * recs[p..].starts_with(b"\xEF\xBB\xBF") as usize;
+                    let id = positive_fast(recs, &mut p);
+                    let (name, name_len, h) = field_name_hash(recs, &mut p);
+                    let (_, note_len) = field(recs, &mut p);
+                    let rid = positive_fast(recs, &mut p) as usize;
+                    let g = unmatched.min(*region.get(rid).unwrap_or(&u16::MAX) as usize);
+                    let cents = number(recs, &mut p);
+                    let bucket = ((h as u128 * parts as u128) >> 64) as usize;
+                    let offset = (name.as_ptr() as usize - recs.as_ptr() as usize) as u32;
+                    let len = u16::try_from(name.len()).unwrap_or(u16::MAX);
+                    bins[bucket].push(Event { offset, len, group: g as u16, hash: h });
+                    merge(&mut agg[g], [1, id, cents, cents, cents, 0, name_len, note_len]);
+                }
             }
             (agg, bins)
         });

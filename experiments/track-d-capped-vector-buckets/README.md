@@ -20,3 +20,5 @@ python3 experiments/track-d-capped-vector-buckets/compare.py --data /path/to/ful
 ```
 
 Run with no competing benchmarks and inspect every output hash. No Docker was run on the Mac.
+
+Parent-run native x86 dot VM paired full-seed wall comparisons were 5.8% faster in one batch but 0.4% slower in the repeat, so no stable speed gain is established. A 12-worker fallback stress reported 931,812 KiB process RSS; this is not parent-cgroup memory and is not an 8 GiB worst-case proof. Across C and D packages, 144 full hashes, 16 alternate references and actual x86 guard/reference/oracle and natural-capacity-exhaustion correctness tests passed. The candidate remains unselected.
