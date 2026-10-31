@@ -323,6 +323,10 @@ fn main() {
                     qs += quote.count_ones() as usize;
                     base += 64;
                 }
+                // MADV_DONTNEED the chunk's pages now, in parallel, not at exit on one thread
+                // (a read past the chunk's end faults the page back in).
+                let page = bound(c) & !4095;
+                unsafe { madvise(recs.as_ptr().add(page) as _, end - page, 4) };
             }
             ring.into_iter().for_each(finish);
             agg

@@ -9,6 +9,7 @@
 //! 4. Threads take whole hours from a queue: counting-sort the hour's latencies by endpoint
 //!    rank, select the three nearest-rank percentiles, format the lines, free the records.
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 use std::sync::{mpsc, Mutex};
 use std::{env, fs, io::Write, os::unix::io::AsRawFd, thread};
 
@@ -132,55 +133,58 @@ type Shared = Mutex<HashMap<Vec<u8>, u32>>;
 /// next escaped record `id << 33 | is_5xx << 32 | latency`.
 type Records = (Vec<u32>, Vec<u64>);
 
-/// Parses the lines in `d[i..end]` into records per hour, with ids from the shared tables.
-fn parse(d: &[u8], mut i: usize, end: usize, shared: &[Shared]) -> Vec<Records> {
-    let page = i & !4095;
+/// Parses the lines of each chunk `d[i..end]` that `chunk` hands out, until it returns None,
+/// into records per hour, with ids from the shared tables.
+fn parse(d: &[u8], chunk: impl Fn() -> Option<(usize, usize)>, shared: &[Shared]) -> Vec<Records> {
     let (mut table, mut ids) = (Table::default(), Vec::new()); // local id -> shared id
     let mut hours = vec![(Vec::new(), Vec::new()); HOURS];
-    while i < end {
-        let digit = |k: usize| (d[i + k] - b'0') as usize;
-        // October 30, 31 and November 1, 2 become day indexes 0..=3.
-        let day = digit(8) * 10 + digit(9) + 31 * digit(6) - 30;
-        let hour = day * 24 + digit(11) * 10 + digit(12) - 18;
-        let s = i + 29 + find_byte(load(d, i + 28), b' ');
-        // Find the space after the endpoint a word at a time, hashing the words on the way.
-        let (mut e, mut h) = (s, 0u64);
-        loop {
-            let w = load(d, e);
-            let k = find_byte(w, b' ');
-            if k < 8 {
-                h = (h ^ (w & ((1 << (8 * k)) - 1)) ^ k as u64).wrapping_mul(MIX);
-                e += k;
-                break;
+    while let Some((mut i, end)) = chunk() {
+        let page = i & !4095;
+        while i < end {
+            let digit = |k: usize| (d[i + k] - b'0') as usize;
+            // October 30, 31 and November 1, 2 become day indexes 0..=3.
+            let day = digit(8) * 10 + digit(9) + 31 * digit(6) - 30;
+            let hour = day * 24 + digit(11) * 10 + digit(12) - 18;
+            let s = i + 29 + find_byte(load(d, i + 28), b' ');
+            // Find the space after the endpoint a word at a time, hashing the words on the way.
+            let (mut e, mut h) = (s, 0u64);
+            loop {
+                let w = load(d, e);
+                let k = find_byte(w, b' ');
+                if k < 8 {
+                    h = (h ^ (w & ((1 << (8 * k)) - 1)) ^ k as u64).wrapping_mul(MIX);
+                    e += k;
+                    break;
+                }
+                h = (h ^ w).wrapping_mul(MIX);
+                e += 8;
             }
-            h = (h ^ w).wrapping_mul(MIX);
-            e += 8;
+            let local = table.find(d, h, s, e);
+            if local == ids.len() {
+                let k = (h >> 60) as usize; // the top 4 bits pick one of 16 shards
+                let (name, mut map) = (d[s..e].to_vec(), shared[k].lock().unwrap());
+                let n = map.len() as u32;
+                ids.push(*map.entry(name).or_insert(n) << 4 | k as u32);
+            }
+            let id = ids[local] as u64;
+            let (latency, next) = parse_latency(d, e + 5);
+            let is_5xx = (d[e + 1] == b'5') as u64;
+            let (records, escapes) = &mut hours[hour];
+            if records.capacity() == 0 {
+                records.reserve(1 << 15); // mapped directly, not grown through the allocator's heap
+            }
+            if id < 2048 && latency < 0x000f_ffff {
+                records.push(((id as u32) << 21) | ((is_5xx as u32) << 20) | latency as u32);
+            } else {
+                records.push(u32::MAX);
+                escapes.push(id << 33 | is_5xx << 32 | latency);
+            }
+            i = next;
         }
-        let local = table.find(d, h, s, e);
-        if local == ids.len() {
-            let k = (h >> 60) as usize; // the top 4 bits pick one of 16 shards
-            let (name, mut map) = (d[s..e].to_vec(), shared[k].lock().unwrap());
-            let n = map.len() as u32;
-            ids.push(*map.entry(name).or_insert(n) << 4 | k as u32);
-        }
-        let id = ids[local] as u64;
-        let (latency, next) = parse_latency(d, e + 5);
-        let is_5xx = (d[e + 1] == b'5') as u64;
-        let (records, escapes) = &mut hours[hour];
-        if records.capacity() == 0 {
-            records.reserve(1 << 15); // mapped directly, not grown through the allocator's heap
-        }
-        if id < 2048 && latency < 0x000f_ffff {
-            records.push(((id as u32) << 21) | ((is_5xx as u32) << 20) | latency as u32);
-        } else {
-            records.push(u32::MAX);
-            escapes.push(id << 33 | is_5xx << 32 | latency);
-        }
-        i = next;
+        // Drop this chunk's file pages from the mapping now, in parallel, instead of at exit on one
+        // thread. Nothing reads these pages again (a read would fault the file back in).
+        unsafe { madvise(d.as_ptr().add(page), end - page, 4) }; // MADV_DONTNEED
     }
-    // Drop this chunk's file pages from the mapping now, in parallel, instead of at exit on one
-    // thread. Nothing reads these pages again (a read would fault the file back in).
-    unsafe { madvise(d.as_ptr().add(page), end - page, 4) }; // MADV_DONTNEED
     hours
 }
 
@@ -281,20 +285,20 @@ fn main() {
     let cpus = thread::available_parallelism().map_or(1, |n| n.get());
     let threads = env::var("SD_THREADS").map_or(cpus, |t| t.parse().unwrap());
 
-    let mut cuts = vec![0];
-    for t in 1..threads {
-        let mut at = (len * t / threads).max(cuts[t - 1]);
+    // Small newline-aligned chunks, taken from a shared counter so faster cores take more.
+    let (n, next) = (8 * threads, AtomicUsize::new(0));
+    let cut = |c: usize| {
+        let mut at = len * c / n;
         while at > 0 && at < len && d[at - 1] != b'\n' {
             at += 1;
         }
-        cuts.push(at);
-    }
-    cuts.push(len);
+        at
+    };
+    let chunk = || Some(next.fetch_add(1, Relaxed)).filter(|&c| c < n).map(|c| (cut(c), cut(c + 1)));
     let shared: Vec<Shared> = (0..SHARDS).map(|_| Mutex::default()).collect();
     let mut chunks: Vec<Vec<Records>> = thread::scope(|s| {
-        let hs: Vec<_> = cuts
-            .windows(2)
-            .map(|w| s.spawn(|| parse(d, w[0], w[1], &shared)))
+        let hs: Vec<_> = (0..threads)
+            .map(|_| s.spawn(|| parse(d, &chunk, &shared)))
             .collect();
         hs.into_iter().map(|h| h.join().unwrap()).collect()
     });
