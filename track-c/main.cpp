@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <atomic>
+#include <thread>
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
@@ -88,11 +90,20 @@ int main(int argc,char** argv) {
         g.namebytes+=name.decoded_size; g.notebytes+=note.decoded_size; g.names.push_back(name.encoded);
     }
     sort(groups.begin(),groups.end(),[](const Group& a,const Group& b){return a.key<b.key;});
+    atomic<size_t> next{0};
+    vector<thread> workers;
+    for (int i=0;i<6;++i) workers.emplace_back([&] {
+        size_t idx;
+        while ((idx=next.fetch_add(1, memory_order_relaxed)) < groups.size()) {
+            auto& names = groups[idx].names;
+            sort(names.begin(), names.end());
+            names.erase(unique(names.begin(), names.end()), names.end());
+        }
+    });
+    for (auto& worker:workers) worker.join();
     ofstream result(out+"/aggregates.txt",ios::binary);
     if (!result) return 1;
     for(auto& g:groups) if(g.count) {
-        sort(g.names.begin(), g.names.end());
-        g.names.erase(unique(g.names.begin(), g.names.end()), g.names.end());
         result<<g.key<<' '<<g.count<<' '<<g.ids<<' '<<money(g.sum)<<' '<<money(g.low)<<' '<<money(g.high)<<' '<<g.names.size()<<' '<<g.namebytes<<' '<<g.notebytes<<'\n';
     }
 }

@@ -32,7 +32,7 @@ with tempfile.TemporaryDirectory(prefix='speed-demon-diff-') as temp:
             subprocess.run(['cargo', 'build', '--release', '--offline', '--manifest-path', str(src / 'Cargo.toml')], env=env, check=True)
             exe = tmp / 'cargo-target' / 'release' / 'traverse'
         else:
-            subprocess.run(['c++', '-std=c++17', '-O3', '-DNDEBUG', str(src / 'main.cpp'), '-o', str(exe)], check=True)
+            subprocess.run(['c++', '-std=c++17', '-O3', '-DNDEBUG', '-pthread', str(src / 'main.cpp'), '-o', str(exe)], check=True)
         binaries[t] = exe
     for t in a.tracks:
         module, output = files[t]

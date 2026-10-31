@@ -6,7 +6,7 @@ These measurements are for iteration, not official scores. All benchmarks used s
 |---|---:|---:|---:|
 | A: original vs chunked/select | 0.365936 s | 0.244733 s | 1.50× faster |
 | B: original vs token views | 3.612033 s | 3.118447 s | 1.16× faster |
-| C: original vs input views | 2.636044 s | 1.499528 s | 1.76× faster |
+| C: original vs prior serial input views | 2.636044 s | 1.499528 s | 1.76× faster |
 | D: 12 vs 6 workers | 1.018773 s | 1.102140 s | 6 workers 8.2% slower |
 | D: 6 vs 3 workers | 1.110951 s | 1.422599 s | 3 workers 28.1% slower |
 
@@ -29,7 +29,7 @@ The subsequent native x86 dot VM comparison of A–C is recorded in `dot-vm.md`.
 
 ## October 31 follow-up variants
 
-`c-parallel.cpp` is an experimental C variant that sorts and deduplicates independent country groups with six worker threads. It matched the full seed-1 output hash in five benchmark runs and in a restricted ARM Linux Docker run; sample seed 42 and tiny seeds 2, 3, 17, 99 and 12345 matched freshly generated official reference outputs. Five interleaved native Mac runs produced median wall times of 0.794665 s for `track-c/main.cpp` and 0.408305 s for the variant; other processes were active. Full samples are in `bench-c-parallel.json`. Compile both with `c++ -std=c++17 -O3 -DNDEBUG -pthread`. The variant has not been tested on x86, and memory and source-size scoring effects have not been measured. The selected candidate remains the x86-verified serial version pending that comparison.
+`c-parallel.cpp` is an experimental C variant that sorts and deduplicates independent country groups with six worker threads. It matched the full seed-1 output hash in five benchmark runs and in a restricted ARM Linux Docker run; sample seed 42 and tiny seeds 2, 3, 17, 99 and 12345 matched freshly generated official reference outputs. Five interleaved native Mac runs produced median wall times of 0.794665 s for `track-c/main.cpp` and 0.408305 s for the variant; other processes were active. Full samples are in `bench-c-parallel.json`. Compile both with `c++ -std=c++17 -O3 -DNDEBUG -pthread`. The variant subsequently passed native x86 comparisons and was promoted to `track-c/main.cpp`; see `dot-vm.md`. Official cgroup memory and source-size scoring effects remain unmeasured. The prior serial source is preserved in `c-serial.cpp`.
 
 The selected dense Track D and experimental sparse variant both passed 16,000 queries over 80 randomized directed graphs against an independent Python Dijkstra oracle, including zero and uint32-max weights and unreachable paths. `d_random_review.py` accepts one or more compiled executable paths to reproduce this check. Five interleaved full seed-1 native Mac runs produced medians of 2.336 s dense and 2.441 s sparse, with substantial concurrent system activity; every hash matched the published answer. See `bench-d-review.json`. The sparse variant's x86 and cgroup memory measurements remain outstanding, so the selected implementation is unchanged.
 
