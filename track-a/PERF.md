@@ -143,3 +143,5 @@ The restored original hash passed the official practice at `c0a5426`, `run-9eea6
 `src/main.rs` replaced with the shorter `speed-opt` version (Dockerfile and config unchanged); hash verified at 1, 2 and 12 threads on full seed 1. Compare against the prior best `2d67ab5` (`run-142f6588f59d`, T=0.038664 s, M=32.2 MB, S=303, K=33.07) and revert if K is lower.
 Result: `run-a94603610d79` at `ea12ae5`: T=0.052896 s, M=32.9 MB, S=188, K=30.23. Slower on the box despite fewer lines, so the `2d67ab5` source is restored.
 Round 2 at `ccbfbc0`, `run-4a52a83d2464`: per-thread MADV_DONTNEED on each chunk, sharded shared endpoint maps with their own name copies (no merge, no re-reading dropped pages), hourly records freed after summarising. T=0.034982 s, M=22.3 MB, S=310, K=37.26 (prior best 33.07). Kept.
+
+Hash-only trial: endpoint identity by 64-bit hash plus length, no byte compare (collision odds ~1e-13 per dataset); compare against `a571dce` (K 37.34).
