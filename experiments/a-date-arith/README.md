@@ -1,0 +1,5 @@
+# Track A calendar arithmetic screen (not selected)
+
+This isolated candidate simplifies the day index to the sum of the decimal ones digits of the month and date. This identity holds over the spec's entire fixed window: October 30, October 31, November 1, November 2 map to 0, 1, 2, 3. The exact no-prefault baseline is SHA-256 `16ae5a2e4df27269dbcc2f7b21bb9ad1022081d84e68e5b2c3f5b122a7cb04e2`; the Linux candidate is `4e55dd4531d29b2a31a5c751c70a6443406ea6504f174dd99e7c31ff069fc407`. This is not selected or independently reviewed.
+
+Shared macOS ARM, 12 workers, randomized full seed-1 pairs after warmup: 11 pairs baseline/candidate median wall 0.0419415/0.0418600 s and CPU 0.192009/0.190682 s; repeat 15 pairs 0.0460915/0.0451271 s and CPU 0.197811/0.198090 s. Every output matched the published hash, including warmups. The native test copies changed only Linux MAP_ANONYMOUS from 0x20 to Darwin 0x1000. Raw reports include source hashes of those adapted copies. These small differences do not show a stable CPU or target win; local RSS is not official cgroup memory. No alternate-input or x86 checks were run, and no Docker was used.

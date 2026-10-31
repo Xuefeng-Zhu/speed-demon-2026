@@ -1,0 +1,3 @@
+# B whole-program phase profile
+
+`baseline.rs` is the exact selected source; `profile.rs` adds only elapsed-time diagnostics to stderr. Five warmed native shared-macOS ARM full-seed runs all matched the published hash after one warmup. Median incremental phases were query read 0.246 ms, query intern 16.407 ms, short table build 0.474 ms, map 1.728 ms, sample scan 1.751 ms, anchor setup 0.734 ms, parallel workers and join 263.034 ms, output formatting 6.594 ms, and write 0.453 ms. The wall-clock worker figure varies with shared host load; stderr, timers, ARM scalar path and host architecture mean these are diagnostics, not official scoring evidence. Absolute elapsed samples are preserved in `report.json`. No Mac Docker was used.

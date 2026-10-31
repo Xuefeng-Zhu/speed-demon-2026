@@ -1,0 +1,5 @@
+# Track A table growth on insertion (not selected)
+
+The isolated candidate preallocates the original initial table size and moves its load-factor and growth check from every lookup to the insertion path. A hit cannot change load, and missing keys still trigger rehash in stable ID order. Exact-byte comparison remains unchanged. Baseline is the current no-prefault source SHA-256 `16ae5a2e4df27269dbcc2f7b21bb9ad1022081d84e68e5b2c3f5b122a7cb04e2`; candidate is `19742029ec3729ab137a0fffb17d2318301357d43099a7a8eb43f33c7dfa8e41`. The candidate needs independent review and explicit table-growth/collision stress before use.
+
+Eleven randomized native shared macOS ARM full-seed pairs at 12 workers after warmup gave baseline/candidate median wall 0.0608610/0.0608772 s and CPU 0.210999/0.213495 s. Every output matched the published hash, including warmups. Temporary native source copies changed only Linux MAP_ANONYMOUS 0x20 to Darwin 0x1000; the recorded sources remain Linux. No x86, official, alternate or forced-collision checks were run. The tied/slower result provides no reason to promote this. No Docker was used.

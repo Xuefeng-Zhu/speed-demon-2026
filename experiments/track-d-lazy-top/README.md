@@ -1,0 +1,7 @@
+# Lazy opposite radix top (experimental, not selected)
+
+`baseline.rs` is the selected bc902c7 hugepage-hint source. The candidate selects a side from nonempty heap counts, materializes that side's top, and uses the other heap's monotone `last` lower bound to decide whether its exact top must be materialized for a possible termination. When necessary it obtains the exact opposite top before testing the original stopping bound; changing tie breaking changes only the order of valid per-side minima.
+
+Independent review found no correctness defect under official bounds. `independent-heap-review.py` passed 100,000 randomized heap operations, and `independent-proof.py` passed 4,096 exhaustive three-node directed graphs plus 1,000 random multigraphs against Floyd–Warshall. Whole-program random reference tests (16,000 queries), exhaustive three-node tests (36,864 queries), the maximum-weight chain and 6,000 repeated/unreachable queries all passed; all published full-seed hashes matched.
+
+In nine native shared ARM pairs (`report.json`), median wall was 0.2896 s candidate vs 0.2946 s baseline, CPU 1.868 vs 1.837 s. In an eleven-pair repeat (`repeat.json`), medians were 0.2644 vs 0.2667 s, CPU 1.854 vs 1.841 s; maximum process RSS 534,773,760 vs 535,281,664 B. These tiny differences and shared-host variation do not establish an official speed gain. No candidate was selected and no Mac Docker was used. Run `compare.py` with separately generated data and recheck x86 wall/cgroup memory before drawing target conclusions.
