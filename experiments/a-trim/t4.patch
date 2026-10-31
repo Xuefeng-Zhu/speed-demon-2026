@@ -1,0 +1,197 @@
+--- a/track-a/src/main.rs
++++ b/track-a/src/main.rs
+@@ -66,7 +66,6 @@
+ #[inline(always)]
+ fn eq_mask(a: &[u8], i: usize, b: Option<(&[u8], usize)>, c: u8) -> u64 {
+     assert!(i + 64 <= a.len() && b.map_or(true, |(b, j)| j + 64 <= b.len()));
+-    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+     // SAFETY: in bounds by the assert; AVX2 is enabled at compile time; loads are unaligned.
+     unsafe {
+         use std::arch::x86_64::*;
+@@ -75,8 +74,6 @@
+         let half = |k| _mm256_movemask_epi8(_mm256_cmpeq_epi8(load(a, i + k), other(k))) as u32;
+         half(0) as u64 | (half(32) as u64) << 32
+     }
+-    #[cfg(not(all(target_arch = "x86_64", target_feature = "avx2")))]
+-    (0..64).fold(0, |m, k| m | ((a[i + k] == b.map_or(c, |(b, j)| b[j + k])) as u64) << k)
+ }
+ 
+ /// Hash of the endpoint of `n` bytes at `s`, from its first and last words and length.
+@@ -118,8 +115,8 @@
+ /// so a probe touches one or two adjacent cache lines. The arena ends with 64 zero bytes so
+ /// `eq_mask` may read past the last name.
+ struct Table {
+-    slots: Vec<usize>,   // 1 + offset of the entry in `arena`, or 0 if empty
+-    entries: Vec<usize>, // entry offsets, for regrowing
++    slots: Vec<usize>, // 1 + offset of the entry in `arena`, or 0 if empty
++    len: usize,
+     arena: Vec<u8>,
+ }
+ 
+@@ -127,8 +124,9 @@
+     /// Returns the shared id of endpoint `d[s..e]` (hash `h`), asking `new` for it if unseen.
+     #[inline(always)]
+     fn find(&mut self, d: &[u8], h: u64, s: usize, e: usize, new: impl FnOnce() -> u32) -> u32 {
+-        if self.entries.len() * 2 >= self.slots.len() {
+-            self.grow();
++        if self.slots.is_empty() {
++            // The spec fixes 1,842 endpoints per seed; 4,096 slots keep the load below one half.
++            self.slots = vec![0; 1 << 12];
+         }
+         let (mask, n) = (self.slots.len() - 1, e - s);
+         let mut i = (h >> 40) as usize & mask;
+@@ -139,12 +137,10 @@
+                 && meta as u32 as usize == n
+                 && if n < 64 {
+                     !eq_mask(&self.arena, at + 16, Some((d, s)), 0) & ((1 << n) - 1) == 0
+-                } else if n < 128 {
+-                    // The second read ends within the name's own 64-byte zero tail.
++                } else {
++                    // In bounds as the arena ends with 64 zero bytes; bytes past the name are masked.
+                     !eq_mask(&self.arena, at + 16, Some((d, s)), 0) == 0
+                         && !eq_mask(&self.arena, at + 80, Some((d, s + 64)), 0) & ((1 << (n - 64)) - 1) == 0
+-                } else {
+-                    self.arena[at + 16..at + 16 + n] == d[s..e]
+                 }
+             {
+                 return (meta >> 32) as u32;
+@@ -159,23 +155,11 @@
+         self.arena.extend_from_slice(&id.to_le_bytes());
+         self.arena.extend_from_slice(&d[s..e]);
+         self.arena.resize((self.arena.len() + 7) / 8 * 8 + 64, 0);
+-        self.entries.push(at);
++        self.len += 1;
++        assert!(self.len < 2048, "more endpoints than the spec allows");
+         self.slots[i] = at + 1;
+         id
+     }
+-
+-    #[cold]
+-    fn grow(&mut self) {
+-        self.slots = vec![0; (self.slots.len() * 2).max(1 << 12)];
+-        let mask = self.slots.len() - 1;
+-        for &at in &self.entries {
+-            let mut i = (load(&self.arena, at) >> 40) as usize & mask;
+-            while self.slots[i] != 0 {
+-                i = (i + 1) & mask;
+-            }
+-            self.slots[i] = at + 1;
+-        }
+-    }
+ }
+ 
+ /// One of 16 maps shared by all threads (sharded by hash, to spread lock contention), from
+@@ -200,17 +184,12 @@
+         let day = (y >> 24 & 0xff) + 31 * (x >> 8 & 0xff) - 30;
+         let hour = (day * 24 + (y >> 48 & 0xff) - 18) as usize;
+         let s = i + 29 + find_byte(load(d, i + 28), b' ');
+-        // The space after the endpoint: among the next 64 or 128 bytes, else a word at a time.
++        // The space after the endpoint, among the next 128 bytes (endpoints are at most 125).
+         let mut e = s + eq_mask(d, s, None, b' ').trailing_zeros() as usize;
+         if e == s + 64 {
+             e += eq_mask(d, e, None, b' ').trailing_zeros() as usize;
+-            if e == s + 128 {
+-                while find_byte(load(d, e), b' ') == 8 {
+-                    e += 8;
+-                }
+-                e += find_byte(load(d, e), b' ');
+-            }
+         }
++        assert!(e < s + 128, "endpoint longer than the spec allows");
+         let h = hash(d, s, e - s);
+         let id = table.find(d, h, s, e, || {
+             let mut map = shared[(h >> 60) as usize].lock().unwrap(); // top 4 bits pick a shard
+@@ -236,29 +215,14 @@
+     hours
+ }
+ 
+-/// Two-digit decimal strings "00" to "99".
+-const PAIRS: &[u8; 200] = b"0001020304050607080910111213141516171819\
+-2021222324252627282930313233343536373839\
+-4041424344454647484950515253545556575859\
+-6061626364656667686970717273747576777879\
+-8081828384858687888990919293949596979899";
+-
+ /// Writes " " and the decimal digits of `v` at `b[at..]`; returns the index past them.
+ #[inline(always)]
+ fn put_num(b: &mut [u8], at: usize, mut v: u64) -> usize {
+     b[at] = b' ';
+     let end = at + 2 + v.checked_ilog10().unwrap_or(0) as usize;
+-    let mut i = end;
+-    while v >= 100 {
+-        let p = (v % 100) as usize * 2;
+-        v /= 100;
+-        i -= 2;
+-        b[i..i + 2].copy_from_slice(&PAIRS[p..p + 2]);
+-    }
+-    if v >= 10 {
+-        b[i - 2..i].copy_from_slice(&PAIRS[v as usize * 2..v as usize * 2 + 2]);
+-    } else {
+-        b[i - 1] = b'0' + v as u8;
++    for i in (at + 1..end).rev() {
++        b[i] = b'0' + (v % 10) as u8;
++        v /= 10;
+     }
+     end
+ }
+@@ -283,7 +247,6 @@
+ /// value of rank r is the largest value with at most r values below it, so one branch-free count
+ /// per value replaces sorting. Reads `8 * V` values from the start of `v`, so the caller's buffer
+ /// must extend at least that far past it.
+-#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+ #[inline(always)]
+ fn small_ranks<const V: usize>(lat: &[u32], at: usize, n: usize, r: [usize; 3]) -> [u32; 3] {
+     use std::arch::x86_64::*;
+@@ -324,17 +287,13 @@
+ /// The values of ranks `r` (0-based) among `v`.
+ #[inline(always)]
+ fn select_ranks(v: &mut [u32], [r50, r95, r99]: [usize; 3]) -> [u32; 3] {
+-    if v.len() <= 16 {
+-        v.sort_unstable();
+-    } else {
+-        // Each selection leaves larger values to the right, so later ones search less.
+-        v.select_nth_unstable(r50);
+-        if r95 > r50 {
+-            v[r50 + 1..].select_nth_unstable(r95 - r50 - 1);
+-        }
+-        if r99 > r95 {
+-            v[r95 + 1..].select_nth_unstable(r99 - r95 - 1);
+-        }
++    // Each selection leaves larger values to the right, so later ones search less.
++    v.select_nth_unstable(r50);
++    if r95 > r50 {
++        v[r50 + 1..].select_nth_unstable(r95 - r50 - 1);
++    }
++    if r99 > r95 {
++        v[r95 + 1..].select_nth_unstable(r99 - r95 - 1);
+     }
+     [v[r50], v[r95], v[r99]]
+ }
+@@ -383,7 +342,6 @@
+         let at = next[id] as usize - n;
+         let rank = |p: usize| (p * n + 99) / 100 - 1;
+         let r = [rank(50), rank(95), rank(99)];
+-        #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+         let [p50, p95, p99] = match n {
+             0..=8 => small_ranks::<1>(lat, at, n, r),
+             9..=16 => small_ranks::<2>(lat, at, n, r),
+@@ -391,19 +349,7 @@
+             33..=64 => small_ranks::<8>(lat, at, n, r),
+             _ => select_ranks(&mut lat[at..at + n], r),
+         };
+-        #[cfg(not(all(target_arch = "x86_64", target_feature = "avx2")))]
+-        let [p50, p95, p99] = select_ranks(&mut lat[at..at + n], r);
+         let e = counts[id] >> 32;
+-        if prefix.len() + name.len() + 6 * 21 + 1 > line.len() {
+-            // Longer than the spec allows; format it the slow way.
+-            out.extend_from_slice(prefix.as_bytes());
+-            out.extend_from_slice(name);
+-            for x in [n as u64, p50 as u64, p95 as u64, p99 as u64, e, e * 1_000_000 / n as u64] {
+-                out.extend_from_slice(format!(" {x}").as_bytes());
+-            }
+-            out.push(b'\n');
+-            continue;
+-        }
+         let mut k = prefix.len() + name.len();
+         line[prefix.len()..k].copy_from_slice(name);
+         for x in [n as u64, p50 as u64, p95 as u64, p99 as u64, e, e * 1_000_000 / n as u64] {
