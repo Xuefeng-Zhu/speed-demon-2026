@@ -32,4 +32,6 @@ Review both guard fallbacks and the exact candidate independently, measure actua
 
 ## Dot VM x86 result
 
-The parent-run native x86 VM executed the real SSE4.2 path: repeated paired wall times were 8.3% and 5.0% lower; CPU times were 8.6% and 7.3% lower, with slightly lower native RSS. Full hashes and forced collision, fallback and guard tests passed. Across this, C AVX2 and B worker packages, 333 full hashes, 28 alternate references and actual x86 stress checks passed. These are native VM measurements, not official cgroup or scoring-box results. The CRC candidate is selected for separate official practice.
+The parent-run native x86 VM executed the real SSE4.2 path: repeated paired wall times were 8.3% and 5.0% lower; CPU times were 8.6% and 7.3% lower, with slightly lower native RSS. Full hashes and forced collision, fallback and guard tests passed. Across this, C AVX2 and B worker packages, 333 full hashes, 28 alternate references and actual x86 stress checks passed. These are native VM measurements, not official cgroup or scoring-box results. The CRC candidate was selected for separate official practice.
+
+Official CRC batches measured 0.303478 and 0.311037 s; recent no-CRC batches included 0.301393, 0.305585, 0.309317 and 0.310730 s. All gates passed. The separate batches do not establish an official speed benefit, so the original hash was restored; native VM gains are retained above.

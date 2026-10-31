@@ -43,33 +43,6 @@ fn key(data: &[u8], s: usize, n: usize) -> Key {
     }))
 }
 
-// CRC32C is a hash here, not an answer or a checksum requirement. A portable
-// implementation exists only for tests; production generic builds use the
-// original hash. All lookups still compare the complete key.
-#[cfg(any(all(target_arch = "x86_64", target_feature = "sse4.2"), b_crc_emulate))]
-#[inline]
-fn short_crc(x: u64) -> usize {
-    #[cfg(b_crc_forced_collision)]
-    { let _ = x; 0 }
-    #[cfg(all(not(b_crc_forced_collision), target_arch = "x86_64", target_feature = "sse4.2"))]
-    unsafe { std::arch::x86_64::_mm_crc32_u64(0, x) as usize }
-    #[cfg(all(not(b_crc_forced_collision), not(all(target_arch = "x86_64", target_feature = "sse4.2")), b_crc_emulate))]
-    {
-        const fn table() -> [u32; 256] {
-            let mut out = [0; 256]; let mut i = 0;
-            while i < 256 { let mut x = i as u32; let mut j = 0;
-                while j < 8 { x = (x >> 1) ^ (0x82f63b78 & (0u32.wrapping_sub(x & 1))); j += 1; }
-                out[i] = x; i += 1;
-            }
-            out
-        }
-        const LUT: [u32; 256] = table();
-        let mut c = 0u32;
-        for b in x.to_le_bytes() { c = (c >> 8) ^ LUT[((c as u8) ^ b) as usize]; }
-        c as usize
-    }
-}
-
 /// The queries and their terms: an open-addressing table from token to dense
 /// term id, and what the corpus scan does with each term: its roles, and the
 /// phrases it anchors as (query index, phrase, position of the term in it).
@@ -82,8 +55,6 @@ struct Plan<'q> {
     role: Vec<u8>,
     anchors: Vec<Vec<(usize, &'q [u32], usize)>>,
     short_slots: Vec<u32>,
-    #[cfg(any(all(target_arch = "x86_64", target_feature = "sse4.2"), b_crc_emulate))]
-    short_crc_mode: bool,
 }
 
 impl Plan<'_> {
@@ -100,35 +71,6 @@ impl Plan<'_> {
         let count = self.keys.iter().filter(|k| k.0[1..].iter().all(|&x| x == 0)).count();
         self.short_slots = vec![MISS; (count * 2).max(1).next_power_of_two()];
         let mask = self.short_slots.len() - 1;
-        #[cfg(any(all(target_arch = "x86_64", target_feature = "sse4.2"), b_crc_emulate))]
-        {
-            self.short_crc_mode = false;
-            let mut valid = true;
-            for (id, k) in self.keys.iter().enumerate() {
-                if k.0[1..].iter().any(|&x| x != 0) { continue; }
-                let mut i = short_crc(k.0[0]) & mask;
-                let mut extra = 0;
-                while self.short_slots[i] != MISS {
-                    i = (i + 1) & mask; extra += 1;
-                    if extra > 32 { valid = false; break; }
-                }
-                if !valid { break; }
-                self.short_slots[i] = id as u32;
-            }
-            // Bound failed lookup cost too: an insertion displacement bound
-            // alone does not bound the length of a cyclic occupied cluster.
-            if valid {
-                let mut run = 0usize;
-                for &slot in self.short_slots.iter().cycle().take(self.short_slots.len() * 2) {
-                    if slot == MISS { run = 0; } else {
-                        run += 1;
-                        if run > 64 { valid = false; break; }
-                    }
-                }
-            }
-            if valid { self.short_crc_mode = true; return; }
-            self.short_slots.fill(MISS);
-        }
         for (id, k) in self.keys.iter().enumerate() {
             if k.0[1..].iter().any(|&x| x != 0) { continue; }
             let mut i = Self::short_hash(k.0[0]) & mask;
@@ -145,11 +87,7 @@ impl Plan<'_> {
         let x = u64::from_le_bytes(src.try_into().unwrap()) | 0x2020_2020_2020_2020;
         let x = x & ((1u128 << (n * 8)) - 1) as u64;
         let mask = self.short_slots.len() - 1;
-        #[cfg(any(all(target_arch = "x86_64", target_feature = "sse4.2"), b_crc_emulate))]
-        let hash = if self.short_crc_mode { short_crc(x) } else { Self::short_hash(x) };
-        #[cfg(not(any(all(target_arch = "x86_64", target_feature = "sse4.2"), b_crc_emulate)))]
-        let hash = Self::short_hash(x);
-        let mut i = hash & mask;
+        let mut i = Self::short_hash(x) & mask;
         loop {
             let id = self.short_slots[i];
             if id == MISS || self.keys[id as usize].0[0] == x { return id; }
