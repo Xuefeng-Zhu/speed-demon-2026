@@ -120,3 +120,17 @@ all methods, equal-cheap-word families, 5,000 and 70,000 distinct endpoints with
 boundary latencies, at 1, 2, 3, 7 and 12 threads) on the AVX2 build, on a build with a forced
 constant hash (every probe collides; `--quick`), and on a scalar build without
 `target-cpu=x86-64-v3` (fallback `eq_mask`; also full seed-1 hash).
+
+The rows below are measured against `cur-1.rs`, the production source after `p2b` (identical to
+`p2b-inline.rs`). Parse-phase medians at 8 threads from `parse-p4.json`: `cur` 21.71 ms, `p4a`
+20.98, `p4b` 21.23, `p5` 21.12.
+
+| Candidate | Description | 8 threads | 12 threads | Verdict | JSON |
+|---|---|---:|---:|---|---|
+| `p4a-hour-swar.rs` | hour from one 8-byte load of `MM-DDTHH` with nibble arithmetic instead of five byte loads | 0.9776 (70%), 0.9949 (57%) | 0.9756 (75%), 0.9759 (70%) | not kept alone: 8-thread effect did not reproduce; folded into `p4ab` | `p4a-p5.json`, `p4a-hour-swar-2.json` |
+| `p4b-long-endpoints.rs` | second 64-byte AVX2 scan and masked compare for endpoints of 64 to 127 bytes (about 4% of lines are 82 bytes) instead of a word loop and `memcmp` | parse phase only: 21.23 vs 21.71 ms | | folded into `p4ab` | `parse-p4.json` |
+| `p4ab-trim.rs` | `p4a` plus `p4b` | 0.9784 (65%), 0.9842 (58%) | 0.9861 (64%), 0.9904 (60%) | **kept** (production) | `p4ab-trim.json`, `p4ab-trim-2.json` |
+| `p5-dynamic.rs` | 8 line-aligned ranges per thread taken from an atomic counter, one table and hour buckets per thread | 1.0011 (48%) | 1.0087 (44%) | rejected on this homogeneous VM; worth an official test only if the scoring box's 12 threads mix P and E cores | `p4a-p5.json` |
+
+`p4ab` correctness: `check.py`, `adversarial.py` on the AVX2 build (cargo), forced-collision
+build (`--quick`) and scalar build, and the scalar full seed-1 hash.

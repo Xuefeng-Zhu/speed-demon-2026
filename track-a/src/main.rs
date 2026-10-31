@@ -136,6 +136,10 @@ impl Table {
                 && meta as u32 as usize == n
                 && if n < 64 {
                     !eq_mask(&self.arena, at + 16, Some((d, s)), 0) & ((1 << n) - 1) == 0
+                } else if n < 128 {
+                    // The second read ends within the name's own 64-byte zero tail.
+                    !eq_mask(&self.arena, at + 16, Some((d, s)), 0) == 0
+                        && !eq_mask(&self.arena, at + 80, Some((d, s + 64)), 0) & ((1 << (n - 64)) - 1) == 0
                 } else {
                     self.arena[at + 16..at + 16 + n] == d[s..e]
                 }
@@ -186,18 +190,23 @@ fn parse(d: &[u8], mut i: usize, end: usize, shared: &[Shared], next_id: &Atomic
     let mut table = Table::default();
     let mut hours = vec![(Vec::new(), Vec::new()); HOURS];
     while i < end {
-        let digit = |k: usize| (d[i + k] - b'0') as usize;
-        // October 30, 31 and November 1, 2 become day indexes 0..=3.
-        let day = digit(8) * 10 + digit(9) + 31 * digit(6) - 30;
-        let hour = day * 24 + digit(11) * 10 + digit(12) - 18;
+        // Bytes 5..13 are "MM-DDTHH"; their low nibbles x make 10 * x[k] + x[k + 1] in byte k of
+        // y without carries. October 30, 31 and November 1, 2 become day indexes 0..=3.
+        let x = load(d, i + 5) & (ONES * 0x0f);
+        let y = x * 10 + (x >> 8);
+        let day = (y >> 24 & 0xff) + 31 * (x >> 8 & 0xff) - 30;
+        let hour = (day * 24 + (y >> 48 & 0xff) - 18) as usize;
         let s = i + 29 + find_byte(load(d, i + 28), b' ');
-        // The space after the endpoint: among the next 64 bytes, else a word at a time.
+        // The space after the endpoint: among the next 64 or 128 bytes, else a word at a time.
         let mut e = s + eq_mask(d, s, None, b' ').trailing_zeros() as usize;
         if e == s + 64 {
-            while find_byte(load(d, e), b' ') == 8 {
-                e += 8;
+            e += eq_mask(d, e, None, b' ').trailing_zeros() as usize;
+            if e == s + 128 {
+                while find_byte(load(d, e), b' ') == 8 {
+                    e += 8;
+                }
+                e += find_byte(load(d, e), b' ');
             }
-            e += find_byte(load(d, e), b' ');
         }
         let h = hash(d, s, e - s);
         let id = table.find(d, h, s, e, || {
