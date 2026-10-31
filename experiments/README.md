@@ -166,3 +166,7 @@ All tracks passed every gate; see `board-23f.json`. B's exact short-token table 
 ## Same-code official repeat for e88ee2c
 
 The e88ee2c push changed experiment records and B performance notes, not selected source or Dockerfiles. All tracks passed every gate; see `board-e88.json`. B repeated at T=0.315290 s, M=224,714,752 bytes, S=478, K=16.451282. The same candidate's previous run was 0.346703 s, and the earlier AVX2 baseline run was 0.341042 s. Separate board runs are not paired and exhibit variation; the repeat and two dot VM paired batches support retaining the short-token candidate for speed. These are public-seed practices, not final hidden-seed scores.
+
+## Official practice run for 8c273db
+
+All tracks passed every gate; `board-8c.json` records run IDs. B's dense Boolean summary measured T=0.303369 s, M=223,789,056 bytes, S=496, K=16.692436, versus 0.315290 s, 224,714,752 bytes, S=478, K=16.451282 for the preceding practice. A/C/D measured 0.050286/0.129274/0.384428 s. Separate public-seed runs are not paired or final holdout scores.
