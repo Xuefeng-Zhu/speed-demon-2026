@@ -72,3 +72,5 @@ Official public-seed practice run `run-e874cd2691bd` at commit `1b2da3d095acd097
 ## 1024 dictionary shards
 
 The speed-focused candidate uses 1024 independent dictionary shards instead of 256. On the shared x86 VM its native median was 0.1287 s versus 0.1347 s for 256; all full hashes and 360 independent corpus/worker checks across shard variants passed. These are not official cgroup scores, and the official run must measure time, memory and S. The prior source is `experiments/c-worker-baseline-15c/main.rs`. At 15c6be0 the 256-shard run `run-0af69c4884d5` passed every gate with T=0.136191 s, M=17,403,904 bytes, S=170, K=17.706128 (`experiments/board-15c.json`).
+
+Official practice `run-d8e695246499` at b9c2b54 passed every gate: T=0.135942 s, M=17,813,504 bytes, S=170, K=17.640076. The previous run measured T=0.136191 s; this difference is too small to distinguish from noise. See `experiments/board-b9.json`.

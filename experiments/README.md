@@ -126,3 +126,7 @@ All four tracks passed every gate; run IDs and measurements are in `board-1b2.js
 ## Official practice run for 15c6be0
 
 All four tracks passed the check, build, correctness, timeout and sandbox gates; measurements and run IDs are in `board-15c.json`. The nonlinear packed B candidate scored T=1.343342 s, M=256,245,760 bytes, S=379, K=8.038497. The preceding bounded candidate at 1b2da3d scored T=1.447820 s, M=256,856,064 bytes, S=335, K=7.883941. These are separate public-seed practice runs rather than paired or final hidden-seed scores.
+
+## Official practice run for b9c2b54
+
+All four tracks passed every gate; `board-b9.json` records the exact run IDs. A six-worker default measured T=0.050492 s versus the previous auto-worker T=0.047562 s. Because the priority is absolute speed, auto workers were restored for another target-machine comparison; the six-worker source is `a-six-b9/main.rs`. C 1024 shards measured 0.135942 s versus 0.136191 s for the prior 256 shards. D meeting-update measured 0.717778 s versus the prior 0.802058 s, with K 8.920170 versus 8.451791. These are separate public-seed practice runs; differences may reflect run-to-run variability. The full public board JSON response was truncated, but PeppaPig's complete team object was decoded and its commit and all gates verified.
