@@ -30,3 +30,5 @@ python3 tools/compare.py --baseline /path/to/control --variant /path/to/pgo --da
 ```
 
 Also verify actual images under official read-only/no-network sandbox, full data and multiple worker counts; include compact/escape and long-endpoint forced-collision stress. The comparator removes inherited `SD_THREADS` and records its optional `--threads N` override. It records wall/CPU and native process RSS, not official parent-cgroup memory. PGO's effect and build success remain unmeasured until these tests complete.
+
+Parent-run x86 dot VM offline matched-LLVM PGO comparison showed no repeatable win: 9-worker wall −2.6% then +6.0%, 12-worker +3.4% then −1.2%, with native RSS unchanged. Across 128 full hashes plus reference, boundary and collision tests, outputs matched. These are native measurements, not official cgroup or Docker results. Retain the non-PGO selected build.
