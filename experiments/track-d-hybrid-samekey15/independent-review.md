@@ -1,0 +1,7 @@
+# Independent batch review
+
+An independent static review compared the exact selected hybrid with batch16. Both minima are materialized before the original stop and side choice. Every entry subsequently popped from the selected zero bucket has that side's current minimum; zero-weight relaxations can only add entries with that same key. At most 16 pops are performed before returning to the original stop/side logic. Delaying a stop may expand extra valid paths or trigger conservative cutoff/pool fallback earlier, but does not discard a shorter path. Stale-entry checks, touched-slot cleanup and exact u64 rerun remain unchanged. The same reasoning holds for batch4 because it makes the same transformation with a shorter bound.
+
+The review found no concrete defect under the original Dijkstra invariants and official u32 weight/finite-graph bounds. The exact-source `oracle4.py` and `oracle16.py` instrument later-in-batch pops and test directed random graphs, zero-weight cycles/stars and batch-boundary sizes. `verify4.py` and `verify.py` exercise forced caps, cutoff boundaries and independent graph references. `run-forced.py` explicitly asserts exhausted-cap cleanup and wide fallback for caps 0/1/2 in temporary copies of both variants.
+
+These finite tests do not prove all hidden inputs, Linux x86 speed, or parent-cgroup peak. Additional batch work can change allocation and fallback patterns. The selected hybrid's 8 GiB worst-case cgroup accounting remains unproved.
