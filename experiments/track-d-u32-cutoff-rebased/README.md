@@ -23,3 +23,5 @@ python3 experiments/track-d-balanced-frontier/extremes.py /tmp/d-u32-rebase-buil
 ```
 
 No datasets, credentials, binaries, generated answers or third-party code are in the transfer archive. No Mac Docker was used.
+
+Parent-run native x86 dot VM full-seed batches were 19.3–20.1% faster with median process RSS approximately 37% lower. A full-node, 12-worker forced-fallback chain increased process RSS from 382 to 605 MiB and wall time by 54%; 144 full hashes, 16 alternate references and cutoff/oracle/extreme tests passed. These are native VM results, not official scoring-box or cgroup measurements. Worst-case 8 GiB compliance remains unproven because both search states and input-dependent radix heap capacities can be retained; do not promote on these measurements alone. See `../track-d-u32-memory-review/README.md`.
