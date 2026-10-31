@@ -1,0 +1,5 @@
+# C money and lookup numeric screens — not selected
+
+Baseline is selected direct-country parser SHA-256 `76497615f1abc0bf28a7b0d1d18030ebc263ddf8587d98c263ea5fc9e8840538`. `candidate.rs` tries guarded SWAR decoding of the money integer and two-digit fraction, with scalar fallback and a checked terminator position; it changes only record amounts. `lookup-fast.rs` applies the already selected `positive_fast` integer decoder to region lookup rows instead. They are independent alternatives and remain unselected. Neither has broad alternate-input testing or independent review.
+
+Fifteen randomized full-data shared ARM pairs plus warmup for the money variant matched 32 hashes; median candidate/baseline wall was 0.12339/0.11442 s and CPU 0.72556/0.71024 s, a regression. Nine pairs plus warmup for the lookup variant matched 20 hashes; wall 0.10327/0.10402 s, CPU 0.67480/0.68205 s. The latter is too small to establish a gain. Raw reports preserve samples. These are native shared-host results, not Linux x86 or official; no Mac Docker was used.
