@@ -78,14 +78,6 @@ fn num(text: &[u8], p: &mut usize) -> u32 {
     v
 }
 
-/// Asks the CPU to start loading `x[i]` into cache, if `i` is in range.
-fn prefetch<T>(x: &[T], i: usize) {
-    #[cfg(target_arch = "x86_64")]
-    if let Some(p) = x.get(i) {
-        unsafe { std::arch::x86_64::_mm_prefetch::<3>(p as *const T as *const i8) };
-    }
-}
-
 /// Calls `f(u, v, w)` for every `u v w` line in `text[p..end]`.
 fn each_edge(text: &[u8], mut p: usize, end: usize, mut f: impl FnMut(u32, u32, u32)) {
     while p < end {
@@ -226,16 +218,6 @@ fn renumber(g: &Csr, bits: u32, threads: usize) -> (Vec<u32>, Csr) {
             mine.push(root as u32);
             let mut k = 0;
             'grow: while k < mine.len() {
-                // Nodes queued ahead: their row bounds, rows and heads' claims.
-                if let Some(&v) = mine.get(k + 16) {
-                    prefetch(&g.first, v as usize);
-                }
-                if let Some(&v) = mine.get(k + 8) {
-                    prefetch(&g.adj, g.first[v as usize] as usize);
-                }
-                if let Some(&v) = mine.get(k + 4) {
-                    edges(g, v as usize).iter().for_each(|&e| prefetch(r, (e & ((1 << bits) - 1)) as usize));
-                }
                 for &e in edges(g, mine[k] as usize) {
                     let v = (e & ((1 << bits) - 1)) as usize;
                     if mine.len() == CLUSTER {
