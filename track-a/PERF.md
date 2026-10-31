@@ -92,4 +92,10 @@ The unchanged Linux candidate subsequently matched the published full seed-1 SHA
 
 Official public-seed practice run `run-b4c4f652f111` at commit `89795bbc852b5e24e9f976c7291b3c3a21101361` passed all gates: T=0.047542 s, M=48,148,480 bytes, S=273, K=27.939894. The prior C++ run at 02d7b4c had K=13.101162. These are separate practice measurements, not final holdout results. See `experiments/board-897.json`.
 
+## Six-worker default
+
+The current candidate caps the default at six available workers, while preserving the `SD_THREADS` override. On the shared dot VM, native x86 medians were 0.0428 s with six, 0.0462 s with the nine-worker default on that VM, and 0.0566 s with twelve. These are not official scoring-box measurements; the official runner may expose a different CPU count and the cgroup peak and K must be measured on the board. The previous source is `experiments/a-worker-baseline-15c/main.rs`.
+
+A temporary Darwin-adapted build matched the full seed-1 hash at default and forced one and twelve workers, the synthetic oracle suite including empty and two 100,000-record datasets, 14 page-edge sizes at six worker counts, and the 132,624-group latency grid at five worker counts. The Linux candidate differs only in its default cap; the local Docker socket was unavailable, so the official build and sandbox gates must validate the Linux image. At 15c6be0, prior A run `run-7373c45a5aaf` passed all gates and reported T=0.047562 s, M=50,741,248 bytes, S=273, K=27.642525 (`experiments/board-15c.json`).
+
 `track-a-verification/latency_grid_test.py` additionally checked 132,624 singleton groups across all 72 hours and 1,842 endpoints, random unsigned-32-bit latencies of every decimal width, 0 and 4294967295, and 1, 2, 6, 12 and 64 workers. This used the same Darwin-only test adaptation.
