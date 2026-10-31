@@ -1,0 +1,3 @@
+# B XOR-indexed per-worker token cache (not selected)
+
+A 1,024/4,096-entry direct-mapped exact-key cache uses an XOR of 16-bit token chunks as a cheap first lookup; every miss falls back to the selected short dictionary. Nine warmed randomized full-seed ARM pairs each matched the hash. The 1,024-entry candidate measured 0.274695 s wall and 1.699120 s CPU vs 0.252392 and 1.579569 for baseline; the 4,096-entry candidate 0.297266 and 1.752701 vs 0.284997 and 1.597671. Shared-host timing is noisy, but CPU was 7.6–9.7% higher; neither is selected. The 16,384-entry source was not timed. No x86 AVX2 or broader correctness tests were run, and no Mac Docker was used.
