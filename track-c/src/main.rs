@@ -205,9 +205,11 @@ struct Event { offset: u32, len: u16, group: u16, hash: u64 }
 /// collision chains are capped and promoted to an independently salted map.
 const NONE: usize = usize::MAX;
 const PROMOTED: usize = usize::MAX - 1;
+const CACHE_SLOTS: usize = 32768;
 #[derive(Default)]
 struct OwnerDict {
     heads: HashMap<u64, usize>,
+    cache: Vec<(u64, usize)>,
     entries: Vec<(&'static [u8], usize)>,
     bits: Vec<u64>,
     promoted: HashMap<u64, HashMap<&'static [u8], usize>>,
@@ -240,7 +242,15 @@ impl OwnerDict {
         }
     }
     fn see(&mut self, name: &'static [u8], hash: u64, g: usize, words: usize) -> i64 {
-        let row=self.row(name,hash,words); let (w,bit)=(row*words+g/64,1u64<<(g%64));
+        if self.cache.is_empty() { self.cache = vec![(0, NONE); CACHE_SLOTS]; }
+        let i = hash as usize & (CACHE_SLOTS - 1);
+        let (cached_hash, cached_row) = self.cache[i];
+        let row = if cached_row != NONE && cached_hash == hash && self.entries[cached_row].0 == name {
+            cached_row
+        } else {
+            let row = self.row(name, hash, words); self.cache[i] = (hash, row); row
+        };
+        let (w,bit)=(row*words+g/64,1u64<<(g%64));
         let new=self.bits[w]&bit==0;self.bits[w]|=bit;new as i64
     }
 }
