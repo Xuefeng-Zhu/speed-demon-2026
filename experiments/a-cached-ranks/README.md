@@ -1,0 +1,7 @@
+# A cached endpoint ranks between summary passes (not selected)
+
+The variant adds a per-hour `Vec<u32>` containing global endpoint ranks in first-pass input order, then reads that vector in the second latency-scatter pass instead of repeating the chunk-local ID to global-rank lookup. It does not change parsing, ordering, percentile calculation or exact formatting. `baseline.rs` is the selected Track A source; `candidate.rs` is the isolated Linux variant. Both source files retain Linux MAP_ANONYMOUS flags. They matched the published full seed-1 output hash for every run. Neither was modified in the submitted track.
+
+Two randomized 12-worker native macOS ARM paired screens (temporary copies with only MAP_ANONYMOUS adjusted) produced inconsistent results. Nine measured pairs after warmup gave candidate 0.068997 s vs baseline 0.077351 s, CPU 0.2359 vs 0.2396 s; a second 15-pair run gave candidate 0.075335 s vs baseline 0.072534 s, CPU 0.2342 vs 0.2335 s. Candidate maximum native process RSS medians were roughly 4–7 MB higher. Every output hash passed. Reports are `screen.json` and `repeat.json`. Other work was active, so no x86 or official performance claim is supported. The candidate is not selected and has not been independently reviewed or tested on alternate inputs.
+
+Run `python3 compare.py --data /path/to/full-a --report /tmp/a-cached-ranks.json` on Linux with generated seed-1 data; the script compiles identical flags offline, alternates randomized order and verifies every hash. Process RSS is not warmed-cgroup peak. No Mac Docker was used.

@@ -1,0 +1,7 @@
+# B four-byte prefix filter (not selected)
+
+The candidate adds a 1,048,576-bit shared prefix filter derived from the first up-to-four lowercased bytes of each query term. A document token whose prefix bit is absent cannot match any query and skips full key construction and lookup; positive bits still take the unchanged exact lookup. It retains bounded phrase summaries, a 64 MiB bitmap payload cap, and exact full-key comparisons. This is an experimental screen, not selected code; adversarial reference and collision checks were not completed.
+
+On the shared macOS ARM host, seven measured alternating full seed-1 runs per source after warmup all produced the published output SHA-256. Median wall time was 0.490283 s for the filter and 0.463473 s for baseline; median CPU was 2.316960 versus 2.212948 s. Results are native, potentially contended, and not official x86 or cgroup measurements. The extra prefix computation and memory lookup did not justify this change on the observed workload. Raw samples are in `mac-arm-report.json`; the baseline source matches Track B at 4f2d688.
+
+To repeat, compile `baseline.rs` and `candidate.rs` with identical Rust release flags and use `python3 experiments/b-rust-lengthhash/compare.py --baseline /path/to/base --candidate /path/to/candidate --data /path/to/full-b --runs 7 --report /tmp/b-prefix-report.json` from the repository root. No data, credentials or binary artifacts are included. No Mac Docker was used.
