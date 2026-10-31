@@ -1,0 +1,7 @@
+# Two-way owner row cache (unselected)
+
+The baseline is exact current selected C source, SHA-256 `76b341e2b7e880fe4ceeee220206a63b48cd247bba4448aa7991a7ad825e8dd2`. Candidate SHA-256 `4664737f096f21b17acdb14dcd2289e1f2dfe6a924279b048802d2c24478a91d` retains 32,768 owner-local entries and adds a 16 KiB one-byte-per-set victim array. Each of 16,384 sets holds two entries; on hits it marks the opposite way as victim and on misses delegates to the existing exact `row` logic. Every hit checks both the full hash and exact name bytes. The candidate is unselected; collision stress, independent review, Linux/x86, cgroup and holdout tests have not been completed.
+
+The candidate matched 24 mixed corpora at five worker counts against the official reference. On generated full seed 1, 15 randomized paired native ARM measurements plus warmups all matched the published output hash. Candidate versus baseline median wall was 0.073784 vs 0.068961 s and CPU was 0.433362 vs 0.426678 s; median native process RSS was 287,506,432 vs 286,998,528 bytes. This isolated sample shows a regression, not an x86 or official result. Individual samples are in `arm-report.json`. A brief unrelated compile overlapped data generation only and ended before any candidate build or timed run. No Docker on the Mac was used.
+
+Reproduce using the comparator from `experiments/c-fused-owner-rebase/compare.py` with release-compiled `baseline.rs` and `candidate.rs` and a separately generated full seed-1 dataset. No generated data or executable is included.
