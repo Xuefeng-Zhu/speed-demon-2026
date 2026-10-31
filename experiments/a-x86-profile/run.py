@@ -28,7 +28,7 @@ RUSTFLAGS = ["--edition", "2021", "-C", "opt-level=3", "-C", "codegen-units=1", 
 PROBE_MODES = [("mmap-touch", None), ("mmap-sum", None), ("mmap-nodontneed-touch", None),
                ("mmap-nodontneed-sum", None), ("mmap-populate-sum", None),
                ("pread", 64), ("pread", 256), ("pread", 1024)]
-LIST_KINDS = {"parse_thread", "summary_worker", "thread"}
+LIST_KINDS = {"parse_thread", "summary_worker", "thread", "hour_job"}
 
 
 def sha256(path):
@@ -129,6 +129,25 @@ def derive(run, input_bytes):
     d["merge"] = delta("parse_done", "merge_done", "t")
     d["gap_merge_to_first_recv"] = p["writes"]["first_recv"] - ph["merge_done"]["t"]
     d["gap_merge_to_first_written"] = delta("merge_done", "first_written", "t")
+    # Head-of-line decomposition of the gap: first receipt (any hour), then waiting for hour 0,
+    # then hour 0's write_all.
+    w = p["writes"]
+    d["first_hour"] = w["first_hour"]
+    d["held_before_hour0"] = w["held_before_hour0"]
+    d["gap_first_recv_to_hour0_recv"] = w["hour0_recv"] - w["first_recv"]
+    d["gap_hour0_recv_to_first_written"] = ph["first_written"]["t"] - w["hour0_recv"]
+    d["first_write"] = w["first_write"]
+    jobs = {j["name"]: j for j in p["hour_job"]}
+    h0 = jobs[0]
+    d["hour0_start_after_merge"] = h0["t_start"] - ph["merge_done"]["t"]
+    d["hour0_dur"] = h0["dur"]
+    d["hour0_records"] = h0["records"]
+    first_wave = [jobs[h] for h in range(1, len(p["summary_worker"])) if h in jobs]
+    if first_wave:
+        d["first_wave_other_dur_median"] = statistics.median(j["dur"] for j in first_wave)
+        d["first_wave_other_records_median"] = statistics.median(j["records"] for j in first_wave)
+    d["hour_dur_median"] = statistics.median(j["dur"] for j in jobs.values())
+    d["hour_records_median"] = statistics.median(j["records"] for j in jobs.values())
     d["summary_write"] = delta("merge_done", "done", "t")
     d["after_summary_done"] = ph["done"]["t"] - p["summary_done"]["t"]
     d["outside_main"] = run["wall"] - ph["done"]["t"]

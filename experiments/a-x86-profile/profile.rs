@@ -502,9 +502,12 @@ fn main() {
                 let (mut hours, mut busy, mut out_max) = (0, 0.0, 0);
                 let mut lat = Vec::new();
                 while let Some((h, records)) = { let job = jobs.lock().unwrap().next(); job } {
-                    let a = Instant::now();
+                    let (a, ta) = (Instant::now(), now());
+                    let n: usize = records.iter().map(|(r, _)| r.len()).sum();
                     let out = summarize(h, records, rank, names, &mut lat);
-                    busy += a.elapsed().as_secs_f64();
+                    let dt = a.elapsed().as_secs_f64();
+                    busy += dt;
+                    eprintln!("hour_job {h} worker={w} t_start={ta:.9} dur={dt:.9} records={n} out_bytes={}", out.len());
                     SUMMARY_DONE_NS.fetch_max((now() * 1e9) as u64, Relaxed);
                     (hours, out_max) = (hours + 1, out_max.max(out.len()));
                     tx.send((h, out)).unwrap();
@@ -525,9 +528,16 @@ fn main() {
         let (mut pending, mut written) = (vec![None; HOURS], 0);
         let (mut first_recv, mut write_time, mut bytes, mut writes) = (None, 0.0, 0usize, 0usize);
         let (mut held, mut held_max, mut held_bytes, mut held_bytes_max) = (0usize, 0usize, 0usize, 0usize);
+        // Head-of-line decomposition: which hour arrives first, when hour 0 arrives, how many
+        // hours were held before it, and how long hour 0's write_all takes.
+        let (mut first_hour, mut hour0_recv, mut before_hour0, mut first_write) = (None, 0.0, 0usize, 0.0);
         for (h, out) in rx {
+            let t = now();
             if first_recv.is_none() {
-                first_recv = Some(now());
+                (first_recv, first_hour) = (Some(t), Some(h));
+            }
+            if h == 0 {
+                (hour0_recv, before_hour0) = (t, held);
             }
             (held, held_bytes) = (held + 1, held_bytes + out.capacity());
             (held_max, held_bytes_max) = (held_max.max(held), held_bytes_max.max(held_bytes));
@@ -535,18 +545,21 @@ fn main() {
             while let Some(out) = pending.get_mut(written).and_then(Option::take) {
                 let a = Instant::now();
                 f.write_all(&out).unwrap();
-                write_time += a.elapsed().as_secs_f64();
+                let dt = a.elapsed().as_secs_f64();
+                write_time += dt;
                 (bytes, writes) = (bytes + out.len(), writes + 1);
                 (held, held_bytes) = (held - 1, held_bytes - out.capacity());
                 if written == 0 {
+                    first_write = dt;
                     phase("first_written");
                 }
                 written += 1;
             }
         }
         eprintln!(
-            "writes total={write_time:.9} bytes={bytes} count={writes} first_recv={:.9} held_max={held_max} held_cap_bytes_max={held_bytes_max}",
-            first_recv.unwrap_or(0.0)
+            "writes total={write_time:.9} bytes={bytes} count={writes} first_recv={:.9} first_hour={} hour0_recv={hour0_recv:.9} held_before_hour0={before_hour0} first_write={first_write:.9} held_max={held_max} held_cap_bytes_max={held_bytes_max}",
+            first_recv.unwrap_or(0.0),
+            first_hour.map_or(-1, |h| h as i64)
         );
     });
     eprintln!("summary_done t={:.9}", SUMMARY_DONE_NS.load(Relaxed) as f64 * 1e-9);

@@ -2,7 +2,7 @@
 //!
 //! Usage: io-probe <file> <threads> <mode> [buf_kib]
 //! Modes:
-//!   mmap-touch / mmap-sum                     production-style map_file, read one u64 per 4 KiB
+//!   mmap-touch / mmap-sum                     production-style map_file, read one byte per 4 KiB
 //!                                             page (touch) or sum every u64 (sum), then
 //!                                             madvise(MADV_DONTNEED) the chunk
 //!   mmap-nodontneed-touch / mmap-nodontneed-sum  same without madvise
