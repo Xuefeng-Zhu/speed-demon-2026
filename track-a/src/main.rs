@@ -118,6 +118,30 @@ impl Table {
         self.slots[i] = self.names.len() as u32;
         self.names.len() - 1
     }
+    // Bound collision work, including while the table grows. A failed shard is discarded.
+    fn find_bounded(&mut self, d: &[u8], h: u64, s: usize, e: usize) -> Option<usize> {
+        if self.names.len() * 2 >= self.slots.len() {
+            self.slots = vec![0; (self.slots.len() * 2).max(1 << 12)];
+            for (h, s, e) in std::mem::take(&mut self.names) {
+                self.find_bounded(d, h, s, e)?;
+            }
+        }
+        let mask = self.slots.len() - 1;
+        let mut i = (h >> 40) as usize & mask;
+        let mut probes = 0;
+        while self.slots[i] != 0 {
+            let id = self.slots[i] as usize - 1;
+            let (nh, ns, ne) = self.names[id];
+            if nh == h && ne - ns == e - s && same(d, ns, s, e - s) { return Some(id); }
+            probes += 1;
+            if probes > 48 { return None; }
+            i = (i + 1) & mask;
+        }
+        self.names.push((h, s, e));
+        self.slots[i] = self.names.len() as u32;
+        Some(self.names.len() - 1)
+    }
+
 }
 
 /// One thread's chunk: its endpoint table and, per hour, records `id << 33 | is_5xx << 32 | latency`.
@@ -127,7 +151,84 @@ struct Chunk {
     escapes: Vec<Vec<u64>>,
 }
 
-fn parse(d: &[u8], mut i: usize, end: usize) -> Chunk {
+
+// CRC32C is only enabled when the compiled target guarantees SSE4.2. Exact byte
+// comparisons still decide identity. Test-only sd_crc_sim and sd_crc_constant
+// exercise restart on hosts without that instruction; official builds omit them.
+#[cfg(all(target_arch = "x86_64", target_feature = "sse4.2", not(any(sd_crc_sim, sd_crc_constant))))]
+#[inline(always)]
+fn fast_mix(h: u64, w: u64) -> u64 {
+    unsafe { (std::arch::x86_64::_mm_crc32_u64(h >> 32, w) as u64) << 32 }
+}
+#[cfg(sd_crc_sim)]
+#[inline(always)]
+fn fast_mix(h: u64, w: u64) -> u64 { (h ^ w).wrapping_mul(MIX) }
+#[cfg(sd_crc_constant)]
+#[inline(always)]
+fn fast_mix(_h: u64, _w: u64) -> u64 { 0 }
+
+#[cfg(any(all(target_arch = "x86_64", target_feature = "sse4.2"), sd_crc_sim, sd_crc_constant))]
+fn original_hash(d: &[u8], s: usize, e: usize) -> u64 {
+    let (mut p, mut h) = (s, 0u64);
+    while e - p >= 8 { h = (h ^ load(d, p)).wrapping_mul(MIX); p += 8; }
+    let k = e - p;
+    (h ^ (load(d, p) & ((1u64 << (8 * k)) - 1)) ^ k as u64).wrapping_mul(MIX)
+}
+
+fn parse(d: &[u8], i: usize, end: usize) -> Chunk {
+    #[cfg(any(all(target_arch = "x86_64", target_feature = "sse4.2"), sd_crc_sim, sd_crc_constant))]
+    { return parse_fast(d, i, end).unwrap_or_else(|| parse_original(d, i, end)); }
+    #[cfg(not(any(all(target_arch = "x86_64", target_feature = "sse4.2"), sd_crc_sim, sd_crc_constant)))]
+    { parse_original(d, i, end) }
+}
+
+#[cfg(any(all(target_arch = "x86_64", target_feature = "sse4.2"), sd_crc_sim, sd_crc_constant))]
+fn parse_fast(d: &[u8], mut i: usize, end: usize) -> Option<Chunk> {
+    const MADV_POPULATE_READ: i32 = 22; // Linux 5.14+; on older kernels pages fault in lazily.
+    let page = i & !4095;
+    let _ = (page, MADV_POPULATE_READ);
+    let (table, hours, escapes) = (Table::default(), vec![Vec::new(); HOURS], vec![Vec::new(); HOURS]);
+    let mut c = Chunk { table, hours, escapes };
+    while i < end {
+        let digit = |k: usize| (d[i + k] - b'0') as usize;
+        // October 30, 31 and November 1, 2 become day indexes 0..=3.
+        let day = digit(8) * 10 + digit(9) + 31 * digit(6) - 30;
+        let hour = day * 24 + digit(11) * 10 + digit(12) - 18;
+        let s = i + 29 + find_byte(load(d, i + 28), b' ');
+        // Find the space after the endpoint a word at a time, hashing the words on the way.
+        let (mut e, mut h) = (s, 0u64);
+        loop {
+            let w = load(d, e);
+            let k = find_byte(w, b' ');
+            if k < 8 {
+                h = fast_mix(h, (w & ((1 << (8 * k)) - 1)) ^ k as u64);
+                e += k;
+                break;
+            }
+            h = fast_mix(h, w);
+            e += 8;
+        }
+        let id = c.table.find_bounded(d, h, s, e)? as u64;
+        let (latency, next) = parse_latency(d, e + 5);
+        let is_5xx = (d[e + 1] == b'5') as u64;
+        if id < 2048 && latency < 0x000f_ffff {
+            c.hours[hour].push(((id as u32) << 21) | ((is_5xx as u32) << 20) | latency as u32);
+        } else {
+            c.hours[hour].push(u32::MAX);
+            c.escapes[hour].push(id << 33 | is_5xx << 32 | latency);
+        }
+        i = next;
+    }
+    // Restore the canonical hash in original ID order for cross-shard merging.
+    let names = std::mem::take(&mut c.table.names);
+    c.table.slots.clear();
+    for (_, start, stop) in names {
+        c.table.find(d, original_hash(d, start, stop), start, stop);
+    }
+    Some(c)
+}
+
+fn parse_original(d: &[u8], mut i: usize, end: usize) -> Chunk {
     const MADV_POPULATE_READ: i32 = 22; // Linux 5.14+; on older kernels pages fault in lazily.
     let page = i & !4095;
     let _ = (page, MADV_POPULATE_READ);
