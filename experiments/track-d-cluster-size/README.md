@@ -1,0 +1,5 @@
+# Bounded BFS cluster-size screen (unselected)
+
+These candidates differ from the experimental chunked parallel-clustering source only in maximum BFS cluster size (64, 256, 1024, 4096, or 16384 vertices). Root claim chunks remain 256. The exact selected positioned-read baseline is not modified. Clustering is performed at runtime and remains an experimental permutation; no target or official result is implied.
+
+A five-rotation shared ARM screen (`report.json`) showed extreme host-contention variation and candidate 4096 had lower median wall (0.21754 versus 0.41644 s for 256) with only 3.3% lower CPU. An eleven-pair repeat (`repeat.json`) reversed: 4096 was 0.30248 s versus 0.28030 s for 256, CPU 1.43784 versus 1.44667 s, peak native process RSS 552632320 versus 568967168 bytes. All 54 full runs including warmups matched the published hash. No substantial repeatable wall gain was found. The larger-size candidates have not had separate full independent graph stress or concurrency review; they remain unselected. The prior 256-node candidate also showed no stable x86 gain in the parent-run VM test. No Mac Docker was used.

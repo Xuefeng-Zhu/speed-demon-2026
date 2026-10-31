@@ -17,7 +17,7 @@ def quote(value):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--avx2', action='store_true', help='compile and test the actual AVX2 path on a supporting x86 host')
-    parser.add_argument('--source', type=Path, default=ROOT / 'track-c/src/main.rs')
+    parser.add_argument('--source', type=Path, default=ROOT / 'experiments/c-fused-namehash/candidate.rs')
     parser.add_argument('--reference', type=Path, default=ROOT / 'official/reference/c_join.py')
     parser.add_argument('--seeds', type=int, default=24, help='number of deterministic cases')
     args = parser.parse_args()

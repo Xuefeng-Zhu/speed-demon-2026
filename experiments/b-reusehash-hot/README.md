@@ -1,0 +1,5 @@
+# B sample hot-key table reusing the main hash (not selected)
+
+Unlike the earlier sample hot-key cache that computes a second hash, this candidate computes the selected short-token hash once and indexes a small 256- or 1,024-entry sample-weighted direct table with its low bits; a hit still requires exact full 64-bit key equality and a miss reuses the same hash in the original table. It derives entries from the existing query/corpus sample, without storing answers. Long tokens and all phrase/Boolean logic remain unchanged.
+
+Nine randomized warmed full-seed native ARM pairs per candidate all matched the published hash. The 256-entry candidate/baseline median wall was 0.310499/0.267189 s and CPU 1.814759/1.569030 s; the 1,024-entry candidate was 0.319599/0.275908 s and 1.799314/1.573601 s. These are shared-host scalar-tokenizer results, not x86/official/cgroup measurements. Both variants were slower locally and remain unselected. Alternate reference, adversarial collision and x86 SIMD tests were not performed. No Mac Docker was used.
