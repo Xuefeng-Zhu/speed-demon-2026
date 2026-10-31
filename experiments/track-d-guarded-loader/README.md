@@ -24,3 +24,7 @@ python3 experiments/track-d-guarded-loader/compare.py --data /path/to/full-d \
 ```
 
 A 10,000-edge/12-worker `skew.py` smoke observed the default-cap fallback and exact answers. `skew.py` generates only temporary data, forces a test-only worker count, and asserts actual default-budget bucket-cap fallback and exact answers on a high-skew graph. It supports `--edges 5000000 --nodes 1740512 --threads 12` for a larger VM stress; this is synthetic and not a scoring/cgroup proof. A whole-process timeout is enforced, and cleanup uses `TemporaryDirectory`; external SIGKILL may leave files behind.
+
+## Native x86 outcome
+
+Parent-run shared dot VM paired full-seed batches measured the candidate 0.8% slower and then 2.5% faster in wall time, while CPU was 1.4–1.5% higher. Across the comparison 72 full hashes, eight alternate references, 2,400 CSR checks and 24 failure/rollback checks passed. A synthetic 5,000,000-edge all-wide skew stress reported process peak RSS of 336,820 KiB for the guarded candidate versus 207,128 KiB for the baseline, about 63% higher. These native process measurements are not official scoring-box parent-cgroup peaks or a worst-case 8 GiB proof. There is no stable speed gain, so the candidate remains unselected.
