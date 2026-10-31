@@ -9,7 +9,7 @@
 //! 3. Chunks hold ascending, disjoint id ranges, so the answers merge in order.
 
 use std::fmt::Write as _;
-use std::{collections::HashMap, env, fs, sync::Barrier, thread};
+use std::{collections::HashMap, env, fs, thread, sync::{OnceLock, atomic::{AtomicUsize, Ordering}}};
 
 /// Term id of a token that no query uses.
 const MISS: u32 = u32::MAX;
@@ -229,9 +229,9 @@ impl PhraseStats {
 /// min(count, 10) ids in the second vector, id sum).
 type Answers = (Vec<(u32, u32, u64)>, Vec<u32>);
 
-/// Indexes the whole lines in data[lo..hi] and answers every query on them.
-/// Doc ids are local to the chunk until `part` adds the id of its first line.
-fn solve_chunk(data: &[u8], lo: usize, hi: usize, plan: &Plan, barrier: &Barrier, bitmap_limit: usize) -> Answers {
+/// Exact per-chunk postings and bounded phrase summaries.
+struct ChunkIndex { first: u32, ndocs: usize, offs: Vec<u32>, docs: Vec<u32>, hits: Vec<PhraseStats> }
+fn index_chunk(data: &[u8], lo: usize, hi: usize, plan: &Plan) -> ChunkIndex {
     let digits = data[lo..].iter().take_while(|&&b| b != b'\t');
     let first = digits.fold(0, |n, &b| n * 10 + (b - b'0') as u32);
     let nterms = plan.keys.len();
@@ -279,25 +279,53 @@ fn solve_chunk(data: &[u8], lo: usize, hi: usize, plan: &Plan, barrier: &Barrier
         }
     }
 
-    // Free the indexing state and wait for every chunk to get here, so the
-    // query phase never adds to the memory of a chunk that is still indexing.
-    drop(cur);
-    barrier.wait();
+    ChunkIndex { first, ndocs, offs, docs, hits }
+}
 
+/// Shared global dense bitmaps are built once per term under a total payload cap.
+struct DenseCache { slots: Vec<OnceLock<Option<Box<[u64]>>>>, used: AtomicUsize, limit: usize }
+impl DenseCache {
+    fn new(nterms: usize, limit: usize) -> Self {
+        Self { slots: (0..nterms).map(|_| OnceLock::new()).collect(), used: AtomicUsize::new(0), limit }
+    }
+    fn get(&self, term: usize, parts: &[ChunkIndex], words: usize) -> Option<&[u64]> {
+        self.slots[term].get_or_init(|| {
+            let bytes = words * std::mem::size_of::<u64>();
+            if self.used.fetch_update(Ordering::Relaxed, Ordering::Relaxed,
+                |used| used.checked_add(bytes).filter(|&end| end <= self.limit)).is_err() { return None; }
+            let mut bitmap = vec![0u64; words];
+            for p in parts {
+                for &d in &p.docs[p.offs[term] as usize..p.offs[term + 1] as usize] {
+                    let doc = p.first + d;
+                    bitmap[doc as usize >> 6] |= 1u64 << (doc & 63);
+                }
+            }
+            Some(bitmap.into_boxed_slice())
+        }).as_deref()
+    }
+}
+
+/// Answer one contiguous query range over all disjoint chunks.
+fn answer_range(parts: &[ChunkIndex], plan: &Plan, lo: usize, hi: usize, freqs: &[u32], cache: &DenseCache) -> Answers {
+    let ndocs: usize = parts.iter().map(|part| part.ndocs).sum();
     // BOOL queries: strictly left-to-right set algebra on the bitmap `r`.
     let words = ndocs.div_ceil(64);
     let (mut r, mut tmp) = (vec![0u64; words], vec![0u64; words]);
-    let mut dense = HashMap::new(); // bitmaps of frequent terms, built on first use
-    let mut dense_bytes = 0usize;
-    let bit = |d: &u32| (*d as usize >> 6, 1u64 << (d & 63));
+    let bit = |d: u32| (d as usize >> 6, 1u64 << (d & 63));
     let mut top = Vec::new();
     let answer = |qi: usize| {
         let Query::Bool(q) = &plan.queries[qi] else {
             let Query::Phrase(id) = plan.queries[qi] else { unreachable!() };
-            let stats = &hits[id];
             let start = top.len() as u32;
-            top.extend(stats.first[..(stats.count as usize).min(10)].iter().map(|&d| first + d));
-            return (stats.count, start, stats.sum + u64::from(first) * u64::from(stats.count));
+            let (mut count, mut sum) = (0u32, 0u64);
+            for part in parts {
+                let stats = &part.hits[id];
+                count += stats.count;
+                sum += stats.sum + u64::from(part.first) * u64::from(stats.count);
+                let remaining = 10usize.saturating_sub(top.len() - start as usize);
+                top.extend(stats.first[..(stats.count as usize).min(remaining)].iter().map(|&d| part.first + d));
+            }
+            return (count, start, sum);
         };
         r.fill(0);
         for &(op, t) in q {
@@ -306,22 +334,26 @@ fn solve_chunk(data: &[u8], lo: usize, hi: usize, plan: &Plan, barrier: &Barrier
                 b'N' => *x &= !y,
                 _ => *x |= y,
             };
-            let post = &docs[offs[t as usize] as usize..offs[t as usize + 1] as usize];
-            let bytes = words * std::mem::size_of::<u64>();
-            if post.len() * DENSE > ndocs && (dense.contains_key(&t) || bytes <= bitmap_limit.saturating_sub(dense_bytes)) {
-                let b = dense.entry(t).or_insert_with(|| {
-                    dense_bytes += bytes;
-                    let mut b = vec![0u64; words];
-                    post.iter().map(bit).for_each(|(w, m)| b[w] |= m);
-                    b
-                });
-                r.iter_mut().zip(&*b).for_each(|(x, &y)| apply(x, y));
-            } else if op == b'A' {
+            let postlen = freqs[t as usize] as usize;
+            let visit = |f: &mut dyn FnMut(usize, u64)| {
+                for part in parts {
+                    for &d in &part.docs[part.offs[t as usize] as usize..part.offs[t as usize + 1] as usize] {
+                        let (w,m) = bit(part.first + d); f(w,m);
+                    }
+                }
+            };
+            if postlen * DENSE > ndocs {
+                if let Some(b) = cache.get(t as usize, parts, words) {
+                    r.iter_mut().zip(b).for_each(|(x, &y)| apply(x, y));
+                    continue;
+                }
+            }
+            if op == b'A' {
                 tmp.fill(0);
-                post.iter().map(bit).for_each(|(w, m)| tmp[w] |= r[w] & m);
+                visit(&mut |w,m| tmp[w] |= r[w] & m);
                 std::mem::swap(&mut r, &mut tmp);
             } else {
-                post.iter().map(bit).for_each(|(w, m)| apply(&mut r[w], m));
+                visit(&mut |w,m| apply(&mut r[w], m));
             }
         }
         let start = top.len() as u32;
@@ -329,7 +361,7 @@ fn solve_chunk(data: &[u8], lo: usize, hi: usize, plan: &Plan, barrier: &Barrier
         for (w, &word) in r.iter().enumerate() {
             if word == 0 { continue; }
             let n = word.count_ones();
-            let base = first + w as u32 * 64;
+            let base = w as u32 * 64;
             count += n;
             sum += u64::from(base) * u64::from(n);
             let mut bits = word;
@@ -356,7 +388,7 @@ fn solve_chunk(data: &[u8], lo: usize, hi: usize, plan: &Plan, barrier: &Barrier
         }
         (count, start, sum)
     };
-    let counts = (0..plan.queries.len()).map(answer).collect();
+    let counts = (lo..hi).map(answer).collect();
     (counts, top)
 }
 
@@ -444,25 +476,42 @@ fn main() {
 
     // Equal byte ranges, each moved to just after an LF.
     let cut = |k| line_start(data, k * data.len() / nthreads);
-    let barrier = Barrier::new(nthreads);
-    let bitmap_limit = 64 * 1024 * 1024 / nthreads;
-    let parts: Vec<Answers> = thread::scope(|s| {
-        let (plan, barrier) = (&plan, &barrier);
+    let parts: Vec<ChunkIndex> = thread::scope(|s| {
+        let plan = &plan;
         let hs: Vec<_> = (0..nthreads)
-            .map(|k| s.spawn(move || solve_chunk(data, cut(k), cut(k + 1), plan, barrier, bitmap_limit)))
+            .map(|k| s.spawn(move || index_chunk(data, cut(k), cut(k + 1), plan)))
             .collect();
         hs.into_iter().map(|h| h.join().unwrap()).collect()
     });
+    let mut freqs = vec![0u32; plan.keys.len()];
+    for part in &parts {
+        for (t, f) in freqs.iter_mut().enumerate() { *f += part.offs[t + 1] - part.offs[t]; }
+    }
+    let cache = DenseCache::new(plan.keys.len(), 64 * 1024 * 1024);
+    const QUERY_BLOCK: usize = 256;
+    let next = AtomicUsize::new(0);
+    let mut answers: Vec<(usize, Answers)> = thread::scope(|s| {
+        let (plan, parts, cache, freqs, next) = (&plan, &parts, &cache, &freqs, &next);
+        let hs: Vec<_> = (0..nthreads).map(|_| s.spawn(move || {
+            let mut owned = Vec::new();
+            loop {
+                let lo = next.fetch_add(QUERY_BLOCK, Ordering::Relaxed);
+                if lo >= plan.queries.len() { break; }
+                let hi = lo.saturating_add(QUERY_BLOCK).min(plan.queries.len());
+                owned.push((lo, answer_range(parts, plan, lo, hi, freqs, cache)));
+            }
+            owned
+        })).collect();
+        hs.into_iter().flat_map(|h| h.join().unwrap()).collect()
+    });
+    answers.sort_unstable_by_key(|(lo, _)| *lo);
     let mut out = String::new();
-    for qi in 0..queries.len() {
-        let n: u32 = parts.iter().map(|(c, _)| c[qi].0).sum();
-        let sum: u64 = parts.iter().map(|(c, _)| c[qi].2).sum();
-        write!(out, "{n} {sum}").unwrap();
-        let top = parts.iter().flat_map(|(c, ids)| &ids[c[qi].1 as usize..][..c[qi].0.min(10) as usize]);
-        for d in top.take(10) {
-            write!(out, " {d}").unwrap();
+    for (_, (counts, ids)) in &answers {
+        for &(n, start, sum) in counts {
+            write!(out, "{n} {sum}").unwrap();
+            for d in &ids[start as usize..start as usize + n.min(10) as usize] { write!(out, " {d}").unwrap(); }
+            out.push('\n');
         }
-        out.push('\n');
     }
     fs::create_dir_all(&out_dir).ok();
     fs::write(format!("{out_dir}/results.txt"), out).expect("write results.txt");
