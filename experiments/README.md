@@ -118,3 +118,7 @@ All four tracks passed every gate on the full public seed-1 dataset; raw run IDs
 ## Official practice run for 89795bb
 
 All four tracks passed every gate on the full public seed-1 dataset; `board-897.json` records the run IDs and measurements. Relative to 02d7b4c, A's Rust implementation scored T=0.047542 s, M=48,148,480 bytes, S=273, K=27.939894 (previous K 13.101162); D's Rust implementation scored T=0.872892 s, M=453,419,008 bytes, S=233, K=8.110433 (previous K 6.382387). B and C code was unchanged, and their K values changed from 6.994585 to 7.665618 and 7.383038 to 7.446852 respectively. These are separate single public-seed practice runs; the final hidden-seed measurements may differ.
+
+## Official practice run for 1b2da3d
+
+All four tracks passed every gate; run IDs and measurements are in `board-1b2.json`. The checked Rust C candidate scored T=0.137394 s, M=17,235,968 bytes, S=170, K=17.662660. The preceding C++ practice run at 89795bb reported T=0.389804 s, M=80,576,512 bytes, S=213, K=7.446852. These are separate public-seed practice runs, not the final hidden-seed score. The original reported cold-cache SIGBUS remains unverified, as explained in `track-c/PERF.md`.
