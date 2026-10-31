@@ -1,0 +1,5 @@
+# Sampled hot endpoint lookup (not selected)
+
+Each isolated no-prefault A variant counts exact endpoint IDs in the first 32,768 records per parser shard, then checks the most frequent 1, 2, 4 or 8 observed names by masked prefix and complete endpoint bytes before falling back to the unchanged table. It is derived from input and remains correct in principle under arbitrary traffic changes because every cache match verifies the full endpoint and delimiter. Further independent review is required; no alternate/collision checks were run.
+
+On shared ARM macOS, randomized nine-pair full seed-1 screens after warmup, using temporary Darwin mapping flags, all matched output hashes. Candidate/baseline median wall seconds: 1 key .05684/.06351, 2 keys .04870/.05403, 4 keys .04252/.04111, 8 keys .04897/.05144. CPU was consistently 1–2.5% higher for every candidate. Shared host activity makes these wall figures inconclusive; no stable speed gain was established and nothing was selected. Raw results are in the JSON files. These are not x86/official metrics; no Mac Docker was used.

@@ -1,0 +1,71 @@
+{
+  "description": "Native measurements; ru_maxrss is bytes on macOS and KiB on Linux, not cgroup peak",
+  "threads": 12,
+  "expected": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+  "results": {
+    "baseline": [
+      {
+        "wall_s": 0.03942808300053002,
+        "cpu_s": 0.18937299999999999,
+        "ru_maxrss": 285999104,
+        "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3"
+      },
+      {
+        "wall_s": 0.0409231669982546,
+        "cpu_s": 0.188387,
+        "ru_maxrss": 286195712,
+        "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3"
+      },
+      {
+        "wall_s": 0.039244208001036895,
+        "cpu_s": 0.18981599999999998,
+        "ru_maxrss": 286195712,
+        "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3"
+      },
+      {
+        "wall_s": 0.04025720900244778,
+        "cpu_s": 0.190442,
+        "ru_maxrss": 286408704,
+        "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3"
+      }
+    ],
+    "candidate": [
+      {
+        "wall_s": 0.03915024999878369,
+        "cpu_s": 0.18517,
+        "ru_maxrss": 285310976,
+        "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3"
+      },
+      {
+        "wall_s": 0.03801091599962092,
+        "cpu_s": 0.18891399999999997,
+        "ru_maxrss": 285999104,
+        "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3"
+      },
+      {
+        "wall_s": 0.040073750002193265,
+        "cpu_s": 0.189352,
+        "ru_maxrss": 285442048,
+        "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3"
+      },
+      {
+        "wall_s": 0.038170958003320266,
+        "cpu_s": 0.181721,
+        "ru_maxrss": 285655040,
+        "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3"
+      }
+    ]
+  },
+  "medians": {
+    "baseline": {
+      "wall_s": 0.0398426460014889,
+      "cpu_s": 0.1895945,
+      "ru_maxrss": 286195712.0
+    },
+    "candidate": {
+      "wall_s": 0.03866060400105198,
+      "cpu_s": 0.18704199999999999,
+      "ru_maxrss": 285548544.0
+    }
+  }
+}

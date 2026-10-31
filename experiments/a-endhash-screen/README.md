@@ -1,0 +1,3 @@
+# First/last endpoint hash screen (not selected)
+
+An isolated no-prefault selected-A variant scans endpoint length and hashes first and last eight bytes plus length, with full comparison on matching hash. A shared ARM native nine-pair full seed-1 screen (temporary Darwin mmap flag only) gave median wall 0.08315 s versus baseline 0.06236 s and CPU 0.2531 versus 0.2057 s; all hashes passed. The host was shared, no x86 or official performance conclusion follows. The design causes avoidable equal-hash collisions for equal-length endpoints with the same beginning and end; it was not promoted or stress-tested. This overlaps an older unselected `a-dualhash` end-hash experiment and confirms no useful local gain. Raw results are in `screen.json`.
