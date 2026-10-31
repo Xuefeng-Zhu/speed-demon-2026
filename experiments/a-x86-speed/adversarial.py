@@ -9,7 +9,10 @@ parse paths changed on branch a-x86-speed:
   share first, middle and last words but differ elsewhere (equal hashes from the cheap words);
 - distinct: 5,000 and 70,000 distinct endpoints, so local tables grow and shared ids pass 2047
   (escaped records);
-- latency: boundary latencies 0, 2^20 - 2 .. 2^20, 2^32 - 1, many digits.
+- latency: boundary latencies 0, 2^20 - 2 .. 2^20, 2^32 - 1, many digits;
+- group-sizes: in two hours, groups of every size 1..200 (the summary's small-group rank paths
+  and the selection path) whose latencies are heavily tied, all equal, around 2^31 and 2^32 - 1,
+  or spread over 32 bits, in shuffled line order.
 
 Usage: adversarial.py --binary BIN [--quick] (--quick skips the 70,000-endpoint case, for a
 binary built with a forced constant hash where every probe collides).
@@ -62,6 +65,29 @@ def lines(rng, endpoints, count):
     return out
 
 
+def group_sizes(rng):
+    out = []
+    edges = [0, 1, 2**31 - 1, 2**31, 2**31 + 1, 2**32 - 2, 2**32 - 1]
+    patterns = {
+        "tied": lambda: rng.randrange(3),
+        "equal": None,
+        "edges": lambda: rng.choice(edges),
+        "wide": lambda: rng.randrange(1 << 32),
+    }
+    for hour in (0, 71):
+        for name, draw in patterns.items():
+            for n in range(1, 201):
+                same = rng.randrange(1 << 32)
+                for _ in range(n):
+                    when = BASE + datetime.timedelta(hours=hour, seconds=rng.randrange(3600))
+                    lat = same if draw is None else draw()
+                    status = rng.choice([200, 404, 500, 503])
+                    out.append(f"{when.strftime('%Y-%m-%dT%H:%M:%S.%fZ')} GET /g/{name}/{n} "
+                               f"{status} {lat}\n")
+    rng.shuffle(out)
+    return out
+
+
 def cases(rng, quick):
     lengths = [endpoint(rng, n) for n in range(1, 301)] + ["/"] + families(rng)
     yield "lengths", lines(rng, lengths, 60000)
@@ -70,6 +96,7 @@ def cases(rng, quick):
         many = [endpoint(rng, rng.randrange(2, 126)) for _ in range(70000)]
         yield "distinct-70000", lines(rng, many, 150000)
     yield "latency", lines(rng, ["/", "/a", "/v2/orders", "/v2/orders/{id}"], 30000)
+    yield "group-sizes", group_sizes(rng)
 
 
 def main():

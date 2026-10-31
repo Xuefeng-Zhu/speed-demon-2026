@@ -10,6 +10,8 @@ SHA-256 is checked against --expected. The first variant is the baseline: the re
 samples, median, min, mean of the middle 60%, a board-style statistic (mean of the middle 3 of
 each consecutive block of 5 runs, averaged over blocks), and per-round paired ratios
 candidate/baseline with their median and the fraction of rounds the candidate was faster.
+A variant may add rustc arguments after a second `=`, split like a shell command line, for
+example `static=track-a/src/main.rs=-C target-feature=+crt-static`.
 """
 import argparse
 import hashlib
@@ -17,6 +19,7 @@ import json
 import os
 import platform
 import random
+import shlex
 import statistics
 import subprocess
 import sys
@@ -101,13 +104,14 @@ def main():
 
     variants = []
     for v in args.variant:
-        name, sep, path = v.partition("=")
+        name, sep, rest = v.partition("=")
+        path, _, extra = rest.partition("=")
         if not sep or not name or not path:
-            raise SystemExit(f"bad --variant {v!r}, want NAME=PATH.rs")
-        if name in (n for n, _ in variants):
+            raise SystemExit(f"bad --variant {v!r}, want NAME=PATH.rs[=RUSTC ARGS]")
+        if name in (n for n, _, _ in variants):
             raise SystemExit(f"duplicate variant name {name}")
-        variants.append((name, Path(path).resolve()))
-    names = [n for n, _ in variants]
+        variants.append((name, Path(path).resolve(), shlex.split(extra)))
+    names = [n for n, _, _ in variants]
     base = names[0]
     threads_list = [t if t == "default" else int(t) for t in args.threads.split(",")]
     seed = args.seed if args.seed is not None else random.SystemRandom().randrange(1 << 32)
@@ -120,10 +124,12 @@ def main():
     build = HERE / "target"
     build.mkdir(exist_ok=True)
     bins, sources = {}, {}
-    for name, src in variants:
+    for name, src, extra in variants:
         bins[name] = build / f"bench-{name}"
         sources[name] = {"path": os.path.relpath(src, REPO), "sha256": sha256(src)}
-        subprocess.run(["rustc", *RUSTFLAGS, "-o", str(bins[name]), str(src)], check=True)
+        if extra:
+            sources[name]["extra_rustc_args"] = extra
+        subprocess.run(["rustc", *RUSTFLAGS, *extra, "-o", str(bins[name]), str(src)], check=True)
         sources[name]["binary_sha256"] = sha256(bins[name])
 
     report = {

@@ -7,6 +7,8 @@ time from just before the parse threads are spawned until they are joined
 Extra rustc arguments per variant may follow a second `=` (for example
 `lines=breakdown.rs=--cfg=mode="lines"`). Outputs are not checked: diagnostic modes of
 breakdown.rs deliberately skip work. Rounds run every variant once in shuffled order.
+Sources whose parse threads go on to summarize (production after FEAT-003) have no join; for
+them the time runs until the first thread leaves the barrier after parsing.
 """
 import argparse
 import json
@@ -22,15 +24,27 @@ FLAGS = ["--edition", "2021", "-C", "opt-level=3", "-C", "codegen-units=1", "-C"
          "-C", "panic=abort", "-C", "target-cpu=x86-64-v3"]
 SPAWN = "    let mut chunks: Vec<Vec<Records>> = thread::scope"
 AFTER = "    // An endpoint's position in byte order"
+# Layout where the parse threads meet at a barrier and go on to summarize.
+SPAWN2 = "    thread::scope(|s| {"
+AFTER2 = "                if barrier.wait().is_leader() {"
 
 
 def build(name, src, extra):
     s = (REPO / src).read_text()
-    assert s.count(SPAWN) == 1 and s.count(AFTER) == 1, f"{src}: markers not found"
-    s = s.replace(SPAWN, "    let t0 = std::time::Instant::now();\n" + SPAWN)
-    s = s.replace(AFTER, '    eprintln!("parse_ms={:.3}", t0.elapsed().as_secs_f64() * 1e3);\n'
-                  '    if env::var("SD_BREAKDOWN").is_ok() {\n        std::process::exit(0);\n    }\n'
-                  + AFTER)
+    if s.count(SPAWN) == 1 and s.count(AFTER) == 1:
+        s = s.replace(SPAWN, "    let t0 = std::time::Instant::now();\n" + SPAWN)
+        s = s.replace(AFTER, '    eprintln!("parse_ms={:.3}", t0.elapsed().as_secs_f64() * 1e3);\n'
+                      '    if env::var("SD_BREAKDOWN").is_ok() {\n        std::process::exit(0);\n    }\n'
+                      + AFTER)
+    else:
+        assert s.count(SPAWN2) == 1 and s.count(AFTER2) == 1, f"{src}: markers not found"
+        s = s.replace(SPAWN2, "    let t0 = std::time::Instant::now();\n" + SPAWN2)
+        s = s.replace(AFTER2, '                if env::var("SD_BREAKDOWN").is_ok() {\n'
+                      '                    if barrier.wait().is_leader() {\n'
+                      '                        eprintln!("parse_ms={:.3}", t0.elapsed().as_secs_f64() * 1e3);\n'
+                      '                        std::process::exit(0);\n                    }\n'
+                      '                    loop {\n                        thread::park();\n'
+                      '                    }\n                }\n' + AFTER2)
     out = HERE / "target"
     out.mkdir(exist_ok=True)
     (out / f"parse-{name}.rs").write_text(s)
