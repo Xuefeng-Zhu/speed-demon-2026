@@ -7,3 +7,5 @@ All sixteen full seed-1 outputs (including warmups) matched the published hash. 
 To reproduce the paired full-data comparison, compile both Rust files with identical release flags and run `python3 experiments/b-rust-lengthhash/compare.py --baseline /path/to/base --candidate /path/to/candidate --data /path/to/full-b --runs 7 --report /tmp/b-transitions.json`. No Mac Docker was used.
 
 Independent overflow-checked `property.rs` passed 4,816,896 single-byte/lane cases, all 65,536 ASCII token/separator 16-byte masks and 100,000 random byte vectors against the scalar tokenizer. `rustc --edition=2021 --test -C opt-level=2 -C overflow-checks=yes experiments/b-swar-transitions/property.rs -o /tmp/b-transitions-property && /tmp/b-transitions-property` reproduces the check. This validates the transition/classification logic; it does not measure x86 speed.
+
+Two later paired dot VM x86 passes showed 3.0–6.1% lower wall time for the scanner. Across the B/C campaign all 112 full hashes and 16 alternate references passed, along with scanner stress. Exact samples were not supplied here. These native results warrant official practice but are not cgroup or final scores.

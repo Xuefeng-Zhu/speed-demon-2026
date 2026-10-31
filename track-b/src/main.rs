@@ -90,15 +90,9 @@ fn for_each_doc(data: &[u8], lo: usize, hi: usize, plan: &Plan, mut f: impl FnMu
     let tok: [bool; 256] = std::array::from_fn(|b| (b as u8).is_ascii_alphanumeric());
     while i < hi {
         i += data[i..].iter().position(|&b| b == b'\t').unwrap() + 1;
-        while data[i] != b'\n' {
-            let n = data[i..].iter().take_while(|&&b| tok[b as usize]).count();
-            match n {
-                0 => {}
-                1..=32 => tokens.push(plan.slot(&key(data, i, n)).1),
-                _ => tokens.push(MISS),
-            }
-            i += n.max(1);
-        }
+        let e = i + data[i..].iter().position(|&b| b == b'\n').unwrap();
+        tokenize_words(data, i, e, plan, &tok, &mut tokens);
+        i = e;
         i += 1;
         f(&tokens);
         tokens.clear();
@@ -107,6 +101,50 @@ fn for_each_doc(data: &[u8], lo: usize, hi: usize, plan: &Plan, mut f: impl FnMu
             done = i;
         }
     }
+}
+
+// Classify eight independent ASCII lanes, then visit only transitions into
+// and out of tokens. Line boundaries are handled before this function.
+#[inline]
+fn tokenize_words(data: &[u8], start: usize, end: usize, plan: &Plan, tok: &[bool; 256], tokens: &mut Vec<u32>) {
+    const H: u64 = 0x8080_8080_8080_8080;
+    const LOA: u64 = 0x6161_6161_6161_6161;
+    const HIA: u64 = 0x7b7b_7b7b_7b7b_7b7b;
+    const LOD: u64 = 0x3030_3030_3030_3030;
+    const HID: u64 = 0x3a3a_3a3a_3a3a_3a3a;
+    let mut i = start;
+    let mut active = false;
+    let mut begin = start;
+    let mut emit = |p:usize, q:usize| {
+        let n=q-p;
+        tokens.push(if n <= 32 { plan.slot(&key(data, p, n)).1 } else { MISS });
+    };
+    while i + 8 <= end {
+        let x = u64::from_le_bytes(data[i..i + 8].try_into().unwrap());
+        let y = x | 0x2020_2020_2020_2020;
+        let a = ((y | H).wrapping_sub(LOA) & !((y | H).wrapping_sub(HIA))) & H;
+        let d = ((x | H).wrapping_sub(LOD) & !((x | H).wrapping_sub(HID))) & H;
+        let v = (a | d) & !x & H;
+        let prior = (v << 8) | if active { 0x80 } else { 0 };
+        let opens = v & !prior;
+        let closes = !v & prior & H;
+        let mut events = opens | closes;
+        while events != 0 {
+            let bit = events.trailing_zeros() as usize;
+            let pos = i + bit / 8;
+            if (opens >> bit) & 1 != 0 { begin=pos; } else { emit(begin,pos); }
+            events &= events - 1;
+        }
+        active = v >> 63 != 0;
+        i += 8;
+    }
+    while i < end {
+        let v=tok[data[i] as usize];
+        if v && !active {begin=i;} else if !v && active {emit(begin,i);}
+        active=v;
+        i+=1;
+    }
+    if active {emit(begin,end);}
 }
 
 enum Query {
