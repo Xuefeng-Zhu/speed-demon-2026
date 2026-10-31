@@ -29,3 +29,7 @@ python3 experiments/b-classify-four-current/compare.py --baseline /tmp/b-four-ba
 ```
 
 The paired comparator runs serially, randomizes each order, checks the complete published hash for every run, and records process wall/CPU/RSS; native RSS is not cgroup peak. Compare target results and actual parent-cgroup memory separately; never infer an official or hidden-data score from these tests. The package includes source, reference and scripts only; no credentials, data, executables or answer caches.
+
+## Native x86 outcome
+
+Parent-run shared dot VM paired full-seed batches exercised the actual AVX2 path: the candidate was 1.3–2.3% slower in wall time and used 1.3–4.7% more CPU, with native process RSS unchanged. All 72 full hashes, eight alternate references and the 128-byte loop, protected-page, phrase/token ordering and stress checks passed. These are native VM results, not official scoring-box or cgroup measurements. The ARM gain did not reproduce and the candidate remains unselected.
