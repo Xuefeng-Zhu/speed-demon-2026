@@ -765,9 +765,9 @@ fn main() {
     // Answer blocks of queries, claimed by the threads in turn.
     next.store(0, Relaxed);
     let block = 64;
-    // PROF: kinds 0 bool_list (no bitmap term, list result), 1 bool_list_bm (no bitmap
-    // term, switched to the bitmap by a large OR), 2 bool_row_list (a bitmap term, list
-    // result), 3 bool_row_bm (a bitmap term and the bitmap result), 4 phrase.
+    // PROF: kinds 0 bool_list (no bitmap term, bitmap never used), 1 bool_list_bm (no bitmap
+    // term, bitmap used after a large OR spill), 2 bool_row_list (bitmap term, bitmap never
+    // materialized), 3 bool_row_bm (bitmap term, bitmap used at some point), 4 phrase.
     let ans: Vec<_> = par(nthreads, |th| {
         let mut s = Scratch { list: vec![], tmp: vec![], out: vec![], bm: vec![0; words] };
         let (mut tlog, mut per, mut tb, mut tp, mut nb, mut np) = (String::new(), Vec::new(), 0u64, 0u64, 0u64, 0u64);

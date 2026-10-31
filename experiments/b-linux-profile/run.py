@@ -7,7 +7,7 @@ numbers come from the kernel rusage of the exited child:
   ru_maxrss (KiB on Linux), ru_minflt, ru_majflt, ru_utime, ru_stime, ru_nvcsw, ru_nivcsw.
 
 Optional instrumentation: every stderr line whose first token is a known tag
-(PHASE, MEM, INFO, IDX, BLOCK, QTHREAD, SCAN, TSC, QKIND, QSLOW, SMAPS) is kept as raw
+(PHASE, MEM, INFO, IDX, BLOCK, QTHREAD, SCAN, TSC, QKIND, QSLOW, SMAPS, MEMT, ENDNS) is kept as raw
 text and as a token list under run['instr'][TAG]. Binaries without instrumentation (the
 production solution) simply produce no such lines. Lines with unknown tags are kept in
 run['stderr_other']. Tag-specific parsing/summaries are in PARSERS/SUMMARIZERS; the
@@ -24,7 +24,7 @@ Example:
 import argparse, hashlib, json, os, pathlib, platform, shutil, statistics, subprocess, tempfile, time
 
 EXPECTED = 'f86973c210228141bcb6f1f1b10188ad2a9b65f71e7cd7cf4590b38de4e80927'
-TAGS = ('PHASE', 'MEM', 'INFO', 'IDX', 'BLOCK', 'QTHREAD', 'SCAN', 'TSC', 'QKIND', 'QSLOW', 'SMAPS', 'MEMT')
+TAGS = ('PHASE', 'MEM', 'INFO', 'IDX', 'BLOCK', 'QTHREAD', 'SCAN', 'TSC', 'QKIND', 'QSLOW', 'SMAPS', 'MEMT', 'ENDNS')
 # Per-tag parsers: tokens (after the tag) -> value stored in run['parsed'][TAG] list.
 # Default keeps the tokens with integers converted. FEAT-002 can register richer parsers.
 PARSERS = {}
@@ -47,6 +47,13 @@ SUMMARIZERS = {}
 #   SCAN <thread> <chunk> <a> <b> <c> <d> <e> <f> <ntokens> <nanchors> <nhits> <ndocs>
 #       <n_list> <n_bitmap> <n_none> <n_phrase_only> <n_long> <total>   (cycles)
 #   TSC <cycles_per_ns> <cycles> <ns>
+#   ENDNS <ns since main start>                 after the stderr dump (profile.rs only)
+# Phase summary times outside the phases:
+#   after_write_ms   = wall - PHASE write: exec, loader and exit plus the profiler's own
+#                      reporting tail (in reports made before ENDNS existed this value was
+#                      stored as outside_main_ms)
+#   report_tail_ms   = ENDNS - PHASE write: reporting work after the last phase (ENDNS only)
+#   outside_main_ms  = wall - ENDNS: exec, loader and exit only (ENDNS only)
 # Every summary value is the median over the measured runs of a per-run value.
 # ---------------------------------------------------------------------------
 PARALLEL_PHASES = ('index', 'answer')
@@ -83,9 +90,12 @@ def sum_phase(runs):
         total = r['parsed']['PHASE'][-1][1] / 1e6
         par = sum(d.get(p, 0) for p in PARALLEL_PHASES)
         x = {f'{k}_ms': v for k, v in d.items()}
-        x.update({'main_total_ms': total, 'outside_main_ms': r['wall_s'] * 1e3 - total,
+        x.update({'main_total_ms': total, 'after_write_ms': r['wall_s'] * 1e3 - total,
                   'parallel_ms': par, 'serial_ms': total - par, 'parallel_frac': par / total,
                   'serial_frac': (total - par) / total})
+        if 'ENDNS' in r['parsed']:
+            end = r['parsed']['ENDNS'][0][0] / 1e6
+            x.update({'report_tail_ms': end - total, 'outside_main_ms': r['wall_s'] * 1e3 - end})
         per.append(x)
     return {'phase_ms': med_dicts(per), 'phase_order': [p[0] for p in runs[0]['parsed']['PHASE']]}
 
@@ -96,6 +106,13 @@ def sum_mem(runs, tag, fields):
         rows = [[m for m in r['parsed'][tag] if m[0] == name][-1] for r in runs]
         out[name] = {f: med(row[i + 1] for row in rows) for i, f in enumerate(fields)}
     return out
+
+
+def nthreads(r, th):
+    """Thread count for utilization: INFO nthreads when present, so a thread that claimed
+    no chunk or block still counts as idle capacity; else the threads seen in the log."""
+    n = [x[1] for x in r['parsed'].get('INFO', []) if x[0] == 'nthreads']
+    return max(n[0], len(th)) if n else len(th)
 
 
 def sum_idx(runs):
@@ -121,7 +138,7 @@ def sum_idx(runs):
             'busy_sum_ms': sum(busy), 'scan_sum_ms': sum(a['scan'] for a in th.values()) / 1e6,
             'csr_sum_ms': sum(a['csr'] for a in th.values()) / 1e6,
             'csr_frac_of_busy': sum(a['csr'] for a in th.values()) / max(1, sum(a['busy'] for a in th.values())),
-            'utilization': sum(busy) / (len(th) * win),
+            'utilization': sum(busy) / (nthreads(r, th) * win),
             'spawn_delay_ms': (min(a['first'] for a in th.values()) - lo) / 1e6,
             'idle_tail_ms': (max(lasts) - min(lasts)) / 1e6,
             'join_delay_ms': (hi - max(lasts)) / 1e6,
@@ -154,7 +171,7 @@ def sum_block(runs):
         win = (hi - lo) / 1e6
         per.append({'window_ms': win, 'blocks': len(blk), 'busy_max_ms': max(busy), 'busy_min_ms': min(busy),
                     'busy_mean_ms': sum(busy) / len(busy), 'busy_sum_ms': sum(busy),
-                    'utilization': sum(busy) / (len(th) * win),
+                    'utilization': sum(busy) / (nthreads(r, th) * win),
                     'spawn_delay_ms': (min(a['first'] for a in th.values()) - lo) / 1e6,
                     'idle_tail_ms': (max(lasts) - min(lasts)) / 1e6, 'join_delay_ms': (hi - max(lasts)) / 1e6,
                     'block_us_median': med(blk), 'block_us_max': max(blk)})
@@ -312,7 +329,8 @@ def run_once(binary, data, out, threads, extra_env=None):
     if code != 0:
         raise RuntimeError(f'exit {code}: {stderr[-2000:]}')
     h = sha256_file(res)
-    assert h == EXPECTED, ('hash mismatch', h)
+    if h != EXPECTED:  # explicit, so the check also runs under python3 -O
+        raise RuntimeError(f'hash mismatch: {h}')
     instr, parsed, other = parse_stderr(stderr)
     return {
         'threads': threads, 'wall_s': wall, 'sha256': h,
@@ -380,7 +398,8 @@ def main():
     p.add_argument('--env', action='append', default=[], help='KEY=VALUE for the child, e.g. SD_PROF_SMAPS=1')
     a = p.parse_args()
     extra = dict(e.split('=', 1) for e in a.env)
-    assert a.warmup >= 1 and a.runs >= 1
+    if a.warmup < 1 or a.runs < 1:
+        p.error('--warmup and --runs must be at least 1')
     binary = os.path.abspath(a.binary)
     settings = [None] if a.threads is None else [int(t) for t in a.threads.split(',')]
     out = a.out or tempfile.mkdtemp(prefix='sd-b-linux-profile-', dir='/tmp')
