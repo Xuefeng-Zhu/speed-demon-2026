@@ -171,14 +171,16 @@ impl Search {
     fn new(n: usize) -> Self {
         Search {
             dist: vec![[0; 2]; n],
-            touched: Vec::new(),
-            heaps: Default::default(),
+            touched: Vec::with_capacity(n),
+            heaps: [RadixHeap::new(n), RadixHeap::new(n)],
         }
     }
 
     fn reach(&mut self, side: usize, v: u32, d: u64) -> bool {
         let slot = &mut self.dist[v as usize];
-        if d < !slot[side] {
+        let old = !slot[side];
+        if d < old {
+            if old != u64::MAX { self.heaps[side].remove(v, old); }
             if *slot == [0; 2] {
                 self.touched.push(v);
             }
@@ -200,7 +202,10 @@ impl Search {
         self.reach(0, s, 0);
         self.reach(1, t, 0);
         let mut best = NONE;
-        while let (Some(a), Some(b)) = (self.heaps[0].top(), self.heaps[1].top()) {
+        loop {
+            let a = { let (dist, h) = (&self.dist, &mut self.heaps[0]); h.top(|v| !dist[v as usize][0]) };
+            let b = { let (dist, h) = (&self.dist, &mut self.heaps[1]); h.top(|v| !dist[v as usize][1]) };
+            let (Some(a), Some(b)) = (a, b) else { break };
             if a.saturating_add(b) >= best {
                 break;
             }
@@ -231,10 +236,87 @@ impl Search {
     }
 }
 
+
+const POOL_CAP: usize = 65_536;
+#[derive(Clone, Copy)]
+struct PoolNode { key: u64, vertex: u32, next: u32 }
+/// A fixed-capacity duplicate-entry radix heap; exhausted pools request a
+/// complete exact indexed-heap rerun. No allocation occurs after construction.
+struct FastHeap { nodes: Vec<PoolNode>, head: [u32;65], free: u32, count: usize, last: u64 }
+impl FastHeap {
+    fn new() -> Self { Self { nodes: Vec::with_capacity(POOL_CAP), head:[END;65], free:END, count:0, last:0 } }
+    fn slot(&self, k:u64)->usize { debug_assert!(k>=self.last); 64-(k^self.last).leading_zeros() as usize }
+    fn push(&mut self,k:u64,v:u32)->bool {
+        let i=self.slot(k);
+        let id=if self.free!=END { let id=self.free; self.free=self.nodes[id as usize].next; id }
+        else if self.nodes.len()<POOL_CAP { let id=self.nodes.len() as u32; self.nodes.push(PoolNode{key:0,vertex:0,next:END});id }
+        else {return false};
+        self.nodes[id as usize]=PoolNode{key:k,vertex:v,next:self.head[i]};self.head[i]=id;self.count+=1;true
+    }
+    fn top(&mut self)->Option<u64> {
+        if self.head[0]==END {
+            let i=self.head.iter().position(|&v|v!=END)?;
+            let mut id=self.head[i];let mut low=u64::MAX;
+            while id!=END {let node=self.nodes[id as usize];low=low.min(node.key);id=node.next;}
+            self.last=low;let mut id=std::mem::replace(&mut self.head[i],END);
+            while id!=END {let node=self.nodes[id as usize];let j=self.slot(node.key);self.nodes[id as usize].next=self.head[j];self.head[j]=id;id=node.next;}
+        }
+        Some(self.last)
+    }
+    fn pop(&mut self)->(u64,u32) {
+        let id=self.head[0];debug_assert_ne!(id,END);let node=self.nodes[id as usize];self.head[0]=node.next;
+        self.nodes[id as usize].next=self.free;self.free=id;self.count-=1;(node.key,node.vertex)
+    }
+    fn clear(&mut self) {self.nodes.clear();self.head=[END;65];self.free=END;self.count=0;self.last=0;}
+}
+struct Search32 { dist:Vec<[u32;2]>, touched:Vec<u32>, heaps:[FastHeap;2] }
+impl Search32 {
+    fn new(n:usize)->Self { Self {dist:vec![[0;2];n],touched:Vec::with_capacity(n),heaps:[FastHeap::new(),FastHeap::new()]} }
+    fn reach(&mut self,side:usize,v:u32,d:u64)->Result<bool,()> {
+        let slot=&mut self.dist[v as usize];
+        if d<u32::MAX as u64 && d<(!slot[side]) as u64 {
+            if *slot==[0;2] {self.touched.push(v);}
+            slot[side]=!(d as u32);
+            if !self.heaps[side].push(d,v) {return Err(());}
+            return Ok(true);
+        }
+        Ok(false)
+    }
+    /// Either an exact narrow result plus cutoff flag, or (NONE,true) after
+    /// pool exhaustion, which causes the caller to rerun indexed wide search.
+    fn distance(&mut self,graphs:[&Csr;2],s:u32,t:u32)->(u64,bool) {
+        if s==t {return (0,false);}
+        if POOL_CAP==0 {return (NONE,true);}
+        self.reach(0,s,0).expect("nonzero pool");self.reach(1,t,0).expect("nonzero pool");
+        let mut best=NONE;let mut dropped=false;let mut exhausted=false;
+        'search: while let (Some(a),Some(b))=(self.heaps[0].top(),self.heaps[1].top()) {
+            if a.saturating_add(b)>=best {break;}
+            let side=match self.heaps[0].count.cmp(&self.heaps[1].count) {
+                std::cmp::Ordering::Less=>0,std::cmp::Ordering::Greater=>1,std::cmp::Ordering::Equal=>(a>b) as usize
+            };
+            let (d,u)=self.heaps[side].pop();
+            if d>(!self.dist[u as usize][side]) as u64 {continue;}
+            for (v,w) in graphs[side].edges(u) {
+                let nd=d+w;
+                if nd>=u32::MAX as u64 {dropped=true;continue;}
+                match self.reach(side,v,nd) {
+                    Err(())=>{exhausted=true;break 'search;},
+                    Ok(true)=>{let other=self.dist[v as usize][1-side];if other!=0 {best=best.min(nd+(!other) as u64);}},
+                    Ok(false)=>{}
+                }
+            }
+        }
+        for &v in &self.touched {self.dist[v as usize]=[0;2];}
+        self.touched.clear();self.heaps.iter_mut().for_each(FastHeap::clear);
+        if exhausted {(NONE,true)} else {(best,dropped)}
+    }
+}
+
+
 fn main() {
     let dir = |key, default: &str| std::env::var(key).unwrap_or(default.to_string());
     let (data, out) = (dir("SD_DATA", "/data"), dir("SD_OUT", "/out"));
-    let threads = thread::available_parallelism().map_or(1, |n| n.get());
+    let threads = thread::available_parallelism().map_or(1, |n| n.get()).min(12);
     let [fwd, bwd] = load_graph(&format!("{data}/graph.txt"), threads);
     let text = fs::read(format!("{data}/queries.txt")).unwrap();
     let mut it = numbers(&text);
@@ -248,11 +330,17 @@ fn main() {
     thread::scope(|sc| {
         for _ in 0..threads {
             sc.spawn(|| {
-                let mut search = Search::new(fwd.first.len() - 1);
+                let mut search = Search32::new(fwd.first.len() - 1);
+                let mut fallback: Option<Search> = None;
                 loop {
                     let i = next.fetch_add(1, Relaxed);
                     let Some(&(s, t)) = queries.get(i) else { break };
-                    answers[i].store(search.distance([&fwd, &bwd], s, t), Relaxed);
+                    let (narrow, dropped) = search.distance([&fwd, &bwd], s, t);
+                    let answer = if narrow < u32::MAX as u64 || !dropped { narrow } else {
+                        fallback.get_or_insert_with(|| Search::new(fwd.first.len() - 1))
+                            .distance([&fwd, &bwd], s, t)
+                    };
+                    answers[i].store(answer, Relaxed);
                 }
             });
         }
@@ -267,55 +355,81 @@ fn main() {
     fs::write(format!("{out}/distances.txt"), text).unwrap();
 }
 
-/// Monotone priority queue: keys pushed are never below the last key popped.
-/// Bucket i holds keys whose highest bit differing from `last` is bit i - 1.
+/// Indexed monotone radix heap. One live entry per vertex, with intrusive
+/// doubly linked lists stored in fixed-size arrays. Decrease-key removes the
+/// prior entry before insertion; redistribution never allocates.
+const END: u32 = u32::MAX - 1;
+const UNLINKED: u32 = u32::MAX;
 struct RadixHeap {
     last: u64,
-    buckets: [Vec<(u64, u32)>; 65],
+    head: [u32; 65],
+    links: Vec<[u32; 2]>, // prev, next; UNLINKED in next means not queued
     count: usize,
 }
-
-impl Default for RadixHeap {
-    fn default() -> Self {
-        RadixHeap {
-            last: 0,
-            buckets: std::array::from_fn(|_| Vec::new()),
-            count: 0,
-        }
-    }
-}
-
 impl RadixHeap {
+    fn new(n: usize) -> Self {
+        assert!(n < END as usize);
+        Self { last: 0, head: [END; 65], links: vec![[END, UNLINKED]; n], count: 0 }
+    }
     fn slot(&self, k: u64) -> usize {
+        debug_assert!(k >= self.last);
         64 - (k ^ self.last).leading_zeros() as usize
     }
     fn push(&mut self, k: u64, v: u32) {
+        debug_assert_eq!(self.links[v as usize][1], UNLINKED);
         let i = self.slot(k);
-        self.buckets[i].push((k, v));
+        let old = self.head[i];
+        self.links[v as usize] = [END, old];
+        if old != END { self.links[old as usize][0] = v; }
+        self.head[i] = v;
         self.count += 1;
     }
-    /// The smallest key, after moving every entry with that key into bucket 0.
-    fn top(&mut self) -> Option<u64> {
-        if self.buckets[0].is_empty() {
-            let i = self.buckets.iter().position(|b| !b.is_empty())?;
-            let mut b = std::mem::take(&mut self.buckets[i]);
-            self.count -= b.len();
-            self.last = b.iter().map(|e| e.0).min().unwrap();
-            for e in b.drain(..) {
-                self.push(e.0, e.1);
+    /// Old key maps to the same bucket after earlier redistributions because
+    /// last only changes in less-significant bits of every higher bucket.
+    fn remove(&mut self, v: u32, old: u64) {
+        let [prev, next] = self.links[v as usize];
+        if next == UNLINKED { return; }
+        let i = self.slot(old);
+        if prev == END { debug_assert_eq!(self.head[i], v); self.head[i] = next; }
+        else { self.links[prev as usize][1] = next; }
+        if next != END { self.links[next as usize][0] = prev; }
+        self.links[v as usize] = [END, UNLINKED];
+        self.count -= 1;
+    }
+    fn top(&mut self, key: impl Fn(u32) -> u64) -> Option<u64> {
+        if self.head[0] == END {
+            let i = self.head.iter().position(|&v| v != END)?;
+            let mut v = self.head[i];
+            let mut low = u64::MAX;
+            while v != END { low = low.min(key(v)); v = self.links[v as usize][1]; }
+            self.last = low;
+            let mut v = std::mem::replace(&mut self.head[i], END);
+            while v != END {
+                let next = self.links[v as usize][1];
+                self.links[v as usize] = [END, UNLINKED];
+                self.count -= 1;
+                self.push(key(v), v);
+                v = next;
             }
-            self.buckets[i] = b;
         }
         Some(self.last)
     }
-    /// Call only after `top` returned `Some`.
     fn pop(&mut self) -> (u64, u32) {
-        self.count -= 1;
-        self.buckets[0].pop().unwrap()
+        let v = self.head[0];
+        debug_assert_ne!(v, END);
+        self.remove(v, self.last);
+        (self.last, v)
     }
     fn clear(&mut self) {
-        self.last = 0;
+        for i in 0..65 {
+            let mut v = std::mem::replace(&mut self.head[i], END);
+            while v != END {
+                let next = self.links[v as usize][1];
+                self.links[v as usize] = [END, UNLINKED];
+                v = next;
+            }
+        }
         self.count = 0;
-        self.buckets.iter_mut().for_each(Vec::clear);
+        self.last = 0;
     }
 }
