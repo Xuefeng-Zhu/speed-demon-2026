@@ -340,7 +340,7 @@ fn main() {
     // Choose the ordinary implementation before processing if compact fields
     // cannot represent the mapping or group count. No output has been created.
     let (aggs, distinct) = if can_pack(recs.len(), unmatched) {
-        let parts = n;
+        let parts = n.saturating_mul(4).min(128).max(n);
         let parsed = par(n, |t| {
             let (mut p, end, mut agg) = (bound(t), bound(t + 1), vec![EMPTY; unmatched + 1]);
             let mut bins = vec![Vec::<Event>::new(); parts];
@@ -360,9 +360,12 @@ fn main() {
             }
             (agg, bins)
         });
-        let distinct = par(n, |t| {
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        let distinct = par(n, |_t| {
             let mut counts = vec![0i64; unmatched + 1];
-            for bucket in (t..parts).step_by(n) {
+            loop {
+                let bucket = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if bucket >= parts { break; }
                 let mut dict = OwnerDict::default();
                 for row in &parsed {
                     for &event in &row.1[bucket] {
