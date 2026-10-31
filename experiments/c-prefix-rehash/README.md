@@ -1,0 +1,3 @@
+# C prefix-hash prototype — not selected
+
+The isolated 4-, 8- and 16-byte prefix-hash variants showed only approximately 0–3% shared native ARM wall changes in nine-pair full-hash screens; these are not target measurements. An independent review identified a liveness and performance risk: promoting only an inner shard cannot redistribute many distinct names sharing the routing prefix, so a legal collision family may serialize on one lock. Exact equality is retained, but the prototype has not been selected and is not recommended for target testing without resolving the risk. The JSON reports preserve individual samples. No Mac Docker was used.

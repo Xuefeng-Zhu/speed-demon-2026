@@ -1,0 +1,5 @@
+# C lazy shard reserve screen — unselected
+
+Baseline is the exact selected direct-country/guarded-parser source SHA-256 `76497615f1abc0bf28a7b0d1d18030ebc263ddf8587d98c263ea5fc9e8840538`. Each experimental variant lazily reserves 16, 64, 128 or 256 name-table entries and the associated group bits when a shard sees its first name. It computes from input and still grows normally. This is an ARM-only initial screen, without alternate-data/collision correctness or independent review.
+
+Nine randomized full-data ARM pairs per variant plus warmups matched all 80 full hashes. Median baseline/candidate wall seconds were 0.10296/0.10172 (16), 0.12611/0.12528 (64), 0.13731/0.13683 (128), and 0.14954/0.17077 (256). Median CPU was 0.65814/0.65505, 0.68805/0.68899, 0.70075/0.73427, and 0.60992/0.73671 s respectively. Raw JSON preserves individual samples. Shared-host load varied; no size shows a compelling stable win, and these are not x86/cgroup/official results. No candidate was selected or Mac Docker used.
