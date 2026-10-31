@@ -28,3 +28,7 @@ python3 experiments/a-scheduling-lanes/compare.py --baseline /tmp/a-order-baseli
 ```
 
 The output-file and full hash are checked for every paired run; process RSS is not cgroup peak. Verify repeatability and official sandbox/practice before any promotion. The archive includes source, tests and official reference materials, not datasets, credentials or cached answers.
+
+## Dot VM x86 comparison
+
+The parent-run shared native x86 VM found mixed normal full-seed ordering and 9.6–17.4% slower wall time on all-escape stress. Across this, C fused and B dynamic packages, 314 full hashes, 28 alternate references, sorted/skew/escape and SIMD/concurrency/collision checks passed. This candidate remains unselected.

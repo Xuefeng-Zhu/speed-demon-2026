@@ -36,3 +36,7 @@ python3 experiments/c-nameowned/compare.py --baseline /tmp/c-fused-base --varian
 Repeat timing, report native peak RSS and samples, and run official gates separately. The archive excludes datasets, credentials, and unrelated files.
 
 For a transferable layout preserve the paths `experiments/c-fused-namehash/`, `official/reference/c_join.py`, `official/specs/c-join.md`, and `experiments/c-nameowned/compare.py`. Run tests from the archive root using `python3 experiments/c-fused-namehash/<script>.py`, where scripts are `property`, `guard`, `reference`, `edge`, `groups`, `collision`, `gate`, `owner-property`, and `cut_oracle`. On AVX2-capable x86, pass `--avx2` to `property`, `guard`, `reference`, `edge`, `groups`, `collision`, and `cut_oracle`; the gate and owner-property tests are architecture independent. Baseline and candidate must be compiled with identical official target settings; run `compare.py` with a separately generated full seed-1 dataset. The archive contains no dataset.
+
+## Dot VM x86 comparison
+
+The parent-run shared native x86 VM paired batches measured 10.2–10.4% lower wall and 3.5–7.1% lower CPU with unchanged native RSS versus exact selected salted-owner baseline. Across this, B dynamic queries and A lookup-order packages, 314 full hashes, 28 alternate references, sorted/skew/escape and SIMD/concurrency/collision checks passed. Native VM results are not official scoring-box or cgroup measurements. Selected for a separate official practice.

@@ -106,6 +106,48 @@ fn field(b: &'static [u8], p: &mut usize) -> (&'static [u8], i64) {
     (&b[s + q..i], (i - s - q - pairs) as i64)
 }
 
+/// Deterministic streaming hash of the exact raw encoded name bytes.
+#[inline]
+fn name_hash(name: &[u8]) -> u64 {
+    let mut h = 0u64;
+    let mut chunks = name.chunks_exact(8);
+    for word in &mut chunks {
+        h = (h.rotate_left(5) ^ u64::from_le_bytes(word.try_into().unwrap())).wrapping_mul(0x517cc1b727220a95);
+    }
+    let rest = chunks.remainder();
+    let mut tail = [0u8; 8]; tail[..rest.len()].copy_from_slice(rest);
+    h = (h.rotate_left(5) ^ u64::from_le_bytes(tail) ^ name.len() as u64).wrapping_mul(0x517cc1b727220a95);
+    h ^ (h >> 29)
+}
+/// Common unescaped quoted name: scan and hash each full word once.
+/// Escapes, unquoted empties and near-EOF tails use the exact general path.
+fn field_name_hash(b: &'static [u8], p: &mut usize) -> (&'static [u8], i64, u64) {
+    let original = *p;
+    if b[original] == b'"' {
+        let start = original + 1; let (mut i, mut h) = (start, 0u64);
+        while b.len() - i >= 8 {
+            let word = unsafe { u64::from_le(std::ptr::read_unaligned(b.as_ptr().add(i).cast::<u64>())) };
+            let x = word ^ 0x2222_2222_2222_2222;
+            let mask = x.wrapping_sub(0x0101_0101_0101_0101) & !x & 0x8080_8080_8080_8080;
+            if mask == 0 {
+                h = (h.rotate_left(5) ^ word).wrapping_mul(0x517cc1b727220a95);
+                i += 8; continue;
+            }
+            let k = mask.trailing_zeros() as usize / 8;
+            let end = i + k;
+            if b.get(end + 1) == Some(&b'"') { break; }
+            let len = end - start;
+            let tail = word & ((1u64 << (8 * k)) - 1);
+            h = (h.rotate_left(5) ^ tail ^ len as u64).wrapping_mul(0x517cc1b727220a95);
+            *p = end + 2;
+            return (&b[start..end], len as i64, h ^ (h >> 29));
+        }
+    }
+    *p = original;
+    let (name, len) = field(b, p);
+    (name, len, name_hash(name))
+}
+
 /// Parses `-?[0-9.]+` as an integer, skipping the dot (so an amount comes out in cents),
 /// then steps past the delimiter after it: a comma, LF or CRLF.
 fn number(b: &[u8], p: &mut usize) -> i64 {
@@ -295,11 +337,11 @@ fn main() {
             while p < end {
                 p += 3 * recs[p..].starts_with(b"\xEF\xBB\xBF") as usize;
                 let id = positive_fast(recs, &mut p);
-                let ((name, name_len), (_, note_len)) = (field(recs, &mut p), field(recs, &mut p));
+                let (name, name_len, h) = field_name_hash(recs, &mut p);
+                let (_, note_len) = field(recs, &mut p);
                 let rid = positive_fast(recs, &mut p) as usize;
                 let g = unmatched.min(*region.get(rid).unwrap_or(&u16::MAX) as usize);
                 let cents = number(recs, &mut p);
-                let h = BuildHasherDefault::<Fx>::default().hash_one(name);
                 let bucket = ((h as u128 * parts as u128) >> 64) as usize;
                 let offset = (name.as_ptr() as usize - recs.as_ptr() as usize) as u32;
                 let len = u16::try_from(name.len()).unwrap_or(u16::MAX);
