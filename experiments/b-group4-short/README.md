@@ -31,4 +31,6 @@ The test property includes forced short-hash collisions but the full-program for
 
 ## Dot VM x86 comparison
 
-The parent-run native x86 paired batches reported 1.9–3.0% lower wall time than the exact baseline. Across this, C parser and D mmap packages, 164 full hashes, 24 alternate comparisons, Linux/AVX2 guard-page, collision, boundary and graph-oracle checks passed. This candidate is selected for a separate official comparison.
+The parent-run native x86 paired batches reported 1.9–3.0% lower wall time than the exact baseline. Across this, C parser and D mmap packages, 164 full hashes, 24 alternate comparisons, Linux/AVX2 guard-page, collision, boundary and graph-oracle checks passed. This candidate was trialed separately on the official board.
+
+Official practice batches at `f21df30` and `385a0d7` measured 0.364905 s and 0.302563 s, versus the previous baseline batch at 0.301393 s; all gates passed. The baseline lookup was restored after no official speed gain. Batch variation remains a limitation.
