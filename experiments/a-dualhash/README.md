@@ -21,3 +21,5 @@ The comparison checks the full published hash every run and captures per-process
 Independent review additionally compared the candidate and a test-only forced-zero-hash build against the official reference on 1,803 endpoint patterns spanning lengths 1–125, all 72 hours, extreme status/latency values, and worker counts 1/2/3/7/12/32. Both matched SHA-256 `dd9fecaf57f04ea2aee754a4e02a22aaf0a081ef035513346aa40beb2f229919`. `stress-portable.py` reproduces this check when passed the reference and executable paths. Native ARM with Darwin mmap adaptation; not an official score.
 
 A further 2,422-endpoint fixture forced table growth beyond the official generated vocabulary bound. Candidate and forced-zero-hash builds matched reference at all six worker counts, SHA-256 `99451cbcc332baf1e2acca2cdd03eb297d121faa3c3e861ef2fcb7115a242a14`; `stress-growth.py` reproduces it.
+
+A speculative first/last-word hash (`ends-bench.json`) was slower than two-lane hash in ten randomized ARM pairs and can cluster paths with shared prefixes and suffixes. It was not selected.

@@ -1,0 +1,7 @@
+# Track D in-place CSR scatter (not selected)
+
+The isolated candidate uses each CSR block's `first` array as the scatter cursor, then shifts the resulting end offsets right and restores the block base. This avoids the temporary cursor copy; graph semantics and the selected meeting search are unchanged. `baseline.rs` is the selected source at e6e72ac (SHA-256 `2c4bcd2771cf79eceb37ee309edaeda4675db6f026458f483871f784a268755e`); `meeting.rs` is the candidate (SHA-256 `d6ef11818adb7b040ca82aa6d9122c90977a9d8200eac3d1352a49ed3fdf715d`).
+
+Both candidates matched 80 independent directed graphs / 16,000 Dijkstra-oracle queries. Seven randomized paired full seed-1 runs plus warmups matched the published output hash. On the shared ARM Mac the candidate median wall was 1.0978 s versus 1.0653 s baseline, CPU medians 3.3537 versus 3.4324 s, and maximum native process RSS 551,010,304 versus 549,912,576 bytes. Host contention was substantial and measurements overlap; this is not an x86, cgroup or official score. It was not promoted on this screen. `mac-arm-bench.json` retains every sample.
+
+For a native reproduction: `python3 experiments/track-d-inplace-csr/compare.py --data /path/to/full-d --build-dir /tmp/d-csr-build --report /tmp/d-csr-report.json --runs 7`; use `python3 experiments/track-d-inplace-csr/oracle.py /tmp/d-csr-build/baseline /tmp/d-csr-build/meeting` for random correctness. The comparison reports process RSS, not cgroup peak. No Mac Docker was used.

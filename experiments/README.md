@@ -142,3 +142,7 @@ All four tracks passed every gate; `board-e6.json` records all run IDs and measu
 ## Official practice run for merged PR d144adc
 
 All four tracks passed all gates; `board-d144.json` records run IDs. B's bounded Rust adaptation measured T=0.394683 s, M=225,353,728 bytes, S=343, K=15.445575, versus the previous B practice's T=1.124940 s, M=274,243,584 bytes, S=379, K=8.665777. A/C/D measured 0.050702/0.134472/0.701512 s respectively. These are separate public-seed practice runs rather than paired or final holdout scores.
+
+## Official practice run for 073646e
+
+All four tracks passed every gate; `board-073.json` records run IDs. D balanced-frontier measured T=0.383672 s, M=444,030,976 bytes, S=246, K=12.184975, versus the previous D run's T=0.701512 s, M=455,716,864 bytes, S=236, K=9.020576. A/B/C measured 0.051055/0.408505/0.146822 s respectively. These are separate public-seed practice runs, not final holdout scores.

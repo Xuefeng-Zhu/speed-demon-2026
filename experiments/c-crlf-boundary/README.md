@@ -1,0 +1,7 @@
+# Track C CRLF boundary experiment
+
+`baseline.rs` is exact e6e72ac C, `candidate.rs` removes the full quote-parity prepass and aligns each cut to just after the next CRLF. This relies specifically on the official section 2.2 holdout guarantee: no CR except in an outside-record CRLF terminator and a final CRLF. It is not correct for the broader 2.1 grammar taken alone, where CR may appear inside quotes. Bare LF can occur in either notes or record terminators and is never used as a synchronization point. The source is unselected.
+
+Full seed-1 matched the official hash; 120 mixed CSV/reference cases and 357 targeted case/worker reference comparisons passed. Target fixtures exercise 20 cuts on CR, 23 on LF immediately following CR, 168 on bare LF, and 133 duplicate boundary mappings; they include BOMs, escaped quotes, multiline notes, long LF-only sequences, a 120k-byte field and final CRLF. From repository root, `python3 experiments/c-crlf-boundary/cut_oracle.py` regenerates and tests them.
+
+On a shared ARM Mac, nine randomized full-data pairs gave median wall 0.17219 s candidate vs 0.17531 s baseline, median CPU 0.88256 vs 0.88415 s. All hashes passed; results overlap and do not establish a speed gain. Process RSS includes mapped inputs and is not cgroup memory; x86 target testing is pending. `compare.py` accepts precompiled binaries, generated full data and a report path. Dot VM package Library ID `libfile_0104daf35204819180dbd82593fdded2`, SHA-256 `54159c0c9a7ff9961d60de93bb5dcd11dcab7944dff332b37cf2ba4670a0f205`.
