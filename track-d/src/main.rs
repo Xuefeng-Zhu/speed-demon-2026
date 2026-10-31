@@ -305,6 +305,13 @@ impl Search32 {
                 for (v,w) in graphs[side].edges(u) {
                     let nd=d+w;
                     if nd>=u32::MAX as u64 {dropped=true;continue;}
+                    // Backward search is unpruned. Account for a known reverse
+                    // path before discarding any forward relaxation.
+                    if side == 0 && best != NONE && nd + b >= best {
+                        let other = self.dist[v as usize][1];
+                        if other != 0 { best = best.min(nd + (!other) as u64); }
+                        continue;
+                    }
                     match self.reach(side,v,nd) {
                         Err(())=>{exhausted=true;break 'search;},
                         Ok(true)=>{let other=self.dist[v as usize][1-side];if other!=0 {best=best.min(nd+(!other) as u64);}},
