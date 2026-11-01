@@ -213,3 +213,5 @@ The final head `6d785be`, with #28 kept, ran `run-a283f9503c48`: T=173.0 ms, M=6
 - Nov 1 2026: PR #35+#37 (small last chunk round, drop plan.long) 065dc1b run-8cd9eb202bd0 T 259.2 ms M 56.0 MB K 23.23; d5efd3a run-18f6dd08becc T 227.8 ms M 58.4 MB K 24.56. Lower M but much slower; reverted.
 
 - Nov 1 2026: b-diag-probe block on production B, 574870e run-92ca52f14c05 M 466.07 MB vs 62.59 base: (403.5+1.5)/33.55 = 12.07, so available_parallelism = 12 and no CPU quota (affinity mask = 12). T 282.0 ms (+~111 ms for 384 MiB of 4 KiB first-touch faults over 12 threads). Probe reverted.
+
+- Nov 1 2026: PR #40 (no MADV_DONTNEED of docs pages) bc3b070 run-12d2a3a07074 T 182.9 ms M 62.5 MB S 575 K 27.14; c881b28 run-3712a7bdb19a T 178.7 ms M 62.5 MB K 27.45. Below best 28.00 twice; reverted.
