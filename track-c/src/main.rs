@@ -1,5 +1,5 @@
 //! Speed Demon 2026, Track C (Join): std-only Rust. README.md explains the design.
-use std::sync::atomic::{AtomicU64, AtomicU8, AtomicUsize, Ordering::*};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering::*};
 use std::{env, fs, os::fd::AsRawFd, os::unix::fs::FileExt, sync::Barrier, sync::Mutex, thread};
 
 extern "C" {
@@ -65,9 +65,10 @@ fn num(x: u64, n: usize) -> u64 {
 /// is its slot. Names are not compared byte for byte: two of the ~10^5 names share a hash
 /// with probability ~3e-10. The hash folds the name's bytes eight at a time, zero padded
 /// (names never contain a zero byte).
+#[derive(Clone, Copy)]
 struct Names {
     slots: &'static [AtomicU64],
-    used: AtomicUsize,
+    full: &'static AtomicBool, // on its own page: set once a probe runs past PROBES slots
 }
 impl Names {
     /// The hash of the name `b[s..e]` and its first slot, whose cache line starts loading now.
@@ -80,30 +81,30 @@ impl Names {
         prefetch(&self.slots[i]);
         (h, i)
     }
-    /// The id of the name with this hash, inserting it if new; the table size once it holds
-    /// `cap` names: the run then starts over with a larger one.
-    fn id(&self, (h, mut i): (u64, usize), cap: usize) -> usize {
-        loop {
+    /// The id of the name with this hash, inserting it if new. A probe longer than PROBES
+    /// slots means the table is too full: it returns the table size and the run starts over
+    /// with a larger table. No shared counter is written.
+    fn id(&self, (h, mut i): (u64, usize)) -> usize {
+        for _ in 0..PROBES {
             let e = self.slots[i].load(Relaxed);
-            if e == h
-                || e == 0
-                    && self.slots[i]
-                        .compare_exchange(0, h, Relaxed, Relaxed)
-                        .is_ok()
-                    && self.used.fetch_add(1, Relaxed) < cap
-            {
+            if e == h || e == 0 && self.slots[i].compare_exchange(0, h, Relaxed, Relaxed).is_ok() {
                 return i;
             } else if e != 0 {
                 i = (i + 1) & (self.slots.len() - 1);
             }
-            if self.used.load(Relaxed) >= cap {
-                return self.slots.len();
-            }
         }
+        self.full.store(true, Relaxed);
+        self.slots.len()
     }
 }
 const K: u64 = 0x517cc1b727220a95; // FxHash's multiplier
+
+/// A value on its own pair of cache lines.
+#[derive(Default)]
+#[repr(align(128))]
+struct Pad<T>(T);
 const RING: usize = 16;
+const PROBES: usize = 1024;
 const BLOCK: usize = 1024;
 
 /// Bit i of each mask is set where byte i of the block is a quote, a comma or an LF.
@@ -192,22 +193,23 @@ fn main() {
             .find(|&i| regs[i - 1] == b'\n')
             .unwrap_or(regs.len()),
     };
-    let mut bits = 17; // 2^17 slots; four times as many whenever 7/8 of them fill up
+    let mut bits = 17; // 2^17 slots; four times as many whenever a probe runs too long
     let aggs = loop {
         let slots = zeroed(1 << bits, 14);
-        let cap = slots.len() / 8 * 7;
         let names = Names {
             slots,
-            used: 0.into(),
+            full: &zeroed::<AtomicBool>(1, 0)[0],
         };
         // seen_in[g * stride + id / 64] bit id % 64: name id occurs in group g. Group g is
         // owned by thread g % n, which alone reads and writes its bits; the others hand it
         // the (id, g) pairs they find in blocks of BLOCK, through its inbox.
         let stride = slots.len() / 64 + 1;
         let seen_in: &[AtomicU64] = zeroed(256 * stride, 0);
-        let inbox: Vec<Mutex<Vec<Vec<u32>>>> = (0..n).map(|_| Default::default()).collect();
-        let (next, barrier) = (AtomicUsize::new(0), Barrier::new(n));
+        let inbox: Vec<Pad<Mutex<Vec<Vec<u32>>>>> = (0..n).map(|_| Default::default()).collect();
+        let (next, barrier) = (&zeroed::<AtomicUsize>(1, 0)[0], Barrier::new(n));
         let aggs = par(n, |t| {
+            // Copies of what the hot loops read, so no worker reads a line another one writes.
+            let (names, region, seen_in, inbox, n, stride) = (names, region, seen_in, &inbox[..], n, stride);
             // Every thread reads its share of the regions twice: first to note which countries
             // occur, then to map each region id to its country's group. Groups are numbered in
             // key order, so the output needs no sort; group 0 (no country) is _UNMATCHED.
@@ -240,7 +242,7 @@ fn main() {
             let mut agg = vec![EMPTY; 256];
             let mut out: Vec<Vec<u32>> = vec![Vec::with_capacity(BLOCK); n];
             let mark = |agg: &mut Vec<Agg>| {
-                let blocks = std::mem::take(&mut *inbox[t].lock().unwrap()); // unlock before the loop
+                let blocks = std::mem::take(&mut *inbox[t].0.lock().unwrap()); // unlock before the loop
                 for v in blocks {
                     for x in v {
                         let (g, id) = ((x & 255) as usize, (x >> 8) as usize);
@@ -257,7 +259,7 @@ fn main() {
                           out: &mut Vec<Vec<u32>>| {
                 if n_id > 0 {
                     let (id, g) = (
-                        names.id(key, cap),
+                        names.id(key),
                         region.get(rid).map_or(0, |r| r.load(Relaxed)) as usize,
                     );
                     merge(&mut agg[g], [1, n_id, c, c, c, 0, nl, tl]);
@@ -265,7 +267,7 @@ fn main() {
                     o.push((id as u32) << 8 | g as u32);
                     if o.len() == BLOCK {
                         let full = std::mem::replace(o, Vec::with_capacity(BLOCK));
-                        inbox[g % n].lock().unwrap().push(full);
+                        inbox[g % n].0.lock().unwrap().push(full);
                     }
                 }
             };
@@ -364,13 +366,13 @@ fn main() {
                 ring[(r + j) % RING].2[0] = 0; // id 0: no record to finish
             }
             for (o, v) in out.into_iter().enumerate() {
-                inbox[o].lock().unwrap().push(v);
+                inbox[o].0.lock().unwrap().push(v);
             }
             barrier.wait();
             mark(&mut agg);
             agg
         });
-        if names.used.load(Relaxed) < cap {
+        if !names.full.load(Relaxed) {
             break aggs;
         }
         bits += 2;
