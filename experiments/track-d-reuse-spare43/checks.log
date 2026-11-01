@@ -1,0 +1,75 @@
+Python 3.13.5
+warning: unused variable: `x`
+  --> src/main.rs:86:16
+   |
+86 | fn prefetch<T>(x: &[T], i: usize) {
+   |                ^ help: if this is intentional, prefix it with an underscore: `_x`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `i`
+  --> src/main.rs:86:25
+   |
+86 | fn prefetch<T>(x: &[T], i: usize) {
+   |                         ^ help: if this is intentional, prefix it with an underscore: `_i`
+
+== checked build, default CPUs (8)
+PASS 80 random directed graphs; 16000 queries per implementation
+PASS 4096 directed graphs / 36864 all-pairs queries each; SHA256 f94e78335eb440c596ae05654d284d51f5b3087e4eca18af871e31e4e51bf1cb
+PASS 40 dense same-bucket graphs, 46336 all-pairs queries per binary
+PASS cutoff-1, cutoff, cutoff+1, unreachable, zero and self
+PASS n= 2097152 boundary weights, top node, short/wide graph mode
+PASS n= 2097153 boundary weights, top node, short/wide graph mode
+PASS max-size max-weight chain, unreachable and self-query
+PASS 6000 repeated and unreachable queries
+== checked build, CPUs 0
+PASS 80 random directed graphs; 16000 queries per implementation
+PASS 4096 directed graphs / 36864 all-pairs queries each; SHA256 f94e78335eb440c596ae05654d284d51f5b3087e4eca18af871e31e4e51bf1cb
+PASS 40 dense same-bucket graphs, 46336 all-pairs queries per binary
+== checked build, CPUs 0-2
+PASS 80 random directed graphs; 16000 queries per implementation
+PASS 4096 directed graphs / 36864 all-pairs queries each; SHA256 f94e78335eb440c596ae05654d284d51f5b3087e4eca18af871e31e4e51bf1cb
+PASS 40 dense same-bucket graphs, 46336 all-pairs queries per binary
+== official reference, tiny seeds 2 17 4242
+   Compiling solution v0.1.0 (/work/root/track-d)
+warning: unused variable: `x`
+  --> src/main.rs:86:16
+   |
+86 | fn prefetch<T>(x: &[T], i: usize) {
+   |                ^ help: if this is intentional, prefix it with an underscore: `_x`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `i`
+  --> src/main.rs:86:25
+   |
+86 | fn prefetch<T>(x: &[T], i: usize) {
+   |                         ^ help: if this is intentional, prefix it with an underscore: `_i`
+
+warning: `solution` (bin "solution") generated 2 warnings (run `cargo fix --bin "solution" -p solution` to apply 2 suggestions)
+    Finished `release` profile [optimized] target(s) in 2.95s
+PASS {"track": "d", "seed": 2, "scale": "tiny", "sha256": "686519de01b6c28cc2bb73423152b0636e0e2c1b9a0cb90cda8b0f21673a3474"}
+PASS {"track": "d", "seed": 17, "scale": "tiny", "sha256": "f9fd765204d3baf58afd4204e9e591640e38c0d1b4b21dc01051f1a2d022f18a"}
+PASS {"track": "d", "seed": 4242, "scale": "tiny", "sha256": "5cca9380d683ec43c6684ab7c27c2a81ffbb03a5ea67c7a338f71cadfbcb57cf"}
+== official reference, sample seeds 2 7
+   Compiling solution v0.1.0 (/work/root/track-d)
+warning: unused variable: `x`
+  --> src/main.rs:86:16
+   |
+86 | fn prefetch<T>(x: &[T], i: usize) {
+   |                ^ help: if this is intentional, prefix it with an underscore: `_x`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `i`
+  --> src/main.rs:86:25
+   |
+86 | fn prefetch<T>(x: &[T], i: usize) {
+   |                         ^ help: if this is intentional, prefix it with an underscore: `_i`
+
+warning: `solution` (bin "solution") generated 2 warnings (run `cargo fix --bin "solution" -p solution` to apply 2 suggestions)
+    Finished `release` profile [optimized] target(s) in 2.75s
+PASS {"track": "d", "seed": 2, "scale": "sample", "sha256": "70e94813fc6fbee12c22cc040bc4a4629c70508d13eaab2bfabbdd75e1d51aed"}
+PASS {"track": "d", "seed": 7, "scale": "sample", "sha256": "88bf36c94620505d1beafe7cd56a08dc2d261b71f9824d2f764d5ce6e5d7872e"}
+ALL CHECKS PASSED
+exit 0

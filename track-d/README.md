@@ -8,7 +8,7 @@ Everything runs inside the timed process. Nothing is precomputed, and nothing de
 
 1. **Parse.** `graph.txt` is mapped read-only. Each thread parses the lines that start in its share of the bytes. A SWAR scanner reads up to 7 digits from one 8-byte load. Each edge goes into a bucket chosen by the block of node ids its tail falls in. Thread *j* then turns block *j* into its slice of a CSR graph with a counting sort, so the build needs no atomics. An edge is one `u32`: the head in the low `bits = ⌈log2 n⌉` bits and the weight in the rest. A weight too large for the remaining bits is stored as an all-ones escape code, and its exact value goes in a sorted side list keyed by (tail, head). With `n` = 1,740,512 that leaves 11 bits. On public seed 1, 3,496 of 5,000,000 edges (0.07%) need the escape.
 2. **Renumber.** The file's ids carry no locality, so nodes are renumbered. Threads grow breadth-first clusters of up to 1,024 nodes and claim nodes atomically. Each cluster takes the next run of new ids and of edge slots with one atomic add, and copies its rows while they are still in cache. The BFS prefetches the row of the node eight places ahead in its queue. Which thread wins a node changes the numbering, never an answer. In a sandbox profile, renumbering made the query phase 3.6 times faster than with the file's ids (103 ms against 370 ms).
-3. **Relabel.** The forward rows' heads are rewritten to the new ids, counting in-degrees on the way. A parallel prefix sum and a scatter then build the backward CSR. The large zeroed arrays are allocated with a transparent-hugepage hint.
+3. **Relabel.** The forward rows' heads are rewritten to the new ids, counting in-degrees on the way. A parallel prefix sum and a scatter then build the backward CSR in the arrays of the file-id graph, which renumbering no longer needs and which have the right sizes, so this phase maps no new memory. The other large zeroed arrays get a transparent-hugepage hint, and the main thread writes one byte into each of their 2 MiB pages before any worker touches them. Without that, threads that first touch the same page at the same moment can each be charged a 2 MiB page, which raised the board's memory peak by about 15 MB.
 4. **Query.** Workers take queries from a shared counter. Each query runs a bidirectional search:
    - **Frontier choice.** The side with fewer queued entries is expanded. If one side is boxed in behind huge weights, it runs dry at once instead of the other side exploring the whole graph.
    - **Queues.** Both queues are radix heaps keyed by `distance >> 6`. Within a bucket, nodes come out in any order. Every strict improvement is queued again and expanded with its new exact distance, including improvements to nodes already expanded. A popped node whose distance has since moved to an earlier bucket is skipped.
@@ -51,9 +51,9 @@ SD_DATA=/path/to/data SD_OUT=/path/to/out target/release/solution
 
 ## Results
 
-The best official practice result so far is T=160 ms and K=24.50, at `7b43b63`. The Python reference takes 72.69 s on the scoring box. `PERF.md` logs each measured change with its board run where one was recorded, and every rejected experiment with a pointer to its folder.
+The best official practice result so far is T=146.3 ms, M=70.1 MB and K=26.65 (`run-d4e9995c905d`, with the D source of `de693db`). The Python reference takes 72.69 s on the scoring box. `PERF.md` logs each measured change with its board run where one was recorded, and every rejected experiment with a pointer to its folder.
 
 ## With more time
 
-- Build the backward graph without atomics by bucketing edges by head block, as the forward build does.
+- Building the backward graph without atomics needs another design. With each thread owning a fixed range of nodes (PR #25), it was faster in the sandbox but slower on the board, and was reverted.
 - A goal-directed search would expand fewer nodes, but the landmark and contraction trials found their preprocessing too expensive for 2,000 queries.
