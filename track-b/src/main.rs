@@ -4,8 +4,7 @@
 //!    of the corpus: frequent BOOL terms get a bitmap over all documents, the
 //!    others posting lists; each phrase is anchored on its rarest term.
 //! 2. Map docs.txt and cut it into chunks of whole lines, each starting at a
-//!    multiple of 64 documents, claimed by the threads in turn, in rounds of
-//!    shrinking chunks so that few posting buffers are live at once. A thread
+//!    multiple of 64 documents, claimed by the threads in turn. A thread
 //!    tokenizes its chunk once: it sets the bitmap bits (the chunk owns whole
 //!    words of them), builds u16 posting lists local to the chunk, and checks
 //!    the phrases around each anchor occurrence.
@@ -316,33 +315,31 @@ fn scan_chunk(data: &[u8], lo: usize, hi: usize, plan: &Plan, rows: &[AtomicU64]
         flush(&mut group, doc - 1);
     }
     assert!(doc - first <= 1 << 16, "chunk too large");
-    // Counting sort of the stream. offs[l + 2] counts list l, then offs[l + 1] is
-    // where its next id goes, and after the fill offs[l] is where list l starts.
-    let mut offs = vec![0u32; nl + 2];
+    // Counting sort of the stream, dropping a term's repeats within a document.
+    let mut offs = vec![0u32; nl + 1];
     for &l in stream.iter().filter(|&&l| l != u16::MAX) {
-        offs[l as usize + 2] += 1;
+        offs[l as usize + 1] += 1;
     }
-    (2..offs.len()).for_each(|l| offs[l] += offs[l - 1]);
-    let (mut docs, mut d) = (vec![0u16; offs[nl + 1] as usize], 0u16);
+    (1..=nl).for_each(|l| offs[l] += offs[l - 1]);
+    let (mut end, mut docs, mut d) = (offs.clone(), vec![0u16; offs[nl] as usize], 0u16);
     for l in stream {
         if l == u16::MAX {
             d = d.wrapping_add(1);
         } else {
-            let e = &mut offs[l as usize + 1];
-            docs[*e as usize] = d;
-            *e += 1;
+            let e = &mut end[l as usize];
+            if *e == offs[l as usize] || docs[*e as usize - 1] != d {
+                docs[*e as usize] = d;
+                *e += 1;
+            }
         }
     }
-    // Drop a term's repeats within a document: equal neighbours in its list.
+    // Close the gaps the repeats left.
     let mut w = 0;
     for l in 0..nl {
-        let (a, b) = (offs[l] as usize, offs[l + 1] as usize);
+        let (a, b) = (offs[l] as usize, end[l] as usize);
+        docs.copy_within(a..b, w);
         offs[l] = w as u32;
-        for i in a..b {
-            let keep = i == a || docs[i] != docs[i - 1];
-            docs[w] = docs[i];
-            w += keep as usize;
-        }
+        w += b - a;
     }
     offs[nl] = w as u32;
     Chunk { first, offs, docs, hits }
@@ -476,11 +473,10 @@ fn id_at(data: &[u8], i: usize) -> u32 {
     digits.fold(0, |n, &b| n * 10 + (b - b'0') as u32)
 }
 
-// std has no mmap or mallopt; libc is always linked.
+// std has no mmap; libc is always linked.
 extern "C" {
     fn mmap(addr: *mut u8, len: usize, prot: i32, flags: i32, fd: i32, off: i64) -> *mut u8;
     fn madvise(addr: *mut u8, len: usize, advice: i32) -> i32;
-    fn mallopt(param: i32, value: i32) -> i32;
 }
 
 /// Maps a read-only file into memory.
@@ -519,10 +515,6 @@ fn line_start(data: &[u8], i: usize) -> usize {
 }
 
 fn main() {
-    // Blocks of 128 KiB or more get their own mapping, unmapped when freed. A fixed
-    // M_MMAP_THRESHOLD (-3) keeps glibc from raising it at the first such free, after
-    // which freed stream buffers would stay resident in the threads' arenas.
-    unsafe { mallopt(-3, 1 << 17) };
     let data_dir = env::var("SD_DATA").unwrap_or_else(|_| "/data".into());
     let out_dir = env::var("SD_OUT").unwrap_or_else(|_| "/out".into());
     let nthreads = env::var("SD_THREADS").ok().and_then(|s| s.parse().ok());
@@ -539,7 +531,7 @@ fn main() {
     let (mut qs, mut terms, mut i, mut op) = (Vec::new(), Vec::new(), 0, 0);
     while i < qtext.len() {
         i = each_token(&qtext, i, |s, e| match qtext[s] {
-            b'B' | b'P' => qs.push((qtext[s], terms.len() as u32)),
+            b'B' | b'P' => qs.push((qtext[s], terms.len())),
             b'A' | b'O' | b'N' => op = qtext[s],
             _ => {
                 let role = IN_BOOL * (qs[qs.len() - 1].0 == b'B') as u8;
@@ -548,7 +540,7 @@ fn main() {
         });
     }
     let nq = qs.len();
-    qs.push((0, terms.len() as u32));
+    qs.push((0, terms.len()));
     let data = map_file(&format!("{data_dir}/docs.txt"));
 
     // Anchor each phrase on its rarest term in a sample of the corpus.
@@ -590,17 +582,16 @@ fn main() {
     plan.keys.iter_mut().for_each(|e| e[2] = new[e[2] as usize] as u64);
     plan.long.values_mut().for_each(|t| *t = new[*t as usize]);
     plan.role = order.iter().map(|&t| plan.role[t]).collect();
-    let df: Vec<u32> = order.iter().map(|&t| freq[t].0).collect();
+    let freq: Vec<u32> = order.iter().map(|&t| freq[t].0).collect();
     terms.iter_mut().for_each(|e| e.1 = new[e.1 as usize]);
-    let query = |i: usize| (qs[i].0, &terms[qs[i].1 as usize..qs[i + 1].1 as usize]);
+    let query = |i: usize| (qs[i].0, &terms[qs[i].1..qs[i + 1].1]);
     let mut list = Vec::new();
     for qi in (0..nq).filter(|&i| qs[i].0 == b'P') {
         let p = query(qi).1;
-        let j = (0..p.len()).min_by_key(|&j| df[p[j].1 as usize]).unwrap();
+        let j = (0..p.len()).min_by_key(|&j| freq[p[j].1 as usize]).unwrap();
         plan.role[p[j].1 as usize] |= ANCHOR;
         list.push((p[j].1, qi, p, j));
     }
-    drop((qtext, freq, bools, order, new, df)); // the scan uses none of these
     // One flat list of anchors, grouped by term, with copies of the phrases.
     list.sort_unstable_by_key(|a| a.0);
     plan.aoff = vec![0; plan.role.len() + 1];
@@ -612,6 +603,8 @@ fn main() {
         plan.flat.extend(p.iter().map(|e| e.1));
     }
 
+    // Equal byte ranges, each moved to the next line whose id is a multiple
+    // of 64; at most 65,536 lines per chunk.
     let last = data.rsplit(|&b| b == b'\n').nth(1); // the last line
     let ndocs = last.map_or(0, |l| id_at(l, 0) as usize + 1);
     let words = ndocs.div_ceil(64);
@@ -619,15 +612,9 @@ fn main() {
     let mut rows = std::mem::ManuallyDrop::new(vec![0u64; plan.nbm * words]);
     // SAFETY: AtomicU64 has the size, alignment and bit validity of u64.
     let rows: Vec<AtomicU64> = unsafe { Vec::from_raw_parts(rows.as_mut_ptr().cast(), rows.len(), rows.capacity()) };
-    // m rounds of nthreads equal byte ranges; round r has 4(m - r) - 1 of the
-    // m(2m + 1) parts, so the streams of the last rounds, which coexist with most
-    // of the lists, are small. Each range is moved to the next line whose id is a
-    // multiple of 64; at most 65,536 lines per chunk.
-    let m = data.len().div_ceil(nthreads << 24).max(1);
-    let cut = |k: usize| {
-        let (r, j) = (k / nthreads, k % nthreads);
-        let w = nthreads * r * (4 * m - 2 * r + 1) + 4 * j * (m - r) - j;
-        let mut i = line_start(data, data.len() * w / (nthreads * m * (2 * m + 1)));
+    let nchunks = nthreads * data.len().div_ceil(nthreads << 24).max(1);
+    let cut = |k| {
+        let mut i = line_start(data, k * data.len() / nchunks);
         while i < data.len() && id_at(data, i) % 64 != 0 {
             i = line_start(data, i + 1);
         }
@@ -637,7 +624,7 @@ fn main() {
     let take = || next.fetch_add(1, Relaxed);
     let claim = |n| (0..).map(|_| take()).take_while(move |&k| k < n);
     let mut chunks: Vec<_> = par(nthreads, |_| {
-        claim(nthreads * m).map(|k| (k, scan_chunk(data, cut(k), cut(k + 1), &plan, &rows))).collect::<Vec<_>>()
+        claim(nchunks).map(|k| (k, scan_chunk(data, cut(k), cut(k + 1), &plan, &rows))).collect::<Vec<_>>()
     })
     .into_iter()
     .flatten()
@@ -645,8 +632,6 @@ fn main() {
     chunks.sort_unstable_by_key(|c| c.0);
     plan.chunks = chunks.into_iter().map(|c| c.1).collect();
     plan.rows = rows.into_iter().map(AtomicU64::into_inner).collect();
-    // The scan's tables; the answers do not use them.
-    (plan.keys, plan.filter, plan.aoff, plan.anchors, plan.flat) = Default::default();
     // Phrase matches as sorted (query, id); a phrase can occur twice in a document.
     let mut hits = Vec::new();
     plan.chunks.iter().for_each(|c| hits.extend(&c.hits));

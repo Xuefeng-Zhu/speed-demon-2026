@@ -60,9 +60,9 @@ fn find_byte(w: u64, b: u8) -> usize {
 }
 
 /// Bit `k` is set iff `a[i + k] == b[j + k]` (`b == None`: iff `a[i + k] == c`), for `k` in 0..64.
-/// Reads 64 bytes at `i` (and `j`). In the file, callers start inside a line (at an endpoint) or
-/// at a 64-byte block holding a line's end, so the reads end at most 64 bytes past the last line,
-/// within the 4 KiB zero pad of `map_file`; arena reads stay within its 64-byte zero tail.
+/// Reads 64 bytes at `i` (and `j`). In the file, callers start inside a line (at an endpoint),
+/// so the reads end at most 64 bytes past the last line, within the 4 KiB zero pad of
+/// `map_file`; arena reads stay within its 64-byte zero tail.
 #[inline(always)]
 fn eq_mask(a: &[u8], i: usize, b: Option<(&[u8], usize)>, c: u8) -> u64 {
     assert!(i + 64 <= a.len() && b.map_or(true, |(b, j)| j + 64 <= b.len()));
@@ -87,17 +87,18 @@ fn hash(d: &[u8], s: usize, n: usize) -> u64 {
     (h ^ n as u64).wrapping_mul(MIX)
 }
 
-/// Parses the `k` decimal digits of the latency starting at `q`.
+/// Parses the decimal latency starting at `q`; returns it and the start of the next line.
 #[inline(always)]
-fn parse_latency(d: &[u8], q: usize, k: usize) -> u64 {
+fn parse_latency(d: &[u8], q: usize) -> (u64, usize) {
     let w = load(d, q);
-    if k > 8 {
+    let k = find_byte(w, b'\n');
+    if k == 8 {
         let (mut v, mut i) = (0, q);
         while d[i] != b'\n' {
             v = v * 10 + (d[i] - b'0') as u64;
             i += 1;
         }
-        return v;
+        return (v, i + 1);
     }
     // Shift the k digits up to form an 8-digit number with leading zeros, then combine
     // neighbouring digits, pairs and quads with multiplies (SWAR).
@@ -105,7 +106,7 @@ fn parse_latency(d: &[u8], q: usize, k: usize) -> u64 {
     v = v * 10 + (v >> 8);
     let lo = (v & 0x0000_00FF_0000_00FF) * (100 + (1_000_000 << 32));
     let hi = ((v >> 16) & 0x0000_00FF_0000_00FF) * (1 + (10_000 << 32));
-    lo.wrapping_add(hi) >> 32
+    (lo.wrapping_add(hi) >> 32, q + k + 1)
 }
 
 #[derive(Default)]
@@ -179,17 +180,7 @@ fn parse(d: &[u8], mut i: usize, end: usize, shared: &[Shared], next_id: &Atomic
     // an hour, so most lines push to this local pair without indexing `hours`.
     let (mut cur_h, mut cur): (usize, Records) = (HOURS, (Vec::new(), Vec::new()));
     let mut n = 0; // length of `cur.0`, kept in a register and stored only when the hour changes
-    // Newlines of the 64-byte block at `blk` not yet consumed, one bit per byte. Line starts come
-    // from this mask, so finding the next line does not wait for this line's fields to be parsed.
-    let mut blk = i & !63;
-    let mut nl = eq_mask(d, blk, None, b'\n') & (!0 << (i - blk));
     while i < end {
-        while nl == 0 {
-            blk += 64;
-            nl = eq_mask(d, blk, None, b'\n');
-        }
-        let next = blk + nl.trailing_zeros() as usize + 1;
-        nl &= nl - 1;
         // Bytes 5..13 are "MM-DDTHH"; their low nibbles x make 10 * x[k] + x[k + 1] in byte k of
         // y without carries. October 30, 31 and November 1, 2 become day indexes 0..=3.
         let x = load(d, i + 5) & (ONES * 0x0f);
@@ -208,7 +199,7 @@ fn parse(d: &[u8], mut i: usize, end: usize, shared: &[Shared], next_id: &Atomic
             let mut map = shared[(h >> 60) as usize].lock().unwrap(); // top 4 bits pick a shard
             *map.entry(d[s..e].to_vec()).or_insert_with(|| next_id.fetch_add(1, Ordering::Relaxed))
         }) as u64;
-        let latency = parse_latency(d, e + 5, next - 1 - (e + 5));
+        let (latency, next) = parse_latency(d, e + 5);
         let is_5xx = (d[e + 1] == b'5') as u64;
         if hour != cur_h {
             unsafe { cur.0.set_len(n) };
