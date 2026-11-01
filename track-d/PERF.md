@@ -211,3 +211,5 @@ Board run at `7b43b63` (run ID not recorded): T=160 ms, K=24.50, a new D best (p
 
 Spawning and joining the worker threads costs about 0.2 ms per `parallel` call in the sandbox. A persistent channel-fed pool measured 171.0 ms median against 169.5 ms over 31 alternating runs (no measurable gain) and adds 22 counted lines, about −0.8% K. Details: `experiments/track-d-thread-pool41/`.
 
+
+Board trial, 1 Nov 2026: PR #27 (`d-mem`, two-pass CSR from mmap, S 416) ran `run-a9c0c5ffe415` at `aa5ab52` (T=175.3 ms, M=74.8 MB, K=23.79). It is inside production's same-code range (23.6 to 24.3) and below the 24.50 best, so it was not kept. Production D in the same window: K 23.77, 24.05, 24.21, 23.73.

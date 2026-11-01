@@ -230,3 +230,7 @@ After #23 (board `run-603a0d204651`, T 41.0 ms, M 13.8 MB, S 335, K 30.54), phas
 4. **Frequent draining.** `mark` drains the inbox after every 64 KiB refill rather than once per chunk.
 
 Sandbox, 8 threads, 30-round interleaved batches in both orders: 43.7 / 43.7 ms vs 50.4 / 50.3 ms (about −13%); single thread 211 vs 217 ms; minor faults per run about 2,300 vs 3,700; max RSS unchanged at a median of 11.7 MB. Formatted lines 328 → 331 by the local count. Reference checks pass under 1, 3, 5 and 8 threads, including the long-name, 15–100 KB-record and unterminated-file fixtures. Board run pending.
+
+Board trials, 1 Nov 2026, none kept (best stays `run-38899e5ae2f9`, K 30.78):
+- PR #33 (`c-trim`, rebased onto #26, S 338 to 306): three same-code runs, `run-8cb26078a553` (T=37.9 ms, K=30.48), `run-01cccbf64a42` (T=37.8 ms, K=30.54) and `run-43699a55f4c6` (T=38.4 ms, K=30.38). The paired production run `run-949821fd83fb` at `e1d468c` measured T=36.7 ms, K=30.56. The trim cost about 3% T, which cancels its 1.5% S gain, so it was reverted.
+- PR #31 (`c-mem`, BLOCK 256 and a 32 KiB pread buffer, on top of #33): `run-ec81e3741bf0` measured T=39.2 ms, M=17.3 MB, K=30.28. M fell 0.8 MB but T rose, so it was reverted.

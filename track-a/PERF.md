@@ -216,3 +216,5 @@ A one-thread CPU attribution of `e4308ed` showed that the parse loop ran as one 
 ### Lesson
 
 Two local gains in a row, one from removing kernel lock waits and one from cutting parse CPU, did not carry over. By a rough bound, the box's T of about 25 ms is well above its CPU-only floor, so local profiles no longer predict where the box spends its time. The next step is to measure on the box itself (`experiments/a-box-probes/`). Details: `experiments/a-cpu-profile/README.md`.
+
+Board trials, 1 Nov 2026: PR #30 (`a-mem`, hours streamed during the parse, pooled buffers, S 468) ran `run-69ed99a53619` at `aa5ab52` (T=26.85 ms, M=20.96 MB, K=40.50) and `run-3d499d7c63a1` at `6673d40` (T=25.28 ms, M=20.05 MB, K=42.11). Both runs fall inside production's same-code range (41 to 42.6) and neither beats the 42.59 best (`run-713461e1b8d4`), so it was not kept. The production src stays at `5eaefdc`. Unchanged production A in the same window: `run-90beb08eea0d` K 37.36, `run-d17ebc19d237` K 39.23, `run-0013a51c249d` K 37.60. The board was slow for A in that window.

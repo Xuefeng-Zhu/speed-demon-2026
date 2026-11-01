@@ -197,3 +197,11 @@ This candidate changes `src/main.rs` at `a6a2151` in five steps picked from a re
 In the 8-vCPU Xeon 8488C sandbox (rustc 1.92.0, x86-64-v3, no PGO), 21 interleaved pairs against the `a6a2151` binary gave median paired wall -14.16% (21/21 wins) and CPU -13.12% at 8 threads (179.0 vs 208.1 ms), -21.82% (21/21) at 6 threads and -13.91% (21/21) at 12 oversubscribed threads, with median max RSS 62,632 vs 64,796 KiB at 8 threads. Every run matched the seed-1 hash `f86973c2...0927`, and generated tiny/sample seeds plus edge fixtures match the official reference at default, 1 and 12 threads (pass=34, with the two pre-existing no-trailing-LF `docs.txt` failures unchanged); the portable x86-64 build also passes. These are local sandbox measurements, not official scores; see `experiments/b-speed3/README.md` for sources, SHA-256s, reports and reproduction commands.
 
 Official public-seed practice `run-2802b79df46d` at `b7c4ae5` passed all gates: T=0.172 s, M=73.8 MB, S=583, K=27.00. The previous best B practice measured K=24.44 at about 0.208 s. This is a single practice run, not final hidden-seed scoring.
+
+## Board trials, 1 Nov 2026: PR #28 kept
+
+Kept: PR #28 (`b-pure`, PR #20's memory savings without `mallopt`), with src identical to the PR. Two same-code board runs: `run-14f5946b39e0` at `9fd20fe` (T=174.3 ms, M=62.5 MB, S=586, K=27.72) and `run-ddbd3412bc56` at `6673d40` (T=175.5 ms, M=62.0 MB, S=586, K=27.67). The previous best was K 27.08 (T 172 ms, M 72.9 MB, S 583); same-code runs had ranged 26.9 to 27.1. M fell about 11 MB at the same T.
+
+Not kept:
+- PR #32 (`b-trim`, 583 to 519 lines): `run-600bd5a9d2e8` at `aa5ab52` (T=177.9 ms, M=73.3 MB, K=27.07) and `run-09e06735921b` at `1a0618b` (T=182.1 ms, K=26.77). T came in 3 to 5% slower than production, so the trim gave no K gain.
+- PR #29 (`b-mem2`, #28 plus a 32 MiB stream capacity): `run-546089dda643` at `e1d468c` (T=178.5 ms, M=74.8 MB, S=586, K=26.42). M went back up, so it was reverted to #28.
