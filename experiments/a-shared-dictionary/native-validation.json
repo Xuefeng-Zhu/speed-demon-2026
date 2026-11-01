@@ -1,0 +1,55 @@
+{
+  "properties": {
+    "shared": {
+      "passed": true,
+      "output": "shared-box.rs source_sha256=1920ef827124b4e6b1f5acb12a2427358c8ec05b3032e5f38500d1c36d61da45\nPASS same-key discovery, 1842 forced-collision keys/16 threads, ID bijection, lengths/mismatches/wrap and borrowed-name ownership\nshared-inline.rs source_sha256=d0c265b4aa458f4e00336215848115293be62e78d5a9f7d4703b4c8f35687221\nPASS same-key discovery, 1842 forced-collision keys/16 threads, ID bijection, lengths/mismatches/wrap and borrowed-name ownership\n"
+    },
+    "simd": {
+      "passed": true,
+      "output": "source_sha256=7dff83012360042a18f4a634482faea9a9a717b7cb275c8fefbe463cd5f42b98\nPASS 11000849 exact SSSE3/fallback value, alignment and guard checks\n"
+    },
+    "tiny-simd": {
+      "passed": true,
+      "output": "tiny SIMD exact-kernel properties passed: 171476 cases\n"
+    }
+  },
+  "probe": [
+    {
+      "threads": 16,
+      "trial": 0,
+      "diagnostic": "sd_lookahead parsed_record_capacity=20201984 retained_scratch_capacity_peak=5702636 finished_output_capacity_peak=11796480 finished_output_length_peak=6297232 finished_output_count_peak=45 receiver_pending_capacity_peak=4980736 receiver_pending_length_peak=2634723 receiver_pending_count_peak=19 max_hours_ahead=45 total_output_bytes=10113024 remaining_output_capacity=0 remaining_output_count=0 note=independent-capacity-maxima-not-cgroup-M",
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3"
+    },
+    {
+      "threads": 16,
+      "trial": 1,
+      "diagnostic": "sd_lookahead parsed_record_capacity=20201984 retained_scratch_capacity_peak=5726160 finished_output_capacity_peak=11534336 finished_output_length_peak=6172314 finished_output_count_peak=44 receiver_pending_capacity_peak=4456448 receiver_pending_length_peak=2379053 receiver_pending_count_peak=17 max_hours_ahead=45 total_output_bytes=10113024 remaining_output_capacity=0 remaining_output_count=0 note=independent-capacity-maxima-not-cgroup-M",
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3"
+    },
+    {
+      "threads": 16,
+      "trial": 2,
+      "diagnostic": "sd_lookahead parsed_record_capacity=20201984 retained_scratch_capacity_peak=5209848 finished_output_capacity_peak=11796480 finished_output_length_peak=6297009 finished_output_count_peak=45 receiver_pending_capacity_peak=9437184 receiver_pending_length_peak=5032195 receiver_pending_count_peak=36 max_hours_ahead=50 total_output_bytes=10113024 remaining_output_capacity=0 remaining_output_count=0 note=independent-capacity-maxima-not-cgroup-M",
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3"
+    },
+    {
+      "threads": 20,
+      "trial": 0,
+      "diagnostic": "sd_lookahead parsed_record_capacity=20063104 retained_scratch_capacity_peak=6097072 finished_output_capacity_peak=13369344 finished_output_length_peak=7200608 finished_output_count_peak=51 receiver_pending_capacity_peak=9437184 receiver_pending_length_peak=4999194 receiver_pending_count_peak=36 max_hours_ahead=57 total_output_bytes=10113024 remaining_output_capacity=0 remaining_output_count=0 note=independent-capacity-maxima-not-cgroup-M",
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3"
+    },
+    {
+      "threads": 20,
+      "trial": 1,
+      "diagnostic": "sd_lookahead parsed_record_capacity=20063104 retained_scratch_capacity_peak=5430960 finished_output_capacity_peak=14942208 finished_output_length_peak=7958495 finished_output_count_peak=57 receiver_pending_capacity_peak=13631488 receiver_pending_length_peak=7208014 receiver_pending_count_peak=52 max_hours_ahead=63 total_output_bytes=10113024 remaining_output_capacity=0 remaining_output_count=0 note=independent-capacity-maxima-not-cgroup-M",
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3"
+    },
+    {
+      "threads": 20,
+      "trial": 2,
+      "diagnostic": "sd_lookahead parsed_record_capacity=20063104 retained_scratch_capacity_peak=5394144 finished_output_capacity_peak=15204352 finished_output_length_peak=8129076 finished_output_count_peak=58 receiver_pending_capacity_peak=10223616 receiver_pending_length_peak=5421789 receiver_pending_count_peak=39 max_hours_ahead=59 total_output_bytes=10113024 remaining_output_capacity=0 remaining_output_count=0 note=independent-capacity-maxima-not-cgroup-M",
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3"
+    }
+  ],
+  "complete": true
+}

@@ -223,3 +223,61 @@ Board trials, 1 Nov 2026: PR #30 (`a-mem`, hours streamed during the parse, pool
 
 - Nov 1 2026: opt6 hour-block store + 2 KiB prefetch probe 9313ee3 run-b09a7d9a032c T 28.8 ms M 20.8 MB K 39.88: prefetch does not help on the box; memory-latency reading not supported. Reverted.
 - Nov 1 2026: PR #41 a-direct (O_DIRECT output) 0da83ae run-4f0849dc691c T 33.0 ms M 21.1 MB S 512 K 35.98. M unchanged (/out refuses O_DIRECT, output stays charged). Reverted.
+
+## Shared immutable endpoint entries (selected locally, Nov 1)
+
+Starting from production A at `3a7999c` (source SHA-256
+`ce0463894123b026ca924d3de2c3c9a568016b0afbbc7b0c9462659bff87e118`),
+all parsers now use one append-only endpoint dictionary. Per-slot `OnceLock`
+publishes an immutable hash, length, dense ID and copied, padded name. Exact
+endpoint-byte comparisons remain mandatory. The summary plan borrows names from
+the dictionary, which lives through all scoped workers. The original percentile
+kernels, compact-record escapes, barriers and output scheduling are preserved.
+The local formatted Rust estimate falls from 407 to 398 lines; dependencies stay
+at Rust's standard library and the existing system calls.
+
+Both boxed and inline entries were compared against production and an
+identical-executable control on a native Intel Xeon Platinum 8573C VM (8 cores,
+16 hardware threads, no CPU quota), using the pinned Rust 1.99.1 GNU tool image.
+Twenty workers oversubscribe this VM, which differs from the scoring machine.
+After two warmups per configuration, shuffled 31-round and 51-round comparisons
+both favored the shared dictionaries. The selected inline variant's paired time
+ratios at 8/16/20 workers were 0.9587/0.9432/0.9368, then
+0.9628/0.9150/0.9494. All 1,548 output hashes passed.
+
+Additional full seeds 2 and 3 also favored inline entries. With 21 shuffled
+pairs plus two warmups, the selected candidate's ratios at 16/20 workers were
+0.9047/0.9601 for seed 2 and 0.9292/0.9604 for seed 3. All 368 outputs matched
+the captured production baseline executed on the same inputs. Separate sample
+reference comparisons remain independent correctness checks.
+
+The unchanged pinned Dockerfiles built all memory-test variants offline and ran
+them unprivileged, read-only-root, without network and with an 8 GiB cap. Five
+shuffled warm-input runs per variant/worker count gave the following greatest
+container peaks in bytes:
+
+| Workers | Production | Inline shared dictionary |
+|---:|---:|---:|
+| 16 | 26,488,832 | 24,952,832 |
+| 20 | 29,511,680 | 26,853,376 |
+
+All 40 memory-run outputs passed. These native container peaks include the
+shell/cat measurement wrapper and are not the official parent-cgroup M.
+
+The selected native binary passed 55 checks: 15 core checks (full seed 1 at eight
+worker settings, synthetic oracle, page-end/reference, 132,624-group grid
+and sample seeds 2/98/999/4242), 20 adversarial case/worker combinations, and the
+same 20 combinations with all parser endpoint hashes forced to zero. Independent
+properties also exercised concurrent first discovery, 1,842 colliding keys over
+16 threads, dense IDs, all name lengths, probe wraparound and borrowed names after
+input destruction. Native outputs, source/binary/image identities and raw timing
+samples are in `experiments/a-shared-dictionary/`.
+
+Other trials were not selected: SSSE3 latency decoding was within timing noise;
+retaining SIMD only for tiny groups lost time for a small source reduction;
+bounded summary/output lookahead was slower than the unbounded shared dictionary
+and did not win the combined tradeoff. The inline dictionary was selected for its
+repeated time/memory results and lack of per-endpoint heap allocations.
+
+These are native VM results, not official scoring-box T/M/K or a hidden-seed
+result. No official board run is claimed for this change.

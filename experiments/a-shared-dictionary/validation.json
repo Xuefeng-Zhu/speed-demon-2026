@@ -1,0 +1,71 @@
+{
+  "selected_variant": "shared-inline",
+  "captured_base_commit": "3a7999cdfd5600bab6285056bbd34baea7ad3455",
+  "handoff_base_commit": "a18078fc09c005aeacb7aba63d6f36f1c833358e",
+  "branch": "codex/a-shared-dictionary",
+  "source_sha256": "d0c265b4aa458f4e00336215848115293be62e78d5a9f7d4703b4c8f35687221",
+  "baseline_source_sha256": "ce0463894123b026ca924d3de2c3c9a568016b0afbbc7b0c9462659bff87e118",
+  "native_correctness_checks_passed": 55,
+  "native_benchmark_full_output_checks": 1916,
+  "native_memory_output_checks": 40,
+  "source_lines_local_estimate": {
+    "baseline": 407,
+    "selected": 398,
+    "official_S_measured": false
+  },
+  "native_report_identities": [
+    {
+      "file": "native-host.json",
+      "sha256": "a221c9c785355de4b70cf30bd11149deb637d4ca23e920d1bfdc5f4e1b10d106"
+    },
+    {
+      "file": "native-validation.json",
+      "sha256": "34652ba56779b231be4a1ed9095e4c35123ef6a16eaefff615a1e7bd66f50e8c"
+    },
+    {
+      "file": "native-screen.json",
+      "sha256": "171a1fd9165d5cd8e7557838ca4f6b95737733c8519d27dc3f6f5ba24d593203"
+    },
+    {
+      "file": "native-followup.json",
+      "sha256": "5ea704b4bc9982edbcdf648706f1eb2e7ed93440f555082da830cb26355bc3f7"
+    },
+    {
+      "file": "native-memory.json",
+      "sha256": "b322e42cf86b910c72d710fd3c4dbf7c617599cfaa7f298158074c38999b532a"
+    },
+    {
+      "file": "native-correctness.json",
+      "sha256": "14e25d91b4c7ab03f35b92d448195787c74c1bc629a88291758a807f055d6366"
+    },
+    {
+      "file": "native-seed2.json",
+      "sha256": "3fe90f1db9bfabb61b1173a38e689ae2ba87039e63ba0be551e455ed30609a9d"
+    },
+    {
+      "file": "native-seed3.json",
+      "sha256": "68710ea0420028c201d244e966fd3f00a9f067925b6e995367d78c5f7a9abb53"
+    },
+    {
+      "file": "cross-seed-inputs.json",
+      "sha256": "5ed09300ed4413ea0dfc5e915a3523ca843a5221ee46983a71ba39156cf8b4c3"
+    }
+  ],
+  "verification_log_archive_sha256": "827b8904433ebd2ecc8614d0464069e121b1ef8512051afca2e7d8f3198f3391",
+  "all_verification_log_hashes_rechecked": true,
+  "selected_native_memory_image": {
+    "tag": "sd-a-shared-memory-shared-inline",
+    "id": "sha256:1bfe79636a9db073b6e5dbaaeaefa45a7c73e045c921fb487a46a930e41e7a9c",
+    "dockerfile_sha256": "6a4537b1cd9ecef9d5cca5f585374bedd1ea899a41eda73c4ee5114c0df6f06e"
+  },
+  "official_board_run": null,
+  "limitations": [
+    "Native VM has 8 cores/16 hardware threads; 20 workers oversubscribe it.",
+    "Container memory.peak includes the measurement wrapper and is not official parent-cgroup M.",
+    "Full seeds 2 and 3 use the executed production baseline as oracle; sample reference comparisons are independent."
+  ],
+  "metadata_redactions": [
+    "native-memory.json.data: host-specific path removed; all measured samples preserved"
+  ],
+  "github_branch_pushed_at_validation": false
+}

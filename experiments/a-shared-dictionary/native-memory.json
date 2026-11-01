@@ -1,0 +1,751 @@
+{
+  "note": "Native container memory evidence, not an official parent-cgroup score. memory.peak includes the solution, its loader, the shell/cat wrapper, and charged output/tmpfs pages. Host-warming input before each run does not reproduce every detail of the competition harness.",
+  "host": {
+    "machine": "x86_64",
+    "kernel": "7.0.0-1017-azure"
+  },
+  "data": "<native-host dataset path redacted; see input_sha256>",
+  "input_sha256": "7ec80ba45bceef51ac7f79d3a14521fc6187b2dcb87b5e5542d08063fe5d962a",
+  "expected_output_sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+  "shuffle_seed": 1122,
+  "rounds_per_thread_count": 5,
+  "threads": [
+    16,
+    20
+  ],
+  "wrapper": "/app/solution; rc=$?; printf \"\\nsd_peak \"; cat /sys/fs/cgroup/memory.peak; exit \"$rc\"",
+  "artifacts": "experiments/a-shared-dictionary/target/native-memory/run-ws9t8cpx",
+  "sources": {
+    "baseline": {
+      "path": "experiments/a-shared-dictionary/baseline.rs",
+      "sha256": "ce0463894123b026ca924d3de2c3c9a568016b0afbbc7b0c9462659bff87e118"
+    },
+    "shared-box": {
+      "path": "experiments/a-shared-dictionary/shared-box.rs",
+      "sha256": "1920ef827124b4e6b1f5acb12a2427358c8ec05b3032e5f38500d1c36d61da45"
+    },
+    "shared-inline": {
+      "path": "experiments/a-shared-dictionary/shared-inline.rs",
+      "sha256": "d0c265b4aa458f4e00336215848115293be62e78d5a9f7d4703b4c8f35687221"
+    },
+    "shared-box-bounded": {
+      "path": "experiments/a-shared-dictionary/shared-box-bounded.rs",
+      "sha256": "8cae37cb0937ae58ab4ed06491899a32817106e3578cbb8c6b8551273903d1ea"
+    }
+  },
+  "images": {
+    "baseline": {
+      "tag": "sd-a-shared-memory-baseline",
+      "id": "sha256:56c443685fabc37ffbc220657d7ad0cd13e68aa784e339b90d3ce7a98ad410f1",
+      "dockerfile_sha256": "6a4537b1cd9ecef9d5cca5f585374bedd1ea899a41eda73c4ee5114c0df6f06e"
+    },
+    "shared-box": {
+      "tag": "sd-a-shared-memory-shared-box",
+      "id": "sha256:b1212f797da4b6769937e48f259a18b87e95cccc53f858a906d4f0eb7ea2f9e5",
+      "dockerfile_sha256": "6a4537b1cd9ecef9d5cca5f585374bedd1ea899a41eda73c4ee5114c0df6f06e"
+    },
+    "shared-inline": {
+      "tag": "sd-a-shared-memory-shared-inline",
+      "id": "sha256:1bfe79636a9db073b6e5dbaaeaefa45a7c73e045c921fb487a46a930e41e7a9c",
+      "dockerfile_sha256": "6a4537b1cd9ecef9d5cca5f585374bedd1ea899a41eda73c4ee5114c0df6f06e"
+    },
+    "shared-box-bounded": {
+      "tag": "sd-a-shared-memory-shared-box-bounded",
+      "id": "sha256:6af019a9b8fcc0e443d49459464250144379f83a0786a7af0a37f194716e05c9",
+      "dockerfile_sha256": "6a4537b1cd9ecef9d5cca5f585374bedd1ea899a41eda73c4ee5114c0df6f06e"
+    }
+  },
+  "runs": [
+    {
+      "threads": 16,
+      "round": 0,
+      "order": [
+        "shared-box",
+        "baseline",
+        "shared-inline",
+        "shared-box-bounded"
+      ],
+      "position": 0,
+      "variant": "shared-box",
+      "exit_code": 0,
+      "peak_bytes": 24424448,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "16-0-0-shared-box"
+    },
+    {
+      "threads": 16,
+      "round": 0,
+      "order": [
+        "shared-box",
+        "baseline",
+        "shared-inline",
+        "shared-box-bounded"
+      ],
+      "position": 1,
+      "variant": "baseline",
+      "exit_code": 0,
+      "peak_bytes": 24104960,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "16-0-1-baseline"
+    },
+    {
+      "threads": 16,
+      "round": 0,
+      "order": [
+        "shared-box",
+        "baseline",
+        "shared-inline",
+        "shared-box-bounded"
+      ],
+      "position": 2,
+      "variant": "shared-inline",
+      "exit_code": 0,
+      "peak_bytes": 24952832,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "16-0-2-shared-inline"
+    },
+    {
+      "threads": 16,
+      "round": 0,
+      "order": [
+        "shared-box",
+        "baseline",
+        "shared-inline",
+        "shared-box-bounded"
+      ],
+      "position": 3,
+      "variant": "shared-box-bounded",
+      "exit_code": 0,
+      "peak_bytes": 24838144,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "16-0-3-shared-box-bounded"
+    },
+    {
+      "threads": 16,
+      "round": 1,
+      "order": [
+        "shared-box-bounded",
+        "baseline",
+        "shared-box",
+        "shared-inline"
+      ],
+      "position": 0,
+      "variant": "shared-box-bounded",
+      "exit_code": 0,
+      "peak_bytes": 24178688,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "16-1-0-shared-box-bounded"
+    },
+    {
+      "threads": 16,
+      "round": 1,
+      "order": [
+        "shared-box-bounded",
+        "baseline",
+        "shared-box",
+        "shared-inline"
+      ],
+      "position": 1,
+      "variant": "baseline",
+      "exit_code": 0,
+      "peak_bytes": 26488832,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "16-1-1-baseline"
+    },
+    {
+      "threads": 16,
+      "round": 1,
+      "order": [
+        "shared-box-bounded",
+        "baseline",
+        "shared-box",
+        "shared-inline"
+      ],
+      "position": 2,
+      "variant": "shared-box",
+      "exit_code": 0,
+      "peak_bytes": 23789568,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "16-1-2-shared-box"
+    },
+    {
+      "threads": 16,
+      "round": 1,
+      "order": [
+        "shared-box-bounded",
+        "baseline",
+        "shared-box",
+        "shared-inline"
+      ],
+      "position": 3,
+      "variant": "shared-inline",
+      "exit_code": 0,
+      "peak_bytes": 23597056,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "16-1-3-shared-inline"
+    },
+    {
+      "threads": 16,
+      "round": 2,
+      "order": [
+        "shared-inline",
+        "baseline",
+        "shared-box-bounded",
+        "shared-box"
+      ],
+      "position": 0,
+      "variant": "shared-inline",
+      "exit_code": 0,
+      "peak_bytes": 24907776,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "16-2-0-shared-inline"
+    },
+    {
+      "threads": 16,
+      "round": 2,
+      "order": [
+        "shared-inline",
+        "baseline",
+        "shared-box-bounded",
+        "shared-box"
+      ],
+      "position": 1,
+      "variant": "baseline",
+      "exit_code": 0,
+      "peak_bytes": 24526848,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "16-2-1-baseline"
+    },
+    {
+      "threads": 16,
+      "round": 2,
+      "order": [
+        "shared-inline",
+        "baseline",
+        "shared-box-bounded",
+        "shared-box"
+      ],
+      "position": 2,
+      "variant": "shared-box-bounded",
+      "exit_code": 0,
+      "peak_bytes": 25112576,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "16-2-2-shared-box-bounded"
+    },
+    {
+      "threads": 16,
+      "round": 2,
+      "order": [
+        "shared-inline",
+        "baseline",
+        "shared-box-bounded",
+        "shared-box"
+      ],
+      "position": 3,
+      "variant": "shared-box",
+      "exit_code": 0,
+      "peak_bytes": 24186880,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "16-2-3-shared-box"
+    },
+    {
+      "threads": 16,
+      "round": 3,
+      "order": [
+        "shared-box",
+        "shared-inline",
+        "shared-box-bounded",
+        "baseline"
+      ],
+      "position": 0,
+      "variant": "shared-box",
+      "exit_code": 0,
+      "peak_bytes": 25059328,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "16-3-0-shared-box"
+    },
+    {
+      "threads": 16,
+      "round": 3,
+      "order": [
+        "shared-box",
+        "shared-inline",
+        "shared-box-bounded",
+        "baseline"
+      ],
+      "position": 1,
+      "variant": "shared-inline",
+      "exit_code": 0,
+      "peak_bytes": 24375296,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "16-3-1-shared-inline"
+    },
+    {
+      "threads": 16,
+      "round": 3,
+      "order": [
+        "shared-box",
+        "shared-inline",
+        "shared-box-bounded",
+        "baseline"
+      ],
+      "position": 2,
+      "variant": "shared-box-bounded",
+      "exit_code": 0,
+      "peak_bytes": 24264704,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "16-3-2-shared-box-bounded"
+    },
+    {
+      "threads": 16,
+      "round": 3,
+      "order": [
+        "shared-box",
+        "shared-inline",
+        "shared-box-bounded",
+        "baseline"
+      ],
+      "position": 3,
+      "variant": "baseline",
+      "exit_code": 0,
+      "peak_bytes": 24821760,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "16-3-3-baseline"
+    },
+    {
+      "threads": 16,
+      "round": 4,
+      "order": [
+        "shared-box-bounded",
+        "shared-box",
+        "baseline",
+        "shared-inline"
+      ],
+      "position": 0,
+      "variant": "shared-box-bounded",
+      "exit_code": 0,
+      "peak_bytes": 23724032,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "16-4-0-shared-box-bounded"
+    },
+    {
+      "threads": 16,
+      "round": 4,
+      "order": [
+        "shared-box-bounded",
+        "shared-box",
+        "baseline",
+        "shared-inline"
+      ],
+      "position": 1,
+      "variant": "shared-box",
+      "exit_code": 0,
+      "peak_bytes": 25427968,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "16-4-1-shared-box"
+    },
+    {
+      "threads": 16,
+      "round": 4,
+      "order": [
+        "shared-box-bounded",
+        "shared-box",
+        "baseline",
+        "shared-inline"
+      ],
+      "position": 2,
+      "variant": "baseline",
+      "exit_code": 0,
+      "peak_bytes": 24690688,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "16-4-2-baseline"
+    },
+    {
+      "threads": 16,
+      "round": 4,
+      "order": [
+        "shared-box-bounded",
+        "shared-box",
+        "baseline",
+        "shared-inline"
+      ],
+      "position": 3,
+      "variant": "shared-inline",
+      "exit_code": 0,
+      "peak_bytes": 23760896,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "16-4-3-shared-inline"
+    },
+    {
+      "threads": 20,
+      "round": 0,
+      "order": [
+        "shared-box-bounded",
+        "shared-inline",
+        "baseline",
+        "shared-box"
+      ],
+      "position": 0,
+      "variant": "shared-box-bounded",
+      "exit_code": 0,
+      "peak_bytes": 25817088,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "20-0-0-shared-box-bounded"
+    },
+    {
+      "threads": 20,
+      "round": 0,
+      "order": [
+        "shared-box-bounded",
+        "shared-inline",
+        "baseline",
+        "shared-box"
+      ],
+      "position": 1,
+      "variant": "shared-inline",
+      "exit_code": 0,
+      "peak_bytes": 24875008,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "20-0-1-shared-inline"
+    },
+    {
+      "threads": 20,
+      "round": 0,
+      "order": [
+        "shared-box-bounded",
+        "shared-inline",
+        "baseline",
+        "shared-box"
+      ],
+      "position": 2,
+      "variant": "baseline",
+      "exit_code": 0,
+      "peak_bytes": 25812992,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "20-0-2-baseline"
+    },
+    {
+      "threads": 20,
+      "round": 0,
+      "order": [
+        "shared-box-bounded",
+        "shared-inline",
+        "baseline",
+        "shared-box"
+      ],
+      "position": 3,
+      "variant": "shared-box",
+      "exit_code": 0,
+      "peak_bytes": 25767936,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "20-0-3-shared-box"
+    },
+    {
+      "threads": 20,
+      "round": 1,
+      "order": [
+        "shared-inline",
+        "baseline",
+        "shared-box",
+        "shared-box-bounded"
+      ],
+      "position": 0,
+      "variant": "shared-inline",
+      "exit_code": 0,
+      "peak_bytes": 25677824,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "20-1-0-shared-inline"
+    },
+    {
+      "threads": 20,
+      "round": 1,
+      "order": [
+        "shared-inline",
+        "baseline",
+        "shared-box",
+        "shared-box-bounded"
+      ],
+      "position": 1,
+      "variant": "baseline",
+      "exit_code": 0,
+      "peak_bytes": 25788416,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "20-1-1-baseline"
+    },
+    {
+      "threads": 20,
+      "round": 1,
+      "order": [
+        "shared-inline",
+        "baseline",
+        "shared-box",
+        "shared-box-bounded"
+      ],
+      "position": 2,
+      "variant": "shared-box",
+      "exit_code": 0,
+      "peak_bytes": 24514560,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "20-1-2-shared-box"
+    },
+    {
+      "threads": 20,
+      "round": 1,
+      "order": [
+        "shared-inline",
+        "baseline",
+        "shared-box",
+        "shared-box-bounded"
+      ],
+      "position": 3,
+      "variant": "shared-box-bounded",
+      "exit_code": 0,
+      "peak_bytes": 26374144,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "20-1-3-shared-box-bounded"
+    },
+    {
+      "threads": 20,
+      "round": 2,
+      "order": [
+        "baseline",
+        "shared-box",
+        "shared-inline",
+        "shared-box-bounded"
+      ],
+      "position": 0,
+      "variant": "baseline",
+      "exit_code": 0,
+      "peak_bytes": 29511680,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "20-2-0-baseline"
+    },
+    {
+      "threads": 20,
+      "round": 2,
+      "order": [
+        "baseline",
+        "shared-box",
+        "shared-inline",
+        "shared-box-bounded"
+      ],
+      "position": 1,
+      "variant": "shared-box",
+      "exit_code": 0,
+      "peak_bytes": 25931776,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "20-2-1-shared-box"
+    },
+    {
+      "threads": 20,
+      "round": 2,
+      "order": [
+        "baseline",
+        "shared-box",
+        "shared-inline",
+        "shared-box-bounded"
+      ],
+      "position": 2,
+      "variant": "shared-inline",
+      "exit_code": 0,
+      "peak_bytes": 24035328,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "20-2-2-shared-inline"
+    },
+    {
+      "threads": 20,
+      "round": 2,
+      "order": [
+        "baseline",
+        "shared-box",
+        "shared-inline",
+        "shared-box-bounded"
+      ],
+      "position": 3,
+      "variant": "shared-box-bounded",
+      "exit_code": 0,
+      "peak_bytes": 25772032,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "20-2-3-shared-box-bounded"
+    },
+    {
+      "threads": 20,
+      "round": 3,
+      "order": [
+        "shared-box-bounded",
+        "shared-inline",
+        "baseline",
+        "shared-box"
+      ],
+      "position": 0,
+      "variant": "shared-box-bounded",
+      "exit_code": 0,
+      "peak_bytes": 25501696,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "20-3-0-shared-box-bounded"
+    },
+    {
+      "threads": 20,
+      "round": 3,
+      "order": [
+        "shared-box-bounded",
+        "shared-inline",
+        "baseline",
+        "shared-box"
+      ],
+      "position": 1,
+      "variant": "shared-inline",
+      "exit_code": 0,
+      "peak_bytes": 26853376,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "20-3-1-shared-inline"
+    },
+    {
+      "threads": 20,
+      "round": 3,
+      "order": [
+        "shared-box-bounded",
+        "shared-inline",
+        "baseline",
+        "shared-box"
+      ],
+      "position": 2,
+      "variant": "baseline",
+      "exit_code": 0,
+      "peak_bytes": 26701824,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "20-3-2-baseline"
+    },
+    {
+      "threads": 20,
+      "round": 3,
+      "order": [
+        "shared-box-bounded",
+        "shared-inline",
+        "baseline",
+        "shared-box"
+      ],
+      "position": 3,
+      "variant": "shared-box",
+      "exit_code": 0,
+      "peak_bytes": 27353088,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "20-3-3-shared-box"
+    },
+    {
+      "threads": 20,
+      "round": 4,
+      "order": [
+        "shared-inline",
+        "shared-box",
+        "baseline",
+        "shared-box-bounded"
+      ],
+      "position": 0,
+      "variant": "shared-inline",
+      "exit_code": 0,
+      "peak_bytes": 26255360,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "20-4-0-shared-inline"
+    },
+    {
+      "threads": 20,
+      "round": 4,
+      "order": [
+        "shared-inline",
+        "shared-box",
+        "baseline",
+        "shared-box-bounded"
+      ],
+      "position": 1,
+      "variant": "shared-box",
+      "exit_code": 0,
+      "peak_bytes": 25047040,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "20-4-1-shared-box"
+    },
+    {
+      "threads": 20,
+      "round": 4,
+      "order": [
+        "shared-inline",
+        "shared-box",
+        "baseline",
+        "shared-box-bounded"
+      ],
+      "position": 2,
+      "variant": "baseline",
+      "exit_code": 0,
+      "peak_bytes": 27586560,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "20-4-2-baseline"
+    },
+    {
+      "threads": 20,
+      "round": 4,
+      "order": [
+        "shared-inline",
+        "shared-box",
+        "baseline",
+        "shared-box-bounded"
+      ],
+      "position": 3,
+      "variant": "shared-box-bounded",
+      "exit_code": 0,
+      "peak_bytes": 25411584,
+      "sha256": "495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3",
+      "log_stem": "20-4-3-shared-box-bounded"
+    }
+  ],
+  "summary": {
+    "16": {
+      "baseline": {
+        "n": 5,
+        "median_peak_bytes": 24690688,
+        "max_peak_bytes": 26488832
+      },
+      "shared-box": {
+        "n": 5,
+        "median_peak_bytes": 24424448,
+        "max_peak_bytes": 25427968
+      },
+      "shared-inline": {
+        "n": 5,
+        "median_peak_bytes": 24375296,
+        "max_peak_bytes": 24952832
+      },
+      "shared-box-bounded": {
+        "n": 5,
+        "median_peak_bytes": 24264704,
+        "max_peak_bytes": 25112576
+      }
+    },
+    "20": {
+      "baseline": {
+        "n": 5,
+        "median_peak_bytes": 26701824,
+        "max_peak_bytes": 29511680
+      },
+      "shared-box": {
+        "n": 5,
+        "median_peak_bytes": 25767936,
+        "max_peak_bytes": 27353088
+      },
+      "shared-inline": {
+        "n": 5,
+        "median_peak_bytes": 25677824,
+        "max_peak_bytes": 26853376
+      },
+      "shared-box-bounded": {
+        "n": 5,
+        "median_peak_bytes": 25772032,
+        "max_peak_bytes": 26374144
+      }
+    }
+  },
+  "complete": true,
+  "all_hashes_ok": true,
+  "metadata_redactions": [
+    "data: host-specific directory path removed before publication; measurement samples unchanged"
+  ]
+}

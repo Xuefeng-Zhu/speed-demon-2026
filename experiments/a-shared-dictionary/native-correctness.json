@@ -1,0 +1,139 @@
+{
+  "run_id": "20261101T230230Z-7",
+  "execution": "native Linux x86-64; existing pinned-tool-image benchmark binaries",
+  "data": "/inputs/full-seed1",
+  "threads": [
+    "1",
+    "2",
+    "3",
+    "6",
+    "8",
+    "16",
+    "20",
+    "default"
+  ],
+  "sample_seeds": [
+    2,
+    98,
+    999,
+    4242
+  ],
+  "adversarial_threads": [
+    1,
+    2,
+    3,
+    7,
+    12
+  ],
+  "expected_checks_per_variant": 55,
+  "variants": {
+    "shared-inline": {
+      "source": "experiments/a-shared-dictionary/shared-inline.rs",
+      "source_sha256": "d0c265b4aa458f4e00336215848115293be62e78d5a9f7d4703b4c8f35687221",
+      "native_binary": "experiments/a-x86-speed/target/bench-shared-inline",
+      "native_binary_sha256": "c00e9f9422b5d87ee3af530420ed0f185265000c02449890b1ce1302bc476c08",
+      "core_checks_passed": 15,
+      "adversarial_checks_passed": 20,
+      "forced_adversarial_checks_passed": 20,
+      "total_checks_passed": 55,
+      "passed": true,
+      "forced_source_sha256": "584b0de95a88ae86071ad9ac6bf74404af06a22fc9cf56cf4be18de41f1d0e44",
+      "forced_binary_sha256": "5b024adbeecde627f3217a3a06e8ec3b94b0f680043ba400a129cbfbcdd48d18",
+      "source_unchanged": true,
+      "native_binary_unchanged": true
+    }
+  },
+  "executed_commands": [
+    {
+      "stage": "core",
+      "variant": "shared-inline",
+      "command": [
+        "/usr/bin/python3",
+        "-u",
+        "/work/experiments/a-x86-speed/check.py",
+        "/work/experiments/a-x86-speed/target/bench-shared-inline",
+        "--data",
+        "/inputs/full-seed1",
+        "--threads",
+        "1,2,3,6,8,16,20,default",
+        "--seeds",
+        "2,98,999,4242"
+      ],
+      "cwd": "/work",
+      "log": "experiments/a-shared-dictionary/target/verify-20261101T230230Z-7-shared-inline-core.log",
+      "returncode": 0,
+      "expected_checks": 15,
+      "checks_passed": 15,
+      "passed": true,
+      "observed_ok_lines": 15,
+      "log_sha256": "481a328eb8691b80d8bcd9c59dd8c3d02dd37a8f59f757bc3dbb42d7d71891fa"
+    },
+    {
+      "stage": "adversarial",
+      "variant": "shared-inline",
+      "command": [
+        "/usr/bin/python3",
+        "-u",
+        "/work/experiments/a-x86-speed/adversarial.py",
+        "--binary",
+        "/work/experiments/a-x86-speed/target/bench-shared-inline",
+        "--spec",
+        "--threads",
+        "1,2,3,7,12"
+      ],
+      "cwd": "/work",
+      "log": "experiments/a-shared-dictionary/target/verify-20261101T230230Z-7-shared-inline-adversarial.log",
+      "returncode": 0,
+      "expected_checks": 20,
+      "checks_passed": 20,
+      "passed": true,
+      "observed_ok_lines": 20,
+      "log_sha256": "5cdae670ff61e8aec78f6e6a1bf5a79396e42ce20dcf5c9cd95584bc2bc2e187"
+    },
+    {
+      "stage": "prepare-forced",
+      "variant": null,
+      "command": [
+        "/usr/bin/python3",
+        "-u",
+        "/work/experiments/a-shared-dictionary/prepare-forced.py",
+        "--build",
+        "--source",
+        "shared-inline.rs"
+      ],
+      "cwd": "/work",
+      "log": "experiments/a-shared-dictionary/target/verify-20261101T230230Z-7-prepare-forced.log",
+      "returncode": 0,
+      "expected_checks": null,
+      "checks_passed": 0,
+      "passed": true,
+      "observed_ok_lines": 0,
+      "log_sha256": "d69e0f2038019fc51c80fb375da297922cdefc3257ff9246d5dc4dbd986c14ed"
+    },
+    {
+      "stage": "forced-adversarial",
+      "variant": "shared-inline",
+      "command": [
+        "/usr/bin/python3",
+        "-u",
+        "/work/experiments/a-x86-speed/adversarial.py",
+        "--binary",
+        "/work/experiments/a-shared-dictionary/target/shared-inline-forced-hash",
+        "--spec",
+        "--threads",
+        "1,2,3,7,12"
+      ],
+      "cwd": "/work",
+      "log": "experiments/a-shared-dictionary/target/verify-20261101T230230Z-7-shared-inline-forced-adversarial.log",
+      "returncode": 0,
+      "expected_checks": 20,
+      "checks_passed": 20,
+      "passed": true,
+      "observed_ok_lines": 20,
+      "log_sha256": "5cdae670ff61e8aec78f6e6a1bf5a79396e42ce20dcf5c9cd95584bc2bc2e187"
+    }
+  ],
+  "complete": true,
+  "all_passed": true,
+  "total_checks_passed": 55
+}
