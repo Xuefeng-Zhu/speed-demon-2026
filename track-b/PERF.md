@@ -219,3 +219,4 @@ The final head `6d785be`, with #28 kept, ran `run-a283f9503c48`: T=173.0 ms, M=6
 - Nov 1 2026: PR #37 alone (drop plan.long) b2d223e run-8785c8c971ee T 224.7 ms M 62.7 MB K 24.39 (slow box: A 36.8 ms same run); b04d236 run-5b2e43f6fac4 T 203.8 ms M 63.0 MB K 25.59. No M gain, reverted.
 
 - Nov 1 2026: opt6 cand 2 (phrase records in token table) 9313ee3 run-673cdf437f40 T 171.0 ms M 64.1 MB S 598 K 27.76 (neutral vs 28.00).
+- Nov 1 2026: opt6 cand 1 (chunkwise answer) c98e004 run-ef95c19391b5 T 175.7 ms M 46.4 MB S 647 K 28.88 (run 1).
