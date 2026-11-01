@@ -1,0 +1,17 @@
+## memrun, 12 threads, 21 rounds
+production     wall   45.6 ms  anon  16.59 MB  est M  19.87 MB  output resident 100%
+a-mem          wall   39.3 ms  anon   8.52 MB  est M  17.59 MB  output resident 100%
+candidate      wall   41.3 ms  anon   9.76 MB  est M   9.76 MB  output resident 0%
+## memrun, 8 threads, 21 rounds
+production     wall   37.7 ms  anon  15.61 MB  est M  17.93 MB  output resident 100%
+a-mem          wall   34.0 ms  anon   6.51 MB  est M  16.03 MB  output resident 100%
+candidate      wall   35.8 ms  anon   7.65 MB  est M   7.65 MB  output resident 0%
+## pairs, 12 threads, 31 rounds: production -> candidate
+base 43.4 ms  cand 39.7 ms  paired cand/base 0.9150  cand faster 28/31
+## pairs, 12 threads, 31 rounds: a-mem -> candidate
+base 37.9 ms  cand 39.4 ms  paired cand/base 1.0524  cand faster 5/31
+## pairs, 8 threads, 31 rounds: production -> candidate
+base 34.4 ms  cand 34.9 ms  paired cand/base 1.0136  cand faster 10/31
+## pairs, 8 threads, 31 rounds: a-mem -> candidate
+base 32.2 ms  cand 34.6 ms  paired cand/base 1.0632  cand faster 2/31
+done

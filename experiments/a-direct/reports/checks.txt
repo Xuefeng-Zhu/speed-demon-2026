@@ -1,0 +1,41 @@
+## check.py, outputs on xfs (.out/check): O_DIRECT path; helper suites with TMPDIR on xfs
+ok   full seed-1 SD_THREADS=1 sha256=495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3
+ok   full seed-1 SD_THREADS=2 sha256=495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3
+ok   full seed-1 SD_THREADS=3 sha256=495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3
+ok   full seed-1 SD_THREADS=6 sha256=495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3
+ok   full seed-1 SD_THREADS=8 sha256=495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3
+ok   full seed-1 SD_THREADS=12 sha256=495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3
+ok   full seed-1 SD_THREADS=20 sha256=495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3
+ok   full seed-1 SD_THREADS=64 sha256=495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3
+ok   full seed-1 SD_THREADS=default sha256=495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3
+ok   test.py exit=0 PASS seed=999, records=100000, groups=54294
+ok   page_end_test.py exit=0 PASS 16385
+ok   latency_grid_test.py exit=0 PASS 132624 groups, 64 threads
+ok   sample seed 2 matches official reference
+ok   sample seed 98 matches official reference
+ok   sample seed 999 matches official reference
+ok   sample seed 4242 matches official reference
+0 failure(s)
+## check.py helper suites with TMPDIR=/tmp (tmpfs): buffered fallback path
+ok   full seed-1 SD_THREADS=12 sha256=495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3
+ok   test.py exit=0 PASS seed=999, records=100000, groups=54294
+ok   page_end_test.py exit=0 PASS 16385
+ok   latency_grid_test.py exit=0 PASS 132624 groups, 64 threads
+ok   sample seed 2 matches official reference
+ok   sample seed 98 matches official reference
+ok   sample seed 999 matches official reference
+ok   sample seed 4242 matches official reference
+0 failure(s)
+## adversarial.py --spec, TMPDIR on xfs (O_DIRECT)
+0 failure(s)
+## adversarial.py --spec, TMPDIR=/tmp (tmpfs, buffered fallback)
+0 failure(s)
+## order_test.py --tmp on xfs (O_DIRECT)
+     40 ok
+## order_test.py --tmp /dev/shm (tmpfs, buffered fallback)
+     40 ok
+## full seed 1 written to tmpfs (/tmp, buffered fallback)
+495ca09682b9673ef836a506496177680bb4a3af54255174befddb1f83481cd3
+## output page-cache residency after a run on xfs (fincore)
+RES PAGES  SIZE FILE
+ 0B     0  9.6M /projects/sandbox/.out/res/summary.txt

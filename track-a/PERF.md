@@ -222,3 +222,21 @@ Board trials, 1 Nov 2026: PR #30 (`a-mem`, hours streamed during the parse, pool
 - Nov 1 2026: opt6 cand 1 (hour-block store) bc3b070 run-eeafa197aa2f T 27.2 ms M 20.5 MB S 415 K 41.12. opt6 cand 2 (mallopt M_MMAP_THRESHOLD 64 KiB) c881b28 run-be30db50f1f7 T 25.9 ms M 20.4 MB K 42.20; b04d236 run-b45631c463b4 T 30.4 ms M 20.3 MB K 39.02 (slow box). M -2.5 MB real, T inconclusive; reverted to production for now.
 
 - Nov 1 2026: opt6 hour-block store + 2 KiB prefetch probe 9313ee3 run-b09a7d9a032c T 28.8 ms M 20.8 MB K 39.88: prefetch does not help on the box; memory-latency reading not supported. Reverted.
+
+## Output written with O_DIRECT, on top of a-mem (sandbox, not board results; branch a-direct)
+
+**Board run pending.** The 10.11 MB `summary.txt` written through the page cache is charged to the run's cgroup, so it is part of M. PR #30 (`a-mem`) cut local peak anonymous memory from 16.6 to 8.5 MB at 12 threads, but its board M stayed at 20.05 and 20.96 MB against production's about 22 MB, because its peak comes when most of the output has been written. This branch is a-mem's source with the output written through one 4 KiB-aligned 1 MiB staging buffer to a file opened with `O_DIRECT`; the last block is zero-padded and the file then cut to its length. If the file system refuses `O_DIRECT` (tmpfs here), the file is opened without it and the same code runs through the page cache. After a run on xfs, `fincore` reports none of the output resident.
+
+Local medians at 12 / 8 threads (`experiments/a-direct/reports/`, 21 interleaved runs for memory, 31 paired rounds for time, every output hash-checked). est M is the sampled peak of anonymous memory plus the output in the page cache at that moment:
+
+| | production | a-mem | candidate |
+|---|---:|---:|---:|
+| est M, 12 threads | 19.87 MB | 17.59 MB | 9.76 MB |
+| est M, 8 threads | 17.93 MB | 16.03 MB | 7.65 MB |
+| paired T, candidate / production | | | 0.915 / 1.014 |
+| paired T, candidate / a-mem | | | 1.052 / 1.063 |
+| S | 414 | 468 | 512 |
+
+The synchronous writes cost about 5 to 6% of T against a-mem here; on the board that depends on its disk. With board M 1.8 to 3.4 MB above the local estimate, as for production and a-mem, the candidate's board M would be about 11.6 to 13.2 MB. At T 5% above production, K would rise 4.7 to 7.4%. The keep rule passes while board T stays below about 28.8 to 30.3 ms. If board M stays near 20 MB, `/out` refuses `O_DIRECT` or the output is not what the board charges, and the change is reverted.
+
+Correctness: `experiments/a-x86-speed/check.py` (full seed-1 hash at `SD_THREADS` 1, 2, 3, 6, 8, 12, 20, 64 and default, its three helper suites, sample seeds 2, 98, 999, 4242 against the reference), `adversarial.py --spec` and the line-order and fallback test (40 of 40). The helper suites, `adversarial.py` and the order test ran with their outputs on xfs (`O_DIRECT`) and on tmpfs (fallback), and the full seed-1 hash was also checked on tmpfs. Details: `experiments/a-direct/README.md`.
