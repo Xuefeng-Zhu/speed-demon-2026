@@ -222,3 +222,4 @@ Board trials, 1 Nov 2026: PR #30 (`a-mem`, hours streamed during the parse, pool
 - Nov 1 2026: opt6 cand 1 (hour-block store) bc3b070 run-eeafa197aa2f T 27.2 ms M 20.5 MB S 415 K 41.12. opt6 cand 2 (mallopt M_MMAP_THRESHOLD 64 KiB) c881b28 run-be30db50f1f7 T 25.9 ms M 20.4 MB K 42.20; b04d236 run-b45631c463b4 T 30.4 ms M 20.3 MB K 39.02 (slow box). M -2.5 MB real, T inconclusive; reverted to production for now.
 
 - Nov 1 2026: opt6 hour-block store + 2 KiB prefetch probe 9313ee3 run-b09a7d9a032c T 28.8 ms M 20.8 MB K 39.88: prefetch does not help on the box; memory-latency reading not supported. Reverted.
+- Nov 1 2026: PR #41 a-direct (O_DIRECT output) 0da83ae run-4f0849dc691c T 33.0 ms M 21.1 MB S 512 K 35.98. M unchanged (/out refuses O_DIRECT, output stays charged). Reverted.
