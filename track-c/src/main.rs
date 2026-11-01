@@ -1,4 +1,5 @@
 //! Speed Demon 2026, Track C (Join): std-only Rust. README.md explains the design.
+use std::arch::x86_64::*;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering::*};
 use std::{env, fs, os::fd::AsRawFd, os::unix::fs::FileExt, sync::Barrier, sync::Mutex, thread};
 
@@ -8,100 +9,244 @@ extern "C" {
 }
 
 /// Maps a file read-only (PROT_READ, MAP_PRIVATE): its pages stay in the shared page cache.
+/// An anonymous page follows it, so 64 bytes past its end can be read.
 fn map(path: String) -> &'static [u8] {
     let f = fs::File::open(&path).expect(&path);
     let len = f.metadata().unwrap().len() as usize;
-    unsafe { std::slice::from_raw_parts(mmap(0 as _, len, 1, 2, f.as_raw_fd(), 0), len) }
+    unsafe {
+        let p = mmap(0 as _, len + 4096, 1, 0x22, -1, 0);
+        assert!(mmap(p, len, 1, 0x12, f.as_raw_fd(), 0) == p); // MAP_FIXED over its start
+        std::slice::from_raw_parts(p, len)
+    }
 }
 
-/// `n` zeroed atomics from an anonymous map. Advice 14 (MADV_HUGEPAGE) asks for huge pages,
-/// which mean fewer TLB misses; 15 (MADV_NOHUGEPAGE) forbids them. The calling thread writes
-/// one byte per 2 MiB, so each huge page is faulted in by this thread alone. When several
-/// threads fault the same empty huge page at once, each allocates and charges one and all
-/// but one are thrown away, which raises the measured peak memory.
-fn zeroed<T>(n: usize, advice: i32) -> &'static [T] {
+/// `n` zeroed atomics from an anonymous map without huge pages (MADV_NOHUGEPAGE). Each thread
+/// faults in the 4 KiB pages it writes; threads that fault one empty huge page at the same
+/// time each allocate and charge one, which raises the measured peak memory.
+fn zeroed<T>(n: usize) -> &'static [T] {
     let len = n * std::mem::size_of::<T>();
-    let p = unsafe { mmap(0 as _, len, 3, 0x22, -1, 0) };
-    unsafe { madvise(p, len, advice) };
-    (0..len)
-        .step_by(1 << 21)
-        .for_each(|o| unsafe { *p.add(o) = 0 });
-    unsafe { std::slice::from_raw_parts(p as _, n) }
-}
-
-/// Runs `f(0)..f(n - 1)` on n scoped threads and returns the results in order.
-fn par<T: Send>(n: usize, f: impl Fn(usize) -> T + Sync) -> Vec<T> {
-    let f = &f;
-    thread::scope(|s| {
-        let handles: Vec<_> = (0..n).map(|t| s.spawn(move || f(t))).collect();
-        handles.into_iter().map(|h| h.join().unwrap()).collect()
-    })
+    unsafe {
+        let p = mmap(0 as _, len, 3, 0x22, -1, 0);
+        madvise(p, len, 15);
+        std::slice::from_raw_parts(p as _, n)
+    }
 }
 
 /// Asks the CPU to start loading the cache line at `p` without waiting.
 fn prefetch<T>(p: &T) {
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        std::arch::asm!("prefetcht0 [{}]", in(reg) p, options(nomem, nostack))
-    };
+    unsafe { _mm_prefetch::<_MM_HINT_T0>(p as *const T as _) };
 }
 
 /// Bytes `p..p + 8` of `b` as a little-endian word. Callers only read where eight bytes
-/// exist: each number ends at least eight bytes into the file, and each name before its
-/// record's region id.
+/// exist: each number ends at least eight bytes into its buffer.
 fn ld(b: &[u8], p: usize) -> u64 {
     debug_assert!(p + 8 <= b.len());
     unsafe { (b.as_ptr().add(p) as *const u64).read_unaligned() }
 }
 
-/// Bytes `s..e` of `b`, at most eight of them, as a little-endian word padded with zeros.
-fn word(b: &[u8], s: usize, e: usize) -> u64 {
-    let n = e.saturating_sub(s).min(8);
-    ld(b, s.min(e)) & ((1u128 << (8 * n)) - 1) as u64
+/// The low `n` bits of `x` (all of them when n >= 64).
+fn low(x: u64, n: u32) -> u64 {
+    unsafe { _bzhi_u64(x, n) }
+}
+
+/// Bit i is set where b[p + i] == c, for 32 bytes. Callers only read where 32 bytes exist.
+fn eq32(b: &[u8], p: usize, c: u8) -> u32 {
+    debug_assert!(p + 32 <= b.len());
+    unsafe {
+        let v = _mm256_loadu_si256(b.as_ptr().add(p) as _);
+        _mm256_movemask_epi8(_mm256_cmpeq_epi8(v, _mm256_set1_epi8(c as i8))) as u32
+    }
+}
+
+/// The same for 64 bytes.
+fn eq64(b: &[u8], p: usize, c: u8) -> u64 {
+    eq32(b, p, c) as u64 | (eq32(b, p + 32, c) as u64) << 32
+}
+
+/// Bits 8k..8k + 8 are set where the k-th of the eight words from w is y.
+fn eq8(w: &AtomicU64, y: u64) -> u64 {
+    unsafe {
+        let (p, y) = (w as *const _ as *const __m256i, _mm256_set1_epi64x(y as _));
+        let eq = |p| _mm256_movemask_epi8(_mm256_cmpeq_epi64(_mm256_loadu_si256(p), y));
+        eq(p) as u32 as u64 | (eq(p.add(1)) as u32 as u64) << 32
+    }
 }
 
 /// The number whose decimal digits fill the top `n` (1 to 8) bytes of `x`, eight at once.
 fn num(x: u64, n: usize) -> u64 {
-    let mut v = x & 0x0F0F0F0F0F0F0F0F & !0 << (64 - 8 * n);
-    v = (v * 10 + (v >> 8)) & 0x00FF00FF00FF00FF;
-    v = (v * 100 + (v >> 16)) & 0x0000FFFF0000FFFF;
-    (v * 10000 + (v >> 32)) & 0xFFFFFFFF
+    let v = (x & 0x0F0F0F0F0F0F0F0F & !0 << (64 - 8 * n)).wrapping_mul(2561) >> 8;
+    let v = (v & 0x00FF00FF00FF00FF).wrapping_mul(6553601) >> 16;
+    (v & 0x0000FFFF0000FFFF).wrapping_mul(42949672960001) >> 32
+}
+
+/// 16 bytes from `p` (anything that big) as a vector.
+fn at16<T>(p: &T) -> __m128i {
+    unsafe { _mm_loadu_si128(p as *const T as _) }
+}
+const ONE100: __m256i = unsafe { std::mem::transmute([0x1_0064u32; 8]) }; // pairs (100, 1)
+
+/// Bit i is the XOR of bits 0..=i of x: set inside quotes, given x's quote positions.
+fn prefix_xor(x: u64) -> u64 {
+    unsafe {
+        let p = _mm_clmulepi64_si128(_mm_set_epi64x(0, x as i64), _mm_set1_epi8(-1), 0);
+        _mm_cvtsi128_si64(p) as u64
+    }
 }
 
 /// The 64-bit hash of the name `b[s..e]`. Names are identified by 56 bits of it, not
 /// compared byte for byte: two of the ~10^5 names in one owner's table share them with
-/// probability ~7e-8. The hash folds the name's bytes eight at a time, zero padded (names
-/// never contain a zero byte).
+/// probability ~7e-8. Each 32 bytes of the name, zero padded (names never contain a zero
+/// byte), go through an AES round, the two halves as data and round key; two more rounds
+/// mix the last ones in, and the 128-bit state is folded in half. (With one round after the
+/// data instead of two, the folded top bits of names of one length collide three times too
+/// often.)
 fn name_hash(b: &[u8], s: usize, e: usize) -> u64 {
-    // Always three words (no length-dependent branch); names over 24 bytes are rare.
-    let mix = |h: u64, o: usize| (h ^ word(b, o, e)).wrapping_mul(K).rotate_left(31);
-    let h = (s + 24..e)
-        .step_by(8)
-        .fold(mix(mix(mix(K, s), s + 8), s + 16), mix);
-    (h ^ h >> 33).wrapping_mul(0xff51afd7ed558ccd) ^ h >> 29
+    unsafe {
+        let (mut h, mut o) = (_mm_set_epi64x(K as i64, !K as i64), s);
+        loop {
+            let v = _mm256_loadu_si256(b.as_ptr().add(o) as _);
+            let n = _mm256_set1_epi8((e - o).min(32) as i8); // keep bytes j < n
+            let keep = _mm256_cmpgt_epi8(n, _mm256_loadu_si256(IOTA.as_ptr() as _));
+            let v = _mm256_and_si256(v, keep);
+            let (lo, hi) = (_mm256_castsi256_si128(v), _mm256_extracti128_si256::<1>(v));
+            (h, o) = (_mm_aesenc_si128(_mm_xor_si128(h, lo), hi), o + 32);
+            if o >= e {
+                break; // over 32 bytes: rare
+            }
+        }
+        let h = _mm_aesenc_si128(h, _mm_set1_epi64x(K as _));
+        let h = _mm_aesenc_si128(h, _mm_set1_epi8(1));
+        (_mm_cvtsi128_si64(h) ^ _mm_extract_epi64::<1>(h)) as u64
+    }
 }
+const IOTA: [i8; 32] = [
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+    26, 27, 28, 29, 30, 31,
+];
 const K: u64 = 0x517cc1b727220a95; // FxHash's multiplier
 
 /// A value on its own pair of cache lines.
 #[derive(Default)]
 #[repr(align(128))]
 struct Pad<T>(T);
-const RING: usize = 16;
+const BATCH: usize = 64;
 const BLOCK: usize = 1024;
 
-/// Bit i of each mask is set where byte i of the block is a quote, a comma or an LF.
-#[cfg(target_feature = "avx2")]
-fn masks(p: &[u8; 64]) -> [u64; 3] {
-    use std::arch::x86_64::*;
-    unsafe {
-        let v = [0, 32].map(|o| _mm256_loadu_si256(p.as_ptr().add(o) as _));
-        let m = |v, c| _mm256_movemask_epi8(_mm256_cmpeq_epi8(v, _mm256_set1_epi8(c))) as u32;
-        [b'"', b',', b'\n'].map(|c| m(v[0], c as i8) as u64 | (m(v[1], c as i8) as u64) << 32)
+/// The ends of the id and the name, the first two commas outside quotes from the record's
+/// start at b[s..], and the quotes in the name.
+fn fields(b: &[u8], s: usize) -> (usize, usize, usize) {
+    let q = eq64(b, s, b'"');
+    let e = eq64(b, s, b',') & !prefix_xor(q);
+    let (f0, e1) = (s + e.trailing_zeros() as usize, e & (e - 1));
+    if e1 == 0 {
+        let (f1, nq) = field_end(b, f0 + 1); // a name past the 64 bytes: rare
+        return (f0, f1, nq);
+    }
+    let t = e1.trailing_zeros();
+    (f0, s + t as usize, low(q, t).count_ones() as usize)
+}
+
+/// Where the field at b[s..] ends (the first comma outside quotes) and the quotes before it.
+fn field_end(b: &[u8], mut s: usize) -> (usize, usize) {
+    let (mut open, mut quotes) = (0, 0);
+    loop {
+        let q = eq64(b, s, b'"');
+        let inside = prefix_xor(q) ^ open;
+        let e = eq64(b, s, b',') & !inside;
+        if e != 0 {
+            let t = e.trailing_zeros();
+            return (s + t as usize, quotes + low(q, t).count_ones() as usize);
+        }
+        open = (inside as i64 >> 63) as u64;
+        (quotes, s) = (quotes + q.count_ones() as usize, s + 64);
     }
 }
-#[cfg(not(target_feature = "avx2"))] // portable, slow; the scoring box has AVX2
-fn masks(p: &[u8; 64]) -> [u64; 3] {
-    [b'"', b',', b'\n'].map(|c| (0..64).fold(0, |m, i| m | ((p[i] == c) as u64) << i))
+
+/// What a record adds to its group's totals, and its region and name hash.
+#[derive(Clone, Copy, Default)]
+struct Rec {
+    h: u64,
+    rid: u32,
+    id: u32,
+    cents: i32,
+    nl: u32,
+    tl: u32,
+}
+
+/// pshufb masks for the 16 bytes that end where a record's amount ends: entry 8a + r moves a
+/// region id of r digits to bytes 0..8 and an amount of a bytes ([-]d+.dd, '.' dropped) to
+/// bytes 8..16, both right-aligned. 0x80 zeroes a byte.
+const SPLIT: [[u8; 16]; 72] = {
+    let (mut t, mut i) = ([[0x80; 16]; 72], 0);
+    while i < 72 * 16 {
+        let (a, r, j) = (i / 128, i / 16 % 8, i % 16);
+        if j < 8 && 7 - j < r && a < 8 + j {
+            t[i / 16][j] = (7 + j - a) as u8; // the region's digits end at 14 - a
+        } else if j > 13 || j > 7 && 16 - j < a {
+            t[i / 16][j] = (j - (j < 14) as usize) as u8; // the amount's, around the '.' at 13
+        }
+        i += 1;
+    }
+    t
+};
+
+/// The record b[rs..=p] ([BOM] id , name , note , region , amount [CR] LF) holding `quotes`
+/// quotes, all in its name and note. Its numbers are decoded at once from the 16 bytes that
+/// end with the id and the 16 that end with the amount: ids have at most 8 digits, regions 7,
+/// and an amount (-999.99 to 99999.99) at most 8 bytes, so the region's comma is the window's
+/// second last comma, or the byte before it (spec 2.2).
+fn record(b: &[u8], rs: usize, p: usize, quotes: usize) -> Rec {
+    let i = rs + 3 * (ld(b, rs) as u8 == 0xEF) as usize; // a byte order mark
+    let (f0, f1, nq) = fields(b, rs);
+    let ae = p - (ld(b, p - 8) >> 56 == b'\r' as u64) as usize;
+    let at = |p: usize| unsafe { _mm_loadu_si128(b.as_ptr().add(p) as _) };
+    let tail = at(ae - 16);
+    let cm = unsafe { _mm_movemask_epi8(_mm_cmpeq_epi8(tail, _mm_set1_epi8(b',' as i8))) } as u32;
+    // The window holds the amount's comma f3 = ae - 16 + (31 - z3) and the region's comma
+    // f2 = ae - 16 + (31 - z2), or f2 = ae - 17 when z2 = 32.
+    let z3 = cm.leading_zeros() as usize;
+    let z2 = (cm ^ 1 << (31 - z3)).leading_zeros() as usize;
+    let (f2, f3) = (ae + 15 - z2, ae + 15 - z3);
+    let v = unsafe {
+        // Entry 8a + r, for the amount's a = z3 - 16 bytes and the region's r = z2 - z3 - 1.
+        let split = at16(SPLIT.get_unchecked(7 * z3 + z2 - 129));
+        let keep = _mm_cmpgt_epi8(at16(&IOTA), _mm_set1_epi8((15 + i - f0) as i8)); // f0 - i
+        let id = _mm_and_si128(at(f0 - 16), keep);
+        let v = _mm256_set_m128i(id, _mm_shuffle_epi8(tail, split));
+        let v = _mm256_subs_epu8(v, _mm256_set1_epi8(b'0' as i8));
+        let v = _mm256_madd_epi16(_mm256_maddubs_epi16(v, _mm256_set1_epi16(0x010A)), ONE100);
+        let v = _mm256_madd_epi16(_mm256_packus_epi32(v, v), _mm256_set1_epi32(0x1_2710));
+        std::mem::transmute::<_, [u64; 4]>(v)
+    };
+    // A quoted field has 2 + 2k quotes for k "" escapes, and 2 + k bytes fewer.
+    let len = |raw: usize, q: usize| (raw - q / 2 - (q > 0) as usize) as u32;
+    let quoted = (nq > 0) as usize;
+    let sign = 1 - 2 * (ld(b, f3 + 1) as u8 == b'-') as i32;
+    Rec {
+        h: name_hash(b, f0 + 1 + quoted, f1 - quoted),
+        rid: v[0] as u32,
+        id: (v[2] >> 32) as u32,
+        cents: sign * (v[0] >> 32) as i32,
+        nl: len(f1 - f0 - 1, nq),
+        tl: len(f2 - f1 - 1, quotes - nq),
+    }
+}
+
+/// Calls f(id, country) for the lines `id,CCC` of r[p..e] (p and e start lines, and 64 bytes
+/// past e can be read), the country as a number from 1 to 26^3. Each comma is 4 bytes before
+/// its line's LF.
+fn regions(r: &[u8], p: usize, e: usize, mut f: impl FnMut(usize, usize)) {
+    let mut s = p; // the line's start
+    for base in (p..e).step_by(64) {
+        let mut lf = low(eq64(r, base, b'\n'), (e - base).min(64) as u32);
+        while lf != 0 {
+            let q = base + lf.trailing_zeros() as usize;
+            let c = (ld(r, q - 8) >> 40) as usize;
+            let code = (c & 255) * 676 + (c >> 8 & 255) * 26 + (c >> 16) - 65 * 703 + 1;
+            f(num(ld(r, q - 12), q - 4 - s) as usize, code);
+            (s, lf) = (q + 1, lf & (lf - 1));
+        }
+    }
 }
 
 /// One output line: count id_sum amount_sum amount_min amount_max names_distinct name_bytes note_bytes.
@@ -127,9 +272,21 @@ fn column(i: usize, v: i64) -> String {
     }
 }
 
-/// A country code as a number from 1 to 26^3; 0 means no country.
-fn code(c: &[u8]) -> usize {
-    1 + c.iter().fold(0, |a, &c| a * 26 + (c - b'A') as usize)
+/// Writes the lines in key order: the countries by code, then _UNMATCHED (code 0).
+fn report(aggs: &[Agg; 256], group: &[AtomicU8], out: &str) {
+    let mut text = String::new();
+    for c in (1..17577).chain([0]) {
+        let g = group[c].load(Relaxed) as usize;
+        if (g > 0 || c == 0) && aggs[g][0] > 0 {
+            let d = |k| (b'A' + ((c + 17575) / k % 26) as u8) as char;
+            let key = [format!("{}{}{}", d(676), d(26), d(1)), "_UNMATCHED".into()];
+            text += &key[(c == 0) as usize];
+            text.extend(aggs[g].iter().enumerate().map(|(i, &v)| column(i, v)));
+            text.push('\n');
+        }
+    }
+    fs::create_dir_all(out).unwrap();
+    fs::write(format!("{out}/aggregates.txt"), text).unwrap();
 }
 
 fn main() {
@@ -140,20 +297,20 @@ fn main() {
     let regs = map(format!("{data}/regions.csv"));
     let n = thread::available_parallelism().map_or(1, |n| n.get());
     // regions.csv is sorted, so its last line holds the largest region id.
-    let last = regs[..regs.len() - 1]
-        .iter()
-        .rposition(|&c| c == b'\n')
-        .unwrap()
-        + 1;
-    let comma = |p: usize| p + regs[p..].iter().position(|&c| c == b',').unwrap();
-    let max = num(ld(regs, comma(last) - 8), comma(last) - last) as usize;
-    let region: &[AtomicU8] = zeroed(max + 1, 15); // no huge pages: all threads fill it at once
-    let seen: Vec<AtomicU8> = (0..17577).map(|_| AtomicU8::new(0)).collect();
+    let last = regs[..regs.len() - 1].iter().rposition(|&c| c == b'\n');
+    let mut max = 0;
+    regions(regs, last.unwrap() + 1, regs.len(), |id, _| max = id);
+    // One spare entry past the largest id, never written: ids above it read it as group 0.
+    let region: &[AtomicU8] = zeroed(max + 2);
+    // Each country's group, numbered from 1 in the order the threads first meet them; 0 until then.
+    let group: Vec<AtomicU8> = (0..17577).map(|_| AtomicU8::new(0)).collect();
+    let groups = Mutex::new(0u8);
     // Records are cut into 16 chunks per thread, each moved to start after a CRLF: CR only
-    // ever occurs in a record terminator (spec 2.2), so this needs no knowledge of quotes.
-    // The first CR at or after `p` (or the file size), read 4 KiB at a time.
+    // ever occurs in a record terminator (spec 2.2), so a chunk starts outside quotes. The
+    // chunks shrink towards the end of the file, so the threads finish together.
+    // The first CR at or after `p` (or the file size), read 512 bytes at a time.
     let cr = |mut p: usize| loop {
-        let mut b = [0; 4096];
+        let mut b = [0; 512];
         let got = file.read_at(&mut b, p as u64).unwrap();
         match b[..got].iter().position(|&c| c == b'\r') {
             Some(i) => break p + i,
@@ -166,132 +323,129 @@ fn main() {
     let bound = |c: usize| match c {
         0 => start,
         _ if c == chunks => size,
-        _ => (cr(start + (size - start) * c / chunks) + 2).min(size),
+        _ => (cr(size - (size - start) * (chunks - c).pow(2) / chunks.pow(2)) + 2).min(size),
     };
     let rstart = regs.iter().position(|&c| c == b'\n').unwrap() + 1;
     let rcut = |t: usize| match t {
         0 => rstart,
+        _ if t == n => regs.len(),
         _ => (rstart + (regs.len() - rstart) * t / n..regs.len())
             .find(|&i| regs[i - 1] == b'\n')
             .unwrap_or(regs.len()),
     };
     let mut bits = 17; // 2^17 slots in all; twice as many whenever one owner's fill 7/8
-    let aggs = loop {
-        // Names are split between the threads by hash. Thread o owns slots o * m.. (o + 1) * m
-        // of `table`, five words each: the name's key, then a 256-bit set of the groups it
-        // occurs in. Other threads hand it (name, group) events in blocks of BLOCK through its
-        // inbox, so only the owner reads or writes its slots.
-        let m = (1 << bits) / n + 1;
-        let table: &[AtomicU64] = zeroed(5 * m * n, 14);
-        let full = &zeroed::<AtomicBool>(1, 0)[0];
+    loop {
+        // Names are split between the threads by hash. Thread o owns buckets o * m..(o + 1) * m
+        // of `table`, 40 words each: eight names' keys, then for w = 0..4 word w of their
+        // 256-bit sets of the groups they occur in. Other threads hand it (name, group) events
+        // in blocks of BLOCK through its inbox, so only the owner reads or writes its buckets.
+        let m = (1 << bits) / (8 * n) + 1;
+        let table: &[AtomicU64] = zeroed(40 * m * n);
+        let (full, next) = (&zeroed::<AtomicBool>(1)[0], &zeroed::<AtomicUsize>(1)[0]);
         let inbox: Vec<Pad<Mutex<Vec<Vec<u64>>>>> = (0..n).map(|_| Default::default()).collect();
-        let (next, barrier) = (&zeroed::<AtomicUsize>(1, 0)[0], Barrier::new(n));
-        let aggs = par(n, |t| {
+        let (barrier, total) = (Barrier::new(n), Mutex::new([EMPTY; 256]));
+        // Worker t's share of the run: whether the run must start over with a larger table.
+        let work = |t: usize| {
             // Copies of what the hot loops read, so no worker reads a line another one writes.
             let (region, inbox, n, m) = (region, &inbox[..], n, m);
-            let mine = &table[5 * m * t..5 * m * (t + 1)];
+            let lim = region.len() - 1;
+            barrier.wait(); // all threads started: their page faults would slow the starting
+            let mine = &table[40 * m * t..40 * m * (t + 1)];
             // Fault this owner's pages in now, before other threads start sending it events.
             mine.iter().step_by(512).for_each(|w| w.store(0, Relaxed));
             let mut used = 0;
-            // Every thread reads its share of the regions twice: first to note which countries
-            // occur, then to map each region id to its country's group. Groups are numbered in
-            // key order, so the output needs no sort; group 0 (no country) is _UNMATCHED.
-            let mut group = [0u8; 17577];
-            for pass in 0..2 {
-                let (mut p, end) = (rcut(t), if t + 1 == n { regs.len() } else { rcut(t + 1) });
-                while p < end {
-                    let e = comma(p);
-                    let (id, c) = (
-                        num(ld(regs, e - 8), e - p) as usize,
-                        code(&regs[e + 1..e + 4]),
-                    );
-                    p = e;
-                    match pass {
-                        // Load first: once a country is set, no thread writes its line again.
-                        0 if seen[c].load(Relaxed) == 0 => seen[c].store(1, Relaxed),
-                        0 => {}
-                        _ => region[id].store(group[c], Relaxed),
+            // Every thread maps its share of the region ids to their countries' groups. Group 0
+            // (no country) is _UNMATCHED.
+            regions(regs, rcut(t), rcut(t + 1), |id, c| {
+                if group[c].load(Relaxed) == 0 {
+                    let mut last = groups.lock().unwrap(); // a new country, or one just numbered
+                    if group[c].load(Relaxed) == 0 {
+                        *last = last.checked_add(1).expect("at most 255 countries");
+                        group[c].store(*last, Relaxed);
                     }
-                    p += 5;
                 }
-                barrier.wait();
-                let mut g = 0;
-                for c in 1..17577 {
-                    g += seen[c].load(Relaxed) as usize;
-                    group[c] = g as u8 * seen[c].load(Relaxed);
-                }
-                assert!(g < 256, "at most 255 countries");
-            }
-            // A record is finished (its group and name looked up) 16 records after it is
-            // parsed, so that the cache lines it needs have time to arrive.
-            let mut agg = vec![EMPTY; 256];
+                region[id].store(group[c].load(Relaxed), Relaxed);
+            });
+            barrier.wait();
+            let mut agg = [EMPTY; 256];
             let mut out: Vec<Vec<u64>> = vec![Vec::with_capacity(BLOCK); n];
             // An event is the name's hash with its low byte replaced by the group.
-            let owner = |x: u64| ((x >> 32) * n as u64 >> 32) as usize;
-            let home = |x: u64| ((x >> 8 & 0xFF_FFFF) * m as u64 >> 24) as usize;
-            let mut mark = |agg: &mut Vec<Agg>| {
+            let owner = move |x: u64| ((x >> 32) * n as u64 >> 32) as usize;
+            let home = move |x: u64| ((x >> 8 & 0xFF_FFFF) * m as u64 >> 24) as usize;
+            // Word w of this owner's buckets, for w < 40m.
+            let word = move |w: usize| unsafe { mine.get_unchecked(w) };
+            // Bits 8k..8k + 8 are set where key k of bucket b (< m) is y.
+            let find = move |b: usize, y: u64| eq8(word(40 * b), y);
+            let mut mark = move |agg: &mut [Agg; 256]| {
                 let blocks = std::mem::take(&mut *inbox[t].0.lock().unwrap()); // unlock before the loop
                 for v in blocks {
+                    if used + v.len() >= 8 * m {
+                        full.store(true, Relaxed); // the table might fill: start over, larger
+                        continue;
+                    }
                     for (j, &x) in v.iter().enumerate() {
-                        if let Some(&y) = v.get(j + 8) {
-                            prefetch(&mine[5 * home(y)]);
-                        }
-                        if used + 1 >= m {
-                            continue; // the table is full: this run's result is discarded
-                        }
-                        let (key, g, mut i) = (x | 0xFF, (x & 255) as usize, home(x));
-                        loop {
-                            let e = mine[5 * i].load(Relaxed);
-                            if e == key {
-                                break;
-                            } else if e == 0 {
-                                mine[5 * i].store(key, Relaxed);
+                        let y = *unsafe { v.get_unchecked((j + 8).min(v.len() - 1)) };
+                        prefetch(word(40 * home(y)));
+                        prefetch(word(40 * home(y) + 8 + (y & 255) as usize / 64 * 8));
+                        let (key, g, mut b) = (x | 0xFF, (x & 255) as usize, home(x));
+                        // Keys fill a bucket from the front and are never removed, so a key is
+                        // either in the first bucket from its home with a free slot, or absent.
+                        let k = loop {
+                            let hit = find(b, key);
+                            if hit != 0 {
+                                break hit.trailing_zeros() as usize / 8;
+                            }
+                            let free = find(b, 0);
+                            if free != 0 {
+                                let k = free.trailing_zeros() as usize / 8;
+                                word(40 * b + k).store(key, Relaxed);
                                 used += 1;
-                                if used > m / 8 * 7 {
+                                if used > 7 * m {
                                     full.store(true, Relaxed);
                                 }
-                                break;
+                                break k;
                             }
-                            i = if i + 1 == m { 0 } else { i + 1 };
-                        }
-                        let (word, bit) = (&mine[5 * i + 1 + g / 64], 1 << (g % 64));
-                        let old = word.load(Relaxed);
-                        word.store(old | bit, Relaxed);
+                            b = if b + 1 == m { 0 } else { b + 1 };
+                        };
+                        let (w, bit) = (word(40 * b + 8 + g / 64 * 8 + k), 1 << (g % 64));
+                        let old = w.load(Relaxed);
+                        w.store(old | bit, Relaxed);
                         agg[g][5] += (old & bit == 0) as i64;
                     }
                 }
             };
-            let mut ring = [(0, 0, [0; 4]); RING];
-            let finish = |(h, rid, [n_id, c, nl, tl]): (u64, usize, [i64; 4]),
-                          agg: &mut Vec<Agg>,
-                          out: &mut Vec<Vec<u64>>| {
-                if n_id > 0 {
-                    let g = region.get(rid).map_or(0, |r| r.load(Relaxed)) as usize;
-                    merge(&mut agg[g], [1, n_id, c, c, c, 0, nl, tl]);
-                    let o = &mut out[owner(h)];
-                    o.push(h & !0xFF | g as u64);
+            // Records are parsed into a batch and finished (group looked up, totals added, name
+            // event sent) when it fills, so the region entries prefetched meanwhile have arrived.
+            let (mut batch, mut nb) = ([Rec::default(); BATCH], 0);
+            // The region entry for id r, or the spare entry past the end (group 0).
+            let entry = move |r: u32| unsafe { region.get_unchecked((r as usize).min(lim)) };
+            let flush = move |recs: &[Rec], agg: &mut [Agg; 256], out: &mut Vec<Vec<u64>>| {
+                for r in recs {
+                    let g = entry(r.rid).load(Relaxed);
+                    let (id, c, nl, tl) = (r.id as i64, r.cents as i64, r.nl as i64, r.tl as i64);
+                    merge(&mut agg[g as usize], [1, id, c, c, c, 0, nl, tl]);
+                    let o = unsafe { out.get_unchecked_mut(owner(r.h)) }; // owner(h) < n = out.len()
+                    o.push(r.h & !0xFF | g as u64);
                     if o.len() == BLOCK {
                         let full = std::mem::replace(o, Vec::with_capacity(BLOCK));
-                        inbox[owner(h)].0.lock().unwrap().push(full);
+                        inbox[owner(r.h)].0.lock().unwrap().push(full);
                     }
                 }
             };
-            let mut r = 0;
             let claim = || Some(next.fetch_add(1, Relaxed)).filter(|&c| c < chunks);
             // The chunk is read through buf, which holds the file from offset `off`: when the
-            // parse reaches its end, the unfinished record and the eight bytes before it (read
-            // by `ld`) move to the front and the rest is refilled. Positions are into buf.
+            // parse reaches its end, the unfinished record and the 32 bytes before it (read by
+            // the record's windows) move to the front and the rest is refilled.
             let mut buf = vec![0u8; (1 << 16) + 64];
             while let Some(c) = claim() {
-                // Masks of quotes, commas and LFs, 64 bytes at a time. A byte is inside quotes
-                // when an odd number of quotes precede it in the record, so the commas and LFs
-                // outside quotes are the field and record ends. f holds the field ends, q the
-                // number of quotes before each.
-                let end = bound(c + 1);
-                let last = (end == size) as usize; // whose last record may lack its LF
-                let (mut off, mut filled) = (bound(c) - 8, 0);
-                let (mut base, mut rs, mut k, mut f, mut q, mut qs, mut carry) =
-                    (8, 8, 0, [0; 4], [0; 4], 0, 0);
+                let (begin, end) = (bound(c), bound(c + 1));
+                if begin == end {
+                    continue; // the last chunks can be empty
+                }
+                let (mut off, mut filled) = (begin - 32, 0);
+                // base: the next block; rs: the record's start; qs and qr: quotes before them;
+                // open: all ones when base is inside quotes.
+                let (mut base, mut rs, mut qs, mut qr, mut open) = (32, 32, 0, 0, 0);
                 loop {
                     let want = (end - off).min(buf.len() - 64);
                     while filled < want {
@@ -299,54 +453,32 @@ fn main() {
                         filled += got.ok().filter(|&g| g > 0).expect("records.csv shrank");
                     }
                     let done = off + filled == end;
-                    buf[filled] = b'\n'; // only read when the file ends without one
-                    let limit = if done { end - off + last } else { filled - 63 };
+                    // A file whose last record lacks its LF gets one (there are 32 bytes before).
+                    let ce = end - off + (done && end == size && buf[filled - 1] != b'\n') as usize;
+                    buf[filled] = b'\n';
                     let b = &buf[..];
-                    while base < limit {
-                        let [quote, comma, lf] = masks(b[base..base + 64].try_into().unwrap());
-                        let mut inside =
-                            [1, 2, 4, 8, 16, 32].iter().fold(quote, |x, s| x ^ x << s) ^ carry;
-                        carry = 0u64.wrapping_sub(inside >> 63);
-                        inside |= u64::MAX
-                            .checked_shl((end - off + last - base) as u32)
-                            .unwrap_or(0);
-                        let mut ends = (comma | lf) & !inside;
+                    while base < if done { ce } else { filled - 63 } {
+                        // A record ends at the first LF outside quotes.
+                        let quote = eq64(b, base, b'"');
+                        let inside = prefix_xor(quote) ^ open;
+                        let mut ends = eq64(b, base, b'\n') & !inside;
+                        if base + 64 > ce {
+                            ends = low(ends, (ce - base) as u32); // the chunk's end
+                        }
+                        open = (inside as i64 >> 63) as u64;
                         while ends != 0 {
-                            let (t, p) =
-                                (ends.trailing_zeros(), base + ends.trailing_zeros() as usize);
+                            let z = ends.trailing_zeros();
                             ends &= ends - 1;
-                            if k < 4 {
-                                (f[k], q[k], k) = (
-                                    p,
-                                    qs + (quote & ((1 << t) - 1)).count_ones() as usize,
-                                    k + 1,
-                                );
-                                continue;
+                            let p = base + z as usize;
+                            let qp = qs + low(quote, z).count_ones() as usize;
+                            let r = record(b, rs, p, qp - qr);
+                            prefetch(entry(r.rid));
+                            batch[nb & (BATCH - 1)] = r;
+                            (rs, qr, nb) = (p + 1, qp, nb + 1);
+                            if nb == BATCH {
+                                flush(&batch, &mut agg, &mut out);
+                                nb = 0;
                             }
-                            // A record: [BOM] id , name , note , region , amount [CR] LF
-                            // Each number is read from the eight bytes that end where it ends (ids
-                            // have at most 8 digits, regions 7 and amounts 7 with the cents).
-                            let i = rs + 3 * (b[rs] == 0xEF) as usize;
-                            let id = num(ld(b, f[0] - 8), f[0] - i) as i64;
-                            // A quoted field has 2 + 2k quotes for k "" escapes, and 2 + k bytes fewer.
-                            let len = |j: usize| {
-                                let d = q[j + 1] - q[j];
-                                f[j + 1] - f[j] - 1 - d / 2 - (d > 0) as usize
-                            };
-                            let quoted = (q[1] > q[0]) as usize;
-                            let (s, e) = (f[0] + 1 + quoted, f[1] - quoted);
-                            let rid = num(ld(b, f[3] - 8), f[3] - f[2] - 1) as usize;
-                            region.get(rid).map(prefetch);
-                            let neg = b[f[3] + 1] == b'-';
-                            let ae = p - (b[p - 1] == b'\r') as usize;
-                            let x = ld(b, ae - 8); // ...ddd.dd: drop the '.'
-                            let x = (x & 0xFF_FFFF_FFFF) << 8 | x & 0xFFFF << 48;
-                            let cents = num(x, ae - f[3] - 2 - neg as usize) as i64;
-                            let cents = [cents, -cents][neg as usize];
-                            let rec = [id, cents, len(0) as i64, len(1) as i64];
-                            finish(ring[r], &mut agg, &mut out);
-                            (ring[r], r) = ((name_hash(b, s, e), rid, rec), (r + 1) % RING);
-                            (rs, k) = (p + 1, 0);
                         }
                         qs += quote.count_ones() as usize;
                         base += 64;
@@ -355,48 +487,46 @@ fn main() {
                     if done {
                         break;
                     }
-                    let shift = rs - 8;
+                    let shift = rs - 32;
                     if shift == 0 {
                         buf.resize(2 * buf.len() - 64, 0); // one record fills the buffer
                         continue;
                     }
                     buf.copy_within(shift..filled, 0);
-                    (off, filled, base, rs) =
-                        (off + shift, filled - shift, base - shift, rs - shift);
-                    f[..k].iter_mut().for_each(|p| *p -= shift);
+                    (off, filled) = (off + shift, filled - shift);
+                    (base, rs) = (base - shift, rs - shift);
                 }
             }
-            for j in 0..RING {
-                finish(ring[(r + j) % RING], &mut agg, &mut out);
-                ring[(r + j) % RING].2[0] = 0; // id 0: no record to finish
-            }
+            flush(&batch[..nb], &mut agg, &mut out);
             for (o, v) in out.into_iter().enumerate() {
                 inbox[o].0.lock().unwrap().push(v);
             }
             barrier.wait();
             mark(&mut agg);
-            agg
+            let mut sum = total.lock().unwrap();
+            (0..256).for_each(|g| merge(&mut sum[g], agg[g]));
+            drop(sum);
+            barrier.wait();
+            full.load(Relaxed)
+        };
+        // Worker 0, the main thread, writes the output and ends the process; the others wait
+        // for that, so no thread is torn down.
+        let work = &work;
+        thread::scope(|s| {
+            for t in 1..n {
+                s.spawn(move || {
+                    if !work(t) {
+                        loop {
+                            thread::park();
+                        }
+                    }
+                });
+            }
+            if !work(0) {
+                report(&total.lock().unwrap(), &group, &out);
+                std::process::exit(0);
+            }
         });
-        if !full.load(Relaxed) {
-            break aggs;
-        }
         bits += 1;
-    };
-    let mut keys: Vec<String> = (1..17577)
-        .filter(|&c| seen[c].load(Relaxed) == 1)
-        .map(|c| [(c - 1) / 676, (c - 1) / 26 % 26, (c - 1) % 26].map(|d| (b'A' + d as u8) as char))
-        .map(|k| k.iter().collect())
-        .collect();
-    keys.insert(0, "_UNMATCHED".into());
-    let mut text = String::new();
-    for g in (1..keys.len()).chain([0]) {
-        let mut a = EMPTY;
-        aggs.iter().for_each(|agg| merge(&mut a, agg[g]));
-        if a[0] > 0 {
-            let cols: String = a.iter().enumerate().map(|(i, &v)| column(i, v)).collect();
-            text += &format!("{}{cols}\n", keys[g]);
-        }
     }
-    fs::create_dir_all(&out).unwrap();
-    fs::write(format!("{out}/aggregates.txt"), text).unwrap();
 }
