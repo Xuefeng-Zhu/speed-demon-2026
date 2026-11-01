@@ -495,6 +495,9 @@ fn boolean(q: &[(u8, u32)], plan: &Plan, c: &Chunk, s: &mut Scratch, acc: &Acc) 
     // sum to the sum over k of 2^k times the count of those with bit k.
     let (mut n, mut sum) = (0, 0);
     for (i, &x) in bm.iter().enumerate() {
+        if x == 0 {
+            continue;
+        }
         let pos = (0..6).map(|k| ((x & !(!0 / ((1 << (1 << k)) + 1))).count_ones() as u64) << k);
         n += x.count_ones() as usize;
         sum += (i * 64) as u64 * x.count_ones() as u64 + pos.sum::<u64>();
