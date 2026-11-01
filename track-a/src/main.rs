@@ -1,19 +1,24 @@
 //! Speed Demon 2026, Track A (Ingest): per (hour, endpoint) count, p50/p95/p99 and 5xx rate.
 //!
-//! 1. mmap the log and split it into one newline-aligned chunk per thread.
-//! 2. Each thread parses its chunk into packed records (endpoint id, 5xx bit, latency),
-//!    bucketed by hour. A thread's own endpoint table caches the dense ids (0, 1, 2, ...) handed
-//!    out by shared maps (sharded by hash, to spread lock contention) that keep copies of the
-//!    names, so no merge is needed and the chunk's pages can be dropped.
-//! 3. The same threads then meet at a barrier; one sorts the shared names once, so every
-//!    endpoint id gets its output rank, and regroups the records by hour.
-//! 4. The threads take whole hours from a queue: count the hour's records per endpoint id,
-//!    counting-sort its latencies into groups laid out in rank order, find the three
-//!    nearest-rank percentiles (branch-free AVX2 rank counting for groups of up to 64 values,
-//!    selection otherwise), format the lines, free the records. The main thread writes the
-//!    hours in order.
-use std::collections::HashMap;
-use std::sync::{atomic::{AtomicU32, Ordering}, mpsc, Barrier, Mutex, OnceLock};
+//! 1. mmap the log and split it into newline-aligned chunks of about 512 KiB, taken in file
+//!    order by the threads.
+//! 2. A thread parses a chunk into packed records (endpoint id, 5xx bit, latency), bucketed by
+//!    hour. Its own endpoint table caches the dense ids (0, 1, 2, ...) handed out by shared maps
+//!    (sharded by hash, to spread lock contention) that keep copies of the names, so no merge is
+//!    needed and the chunk's pages can be dropped.
+//! 3. The log is nearly in time order, so once every chunk up to some point is parsed, the hours
+//!    before the latest hour seen there, but one, are closed: queued to be summarized while later
+//!    chunks are parsed, so only a few hours of records are held at a time. A record that comes
+//!    for a closed hour makes the whole run start over without closing hours early.
+//! 4. Threads take queued hours before chunks, at most four at a time: sort the names seen so
+//!    far (an endpoint's position in byte order is its output rank; kept until new names appear),
+//!    count the hour's records per endpoint id, counting-sort its latencies into groups laid out
+//!    in rank order, find the three nearest-rank percentiles (branch-free AVX2 rank counting for
+//!    groups of up to 64 values, selection otherwise), format the lines and write them once the
+//!    hours before are written. Record and output buffers are reused, not freed, until no chunk
+//!    or hour is left.
+use std::collections::{HashMap, VecDeque};
+use std::sync::{atomic::{AtomicU32, Ordering}, Arc, Condvar, Mutex};
 use std::{env, fs, io::Write, os::unix::io::AsRawFd, thread};
 
 /// The spec fixes the span: 72 hours from 18:00 UTC on 30 October 2026.
@@ -115,7 +120,7 @@ fn parse_latency(d: &[u8], q: usize) -> (u64, usize) {
 /// so a probe touches one or two adjacent cache lines. The arena ends with 64 zero bytes so
 /// `eq_mask` may read past the last name.
 struct Table {
-    slots: Vec<usize>, // 1 + offset of the entry in `arena`, or 0 if empty
+    slots: Vec<u32>, // 1 + offset of the entry in `arena`, or 0 if empty
     len: usize,
     arena: Vec<u8>,
 }
@@ -127,11 +132,12 @@ impl Table {
         if self.slots.is_empty() {
             // The spec fixes 1,842 endpoints per seed; 4,096 slots keep the load below one half.
             self.slots = vec![0; 1 << 12];
+            self.arena.reserve(1 << 17); // ample, mapped directly: no copies left in the heap by growth
         }
         let (mask, n) = (self.slots.len() - 1, e - s);
         let mut i = (h >> 40) as usize & mask;
         while self.slots[i] != 0 {
-            let at = self.slots[i] - 1;
+            let at = self.slots[i] as usize - 1;
             let (nh, meta) = (load(&self.arena, at), load(&self.arena, at + 8));
             if nh == h
                 && meta as u32 as usize == n
@@ -157,7 +163,7 @@ impl Table {
         self.arena.resize((self.arena.len() + 7) / 8 * 8 + 64, 0);
         self.len += 1;
         assert!(self.len < 2048, "more endpoints than the spec allows");
-        self.slots[i] = at + 1;
+        self.slots[i] = at as u32 + 1;
         id
     }
 }
@@ -172,9 +178,9 @@ const SHARDS: usize = 16;
 type Records = (Vec<u32>, Vec<u64>);
 
 /// Parses the lines in `d[i..end]` into records per hour, with ids from the shared tables.
-fn parse(d: &[u8], mut i: usize, end: usize, shared: &[Shared], next_id: &AtomicU32) -> Vec<Records> {
+fn parse(run: &Run, mut i: usize, end: usize, table: &mut Table) -> Vec<Records> {
+    let (d, shared, next_id) = (run.d, &run.shared, &run.next_id);
     let page = i & !4095;
-    let mut table = Table::default();
     let mut hours = vec![(Vec::new(), Vec::new()); HOURS];
     // The current hour's records, swapped out of `hours`: consecutive lines almost always share
     // an hour, so most lines push to this local pair without indexing `hours`.
@@ -209,7 +215,10 @@ fn parse(d: &[u8], mut i: usize, end: usize, shared: &[Shared], next_id: &Atomic
             std::mem::swap(&mut hours[hour], &mut cur);
             cur_h = hour;
             if cur.0.capacity() == 0 {
-                cur.0.reserve(1 << 15); // mapped directly, not grown through the allocator's heap
+                // A spare buffer, else a new one, mapped directly (128 KiB), not grown in the heap.
+                let spare = run.spare.lock().unwrap().pop();
+                cur.0 = spare.unwrap_or(Vec::with_capacity(1 << 15));
+                cur.0.clear();
             }
             n = cur.0.len();
         }
@@ -321,21 +330,23 @@ fn select_ranks(v: &mut [u32], [r50, r95, r99]: [usize; 3]) -> [u32; 3] {
     [v[r50], v[r95], v[r99]]
 }
 
-/// A summary worker's buffers, kept across hours so their pages fault in only once.
+/// One summary's buffers, kept across hours so their pages fault in only once (and output
+/// buffers are not freed, which would let record buffers come from the allocator's heap).
 #[derive(Default)]
 struct Scratch {
     counts: Vec<u64>, // per id: records | errors << 32
     next: Vec<u32>,   // per id: next free slot of its group in `lat`
     lat: Vec<u32>,
+    out: Vec<u8>,
 }
 
-/// Formats every group of one hour from each chunk's records, freeing them as soon as they are
-/// sorted. `order[rank]` is the id of the endpoint at output position `rank`, `names[rank]` its name.
-fn summarize(hour: usize, chunks: Vec<Records>, order: &[u32], names: &[Vec<u8>], s: &mut Scratch) -> Vec<u8> {
-    let Scratch { counts, next, lat } = s;
+/// Formats every group of one hour from each chunk's records into `s.out`. `order[rank]` is the
+/// id of the endpoint at output position `rank`, `names[rank]` its name.
+fn summarize(hour: usize, chunks: &[Records], (order, names): &Plan, s: &mut Scratch) {
+    let Scratch { counts, next, lat, out } = s;
     counts.clear();
     counts.resize(order.len(), 0);
-    each(&chunks, |id, error, _| counts[id] += 1 | (error as u64) << 32);
+    each(chunks, |id, error, _| counts[id] += 1 | (error as u64) << 32);
     // Groups are laid out in rank order, but looked up by id.
     next.resize(order.len(), 0);
     let mut total = 0;
@@ -344,16 +355,16 @@ fn summarize(hour: usize, chunks: Vec<Records>, order: &[u32], names: &[Vec<u8>]
         total += counts[id as usize] as u32;
     }
     lat.resize(total as usize + 64, 0); // `small_ranks` reads up to 64 values past a group
-    each(&chunks, |id, _, latency| {
+    each(chunks, |id, _, latency| {
         let slot = &mut next[id];
         lat[*slot as usize] = latency;
         *slot += 1;
     });
-    drop(chunks);
     let (day, hh) = ((18 + hour) / 24, (18 + hour) % 24);
     let (month, dd) = (10 + day / 2, [30, 31, 1, 2][day]);
     let prefix = format!("2026-{month:02}-{dd:02}T{hh:02}:00:00Z ");
-    let mut out = Vec::with_capacity(1 << 18); // ample for one hour; untouched pages cost nothing
+    out.clear();
+    out.reserve(1 << 18); // ample for one hour, mapped directly; untouched pages cost nothing
     let mut line = [0u8; 512]; // prefix (21) + name (at most 125 by spec) + 6 numbers
     line[..prefix.len()].copy_from_slice(prefix.as_bytes());
     for (g, name) in names.iter().enumerate() {
@@ -381,28 +392,140 @@ fn summarize(hour: usize, chunks: Vec<Records>, order: &[u32], names: &[Vec<u8>]
         line[k] = b'\n';
         out.extend_from_slice(&line[..k + 1]);
     }
-    out
 }
 
-/// The hours still to summarize, in order, each with every chunk's records.
-type Jobs = Mutex<std::iter::Enumerate<std::vec::IntoIter<Vec<Records>>>>;
+/// The endpoint id of each output rank and the names in rank order.
+type Plan = (Vec<u32>, Vec<Vec<u8>>);
 
-/// Once every chunk is parsed: sorts the endpoint names (an endpoint's position in byte order is
-/// its output rank) and regroups the records by hour. Returns the id of each rank, the names in
-/// rank order and the jobs.
-fn make_plan(shared: &[Shared], parsed: &[Mutex<Vec<Records>>]) -> (Vec<u32>, Vec<Vec<u8>>, Jobs) {
-    let mut names: Vec<(Vec<u8>, u32)> = Vec::new();
-    for map in shared {
-        names.extend(std::mem::take(&mut *map.lock().unwrap()));
+/// What the threads share in one run: the chunks between `cuts`, the endpoint names, the plan,
+/// the parse progress, record buffers kept for reuse once summarized (freeing them would let
+/// later ones come from the allocator's heap, where freed memory stays resident) and the output.
+#[derive(Default)]
+struct Run<'a> {
+    d: &'a [u8],
+    cuts: Vec<usize>,
+    early: bool, // close hours before every chunk is parsed
+    shared: [Shared; SHARDS],
+    next_id: AtomicU32,
+    plan: Mutex<Arc<Plan>>,
+    state: Mutex<State>,
+    wake: Condvar,
+    spare: Mutex<Vec<Vec<u32>>>, // record buffers, freed instead once every chunk is taken
+    out: Mutex<(usize, Option<fs::File>)>, // how many hours are written, and the file
+    turn: Condvar,                         // signalled when an hour is written
+}
+
+/// The parse progress and the hours' records.
+#[derive(Default)]
+struct State {
+    next: usize,             // the next chunk to parse
+    top: Vec<Option<usize>>, // per parsed chunk: 1 + its latest hour (0 if empty)
+    done: usize,             // chunks 0..done are parsed
+    seen: usize,             // 1 + the latest hour in chunks 0..done
+    closed: usize,           // hours 0..closed are queued or summarized
+    hours: Vec<Vec<Records>>,
+    jobs: VecDeque<(usize, Vec<Records>)>, // closed hours
+    scratch: Vec<Scratch>, // free summary buffers; they bound how many hours are summarized at once
+    late: bool,            // a record came for a closed hour
+}
+
+impl Run<'_> {
+    /// The plan for every id handed out so far: the last one made, unless names were added since.
+    fn plan(&self) -> Arc<Plan> {
+        let mut plan = self.plan.lock().unwrap();
+        let need = self.next_id.load(Ordering::Relaxed); // these ids are in the maps by now
+        if (plan.0.len() as u32) < need {
+            let mut names: Vec<(Vec<u8>, u32)> = Vec::new();
+            for map in &self.shared {
+                names.extend(map.lock().unwrap().iter().map(|(k, &v)| (k.clone(), v)));
+            }
+            names.retain(|e| e.1 < need); // so the ids are exactly 0..need
+            names.sort_unstable();
+            let order = names.iter().map(|e| e.1).collect();
+            *plan = Arc::new((order, names.into_iter().map(|e| e.0).collect()));
+        }
+        plan.clone()
     }
-    names.sort_unstable();
-    let order = names.iter().map(|&(_, id)| id).collect(); // ids are exactly 0..names.len()
-    let names = names.into_iter().map(|(name, _)| name).collect();
-    let mut chunks: Vec<Vec<Records>> = parsed.iter().map(|c| std::mem::take(&mut *c.lock().unwrap())).collect();
-    let jobs: Vec<Vec<Records>> = (0..HOURS)
-        .map(|h| chunks.iter_mut().map(|c| std::mem::take(&mut c[h])).collect())
-        .collect();
-    (order, names, Mutex::new(jobs.into_iter().enumerate()))
+
+    /// One thread's work: closed hours first, so their records are freed soon, else chunks.
+    fn work(&self) {
+        let (mut table, chunks) = (Table::default(), self.cuts.len() - 1);
+        let mut st = self.state.lock().unwrap();
+        loop {
+            if !st.jobs.is_empty() && !st.scratch.is_empty() {
+                let (h, records) = st.jobs.pop_front().unwrap();
+                let mut scratch = st.scratch.pop().unwrap();
+                drop(st);
+                summarize(h, &records, &self.plan(), &mut scratch);
+                // Hours are written in order: those before h are being summarized already.
+                let mut out = self.out.lock().unwrap();
+                while out.0 < h {
+                    out = self.turn.wait(out).unwrap();
+                }
+                out.1.as_ref().unwrap().write_all(&scratch.out).unwrap();
+                out.0 += 1;
+                drop(out);
+                self.turn.notify_all();
+                st = self.state.lock().unwrap();
+                if st.next < chunks {
+                    let records = records.into_iter().map(|r| r.0);
+                    self.spare.lock().unwrap().extend(records); // else free them
+                }
+                if st.closed < HOURS || !st.jobs.is_empty() {
+                    st.scratch.push(scratch); // else no hour is left: free it
+                }
+            } else if st.next < chunks {
+                let k = st.next;
+                st.next += 1;
+                if st.next == chunks {
+                    *self.spare.lock().unwrap() = Vec::new(); // nothing is parsed any more
+                }
+                drop(st);
+                let parsed = parse(self, self.cuts[k], self.cuts[k + 1], &mut table);
+                st = self.state.lock().unwrap();
+                let mut top = 0;
+                for (h, r) in parsed.into_iter().enumerate() {
+                    if !r.0.is_empty() {
+                        (st.late, top) = (st.late || h < st.closed, h + 1);
+                        st.hours[h].push(r);
+                    }
+                }
+                st.top[k] = Some(top);
+                while let Some(&Some(top)) = st.top.get(st.done) {
+                    (st.seen, st.done) = (st.seen.max(top), st.done + 1);
+                }
+                // In the generated logs no record is more than an hour behind an earlier one
+                // (shard 0 uploads each hour 5 to 10 minutes after it ends).
+                let early = st.seen.saturating_sub(2) * self.early as usize;
+                let limit = if st.done < chunks { early } else { HOURS };
+                let s = &mut *st;
+                for h in s.closed..limit {
+                    s.jobs.push_back((h, std::mem::take(&mut s.hours[h])));
+                }
+                st.closed = st.closed.max(limit);
+            } else if st.closed == HOURS {
+                return;
+            } else {
+                st = self.wake.wait(st).unwrap();
+                continue;
+            }
+            self.wake.notify_all();
+        }
+    }
+}
+
+/// Summarizes `d` into `out_dir/summary.txt` with `threads` threads over the chunks between
+/// `cuts`. Returns false if `early` closed an hour too early; then the output is incomplete.
+fn run(d: &[u8], cuts: Vec<usize>, threads: usize, early: bool, out_dir: &str) -> bool {
+    let mut run = Run::default();
+    (run.d, run.cuts, run.early) = (d, cuts, early);
+    let st = run.state.get_mut().unwrap();
+    (st.top, st.hours) = (vec![None; run.cuts.len() - 1], vec![Vec::new(); HOURS]);
+    st.scratch = (0..4).map(|_| Scratch::default()).collect();
+    let f = fs::File::create(format!("{out_dir}/summary.txt")).expect("create summary.txt");
+    run.out.get_mut().unwrap().1 = Some(f);
+    thread::scope(|s| (0..threads).for_each(|_| drop(s.spawn(|| run.work()))));
+    !run.state.into_inner().unwrap().late
 }
 
 fn main() {
@@ -413,53 +536,18 @@ fn main() {
     let d = map_file(&file, len);
     let cpus = thread::available_parallelism().map_or(1, |n| n.get());
     let threads = env::var("SD_THREADS").map_or(cpus, |t| t.parse().unwrap());
-
+    // About 512 KiB per chunk, at least one per thread.
+    let n = (len >> 19).max(threads);
     let mut cuts = vec![0];
-    for t in 1..threads {
-        let mut at = (len * t / threads).max(cuts[t - 1]);
+    for t in 1..n {
+        let mut at = (len * t / n).max(cuts[t - 1]);
         while at > 0 && at < len && d[at - 1] != b'\n' {
             at += 1;
         }
         cuts.push(at);
     }
     cuts.push(len);
-    let shared: Vec<Shared> = (0..SHARDS).map(|_| Mutex::default()).collect();
-    let next_id = AtomicU32::new(0);
-    // The parse threads go on to summarize: after a barrier, one of them makes the plan, and after
-    // a second one all take hours from the queue.
-    let parsed: Vec<Mutex<Vec<Records>>> = (0..threads).map(|_| Mutex::default()).collect();
-    let plan: OnceLock<(Vec<u32>, Vec<Vec<u8>>, Jobs)> = OnceLock::new();
-    let barrier = Barrier::new(threads);
-    let mut f = fs::File::create(format!("{out_dir}/summary.txt")).expect("create summary.txt");
-    let (tx, rx) = mpsc::channel();
-    thread::scope(|s| {
-        for t in 0..threads {
-            let (tx, shared, next_id, parsed, plan, barrier) =
-                (tx.clone(), &shared, &next_id, &parsed, &plan, &barrier);
-            let (start, end) = (cuts[t], cuts[t + 1]);
-            s.spawn(move || {
-                *parsed[t].lock().unwrap() = parse(d, start, end, shared, next_id);
-                if barrier.wait().is_leader() {
-                    let _ = plan.set(make_plan(shared, parsed));
-                }
-                barrier.wait();
-                // Workers take whole hours, in order, from a queue; the main thread writes them
-                // out in order.
-                let (order, names, jobs) = plan.get().unwrap();
-                let mut scratch = Scratch::default();
-                while let Some((h, records)) = { let job = jobs.lock().unwrap().next(); job } {
-                    tx.send((h, summarize(h, records, order, names, &mut scratch))).unwrap();
-                }
-            });
-        }
-        drop(tx);
-        let (mut pending, mut written) = (vec![None; HOURS], 0);
-        for (h, out) in rx {
-            pending[h] = Some(out);
-            while let Some(out) = pending.get_mut(written).and_then(Option::take) {
-                f.write_all(&out).unwrap();
-                written += 1;
-            }
-        }
-    });
+    if !run(d, cuts.clone(), threads, true, &out_dir) {
+        run(d, cuts, threads, false, &out_dir);
+    }
 }
