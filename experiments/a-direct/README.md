@@ -1,6 +1,33 @@
 # Track A: output written with O_DIRECT, on top of a-mem (branch a-direct)
 
-**Board run pending.** Every number here comes from the local sandbox (8 vCPU Xeon Platinum 8488C, Linux 6.1, `/projects/sandbox` on xfs, `/tmp` and `/dev/shm` on tmpfs, no cgroup memory controller, rustc 1.92.0 with the crate's `x86-64-v3` config). None of them are board results.
+**Board result: negative, reverted.** `run-4f0849dc691c` gave T 33.0 ms, M 21.1 MB and K 35.98, against production's best K 42.59 at M of about 22 MB. M did not move because `/out` on the box is tmpfs (next section). Everything after the next section is the record from before the trial. Its numbers come from the local sandbox (8 vCPU Xeon Platinum 8488C, Linux 6.1, `/projects/sandbox` on xfs, `/tmp` and `/dev/shm` on tmpfs, no cgroup memory controller, rustc 1.92.0 with the crate's `x86-64-v3` config) and are not board results.
+
+## Board result
+
+The trial ran once, `run-4f0849dc691c` at `0da83ae` on `speed-demon` (1 Nov 2026), and was reverted in `b4e0d40`: T 33.0 ms, M 21.1 MB, S 512, K 35.98. The second run was skipped because the M result does not depend on run-to-run noise.
+
+M did not move because the official harness keeps outputs on tmpfs:
+
+- `harness/setup-box.sh` (official repo at `ad1f060`) mounts `/srv/speeddemon/work` as `tmpfs size=8g`, with the comment "outputs live on a capped tmpfs so no run can fill the disk".
+- `harness/run_submission.py` bind-mounts `<work>/<run_id>/out` as `/out`.
+- `harness/README.md` says `memory.peak` counts tmpfs.
+
+The box's kernel may refuse `O_DIRECT` on tmpfs (this code then takes its buffered fallback) or accept it. Either way the written bytes are shmem pages charged to the run's cgroup. So the output is part of M, as assumed below, but `O_DIRECT` cannot take it out of M on the box. The harness source shows this, and it should have been checked before the trial.
+
+What this means for Track A:
+
+- All 10.11 MB of `summary.txt` is charged at exit, so it is a floor under M, and the 4.48 MB cap is out of reach.
+- Only the memory still resident while the output is complete can be cut: tables, arenas and buffers not yet given back when the last hours are written. That is about 10 to 12 MB on top of the output: production is at about 22 MB, a-mem at 20 to 21 MB and this run at 21.1 MB.
+- With everything but the output released before the last hours are written, M might reach about 14 to 15 MB. That is at most about +7.7% K, (21 / 14.5)^0.2, before the S cost of the extra code.
+
+T: with the output on tmpfs, the path the box took, this code costs little locally. These are paired medians over 31 rounds; only the printed medians were kept, not the samples:
+
+| Output on tmpfs | 12 threads | 8 threads |
+|---|---:|---:|
+| candidate / a-mem | 1.014 | 1.037 |
+| candidate / production | 0.895 | 0.938 |
+
+The board's 33.0 ms is well above that (a-mem ran 25.3 and 26.9 ms on the board). Without a production run in the same window, it is unclear whether the window was slow or the cost is specific to the box.
 
 ## Why
 
