@@ -1,0 +1,91 @@
+{
+ "runs": 11,
+ "threads": "12",
+ "note": "sandbox, not board results",
+ "phases": {
+  "prof-baseline": {
+   "parse": {
+    "mean_ms": 21.35,
+    "max_peak_mb": 38.79,
+    "max_thp_mb": 0.0
+   },
+   "csr_build": {
+    "mean_ms": 15.25,
+    "max_peak_mb": 60.52,
+    "max_thp_mb": 22.0
+   },
+   "renumber": {
+    "mean_ms": 33.85,
+    "max_peak_mb": 58.42,
+    "max_thp_mb": 44.0
+   },
+   "drop_g": {
+    "mean_ms": 2.62,
+    "max_peak_mb": 58.42,
+    "max_thp_mb": 24.0
+   },
+   "queries_text_wide": {
+    "mean_ms": 1.93,
+    "max_peak_mb": 32.77,
+    "max_thp_mb": 24.0
+   },
+   "relabel": {
+    "mean_ms": 18.37,
+    "max_peak_mb": 51.95,
+    "max_thp_mb": 46.0
+   },
+   "queries": {
+    "mean_ms": 88.45,
+    "max_peak_mb": 63.39,
+    "max_thp_mb": 46.0
+   },
+   "output": {
+    "mean_ms": 2.1,
+    "max_peak_mb": 53.98,
+    "max_thp_mb": 46.0
+   }
+  },
+  "prof-candidate": {
+   "count": {
+    "mean_ms": 13.21,
+    "max_peak_mb": 6.91,
+    "max_thp_mb": 4.0
+   },
+   "place": {
+    "mean_ms": 24.67,
+    "max_peak_mb": 26.07,
+    "max_thp_mb": 20.0
+   },
+   "pack": {
+    "mean_ms": 3.32,
+    "max_peak_mb": 27.62,
+    "max_thp_mb": 16.0
+   },
+   "bfs_copy": {
+    "mean_ms": 32.8,
+    "max_peak_mb": 46.92,
+    "max_thp_mb": 34.0
+   },
+   "fill_pack_text_wide": {
+    "mean_ms": 8.22,
+    "max_peak_mb": 46.92,
+    "max_thp_mb": 18.0
+   },
+   "relabel": {
+    "mean_ms": 20.26,
+    "max_peak_mb": 48.62,
+    "max_thp_mb": 34.0
+   },
+   "queries": {
+    "mean_ms": 88.78,
+    "max_peak_mb": 53.44,
+    "max_thp_mb": 34.0
+   },
+   "output": {
+    "mean_ms": 2.17,
+    "max_peak_mb": 44.54,
+    "max_thp_mb": 34.0
+   }
+  }
+ }
+}

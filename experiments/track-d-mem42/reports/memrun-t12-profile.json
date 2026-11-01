@@ -1,0 +1,489 @@
+{
+ "note": "local sandbox measurements, not official scores",
+ "track": "d",
+ "data": "/projects/sandbox/.data/d-full",
+ "threads": 12,
+ "env": {},
+ "runs_per_binary": 11,
+ "interval_us": 200,
+ "binaries": {
+  "prof-baseline": "241b3326fb6bad08a96a7f49c80bb26efbf904cdde38b1fae40d54c77e5963e1",
+  "prof-candidate": "c4aece43a59cb3d74dd6c01e5da5176864d1457ac9ab29f68e56e20b47cffffc"
+ },
+ "summary": {
+  "prof-baseline": {
+   "wall_ms_median": 194.91641500007972,
+   "wall_ms_min": 189.7467280005003,
+   "cpu_ms_median": 1141.269,
+   "maxrss_mb_median": 150.269952,
+   "peak_anon_shmem_mb_median": 65.875968,
+   "peak_anon_shmem_mb_max": 66.494464,
+   "peak_file_mb_median": 94.117888,
+   "peak_pte_kib_median": 468,
+   "out_mb": 0.009039,
+   "est_M_mb_median": 65.885007,
+   "est_M_pte_mb_median": 66.351951,
+   "samples_median": 522
+  },
+  "prof-candidate": {
+   "wall_ms_median": 205.22507500027132,
+   "wall_ms_min": 198.61066799967375,
+   "cpu_ms_median": 1209.867,
+   "maxrss_mb_median": 140.275712,
+   "peak_anon_shmem_mb_median": 55.68512,
+   "peak_anon_shmem_mb_max": 56.045568,
+   "peak_file_mb_median": 94.101504,
+   "peak_pte_kib_median": 436,
+   "out_mb": 0.009039,
+   "est_M_mb_median": 55.694159,
+   "est_M_pte_mb_median": 56.136527,
+   "samples_median": 524
+  }
+ },
+ "runs": {
+  "prof-baseline": [
+   {
+    "wall_s": 0.19997057400087215,
+    "cpu_s": 1.166381,
+    "maxrss_kib": 146692,
+    "minflt": 22732,
+    "samples": 485,
+    "peak_kib": {
+     "anon_shmem": 64200,
+     "RssAnon": 64200,
+     "RssShmem": 0,
+     "RssFile": 91924,
+     "VmPTE": 476,
+     "VmRSS": 156124
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 65.749839,
+    "est_M_pte_mb": 66.237263,
+    "ok": true,
+    "stderr_tail": "b=56608\nPHASE renumber t_ms=78.48 anon_kb=59808 thp_kb=43008 phase_peak_nonfile_kb=59808\nPHASE drop_g t_ms=81.40 anon_kb=33552 thp_kb=22528 phase_peak_nonfile_kb=59808\nPHASE queries_text_wide t_ms=83.46 anon_kb=33552 thp_kb=22528 phase_peak_nonfile_kb=33552\nPHASE relabel t_ms=102.33 anon_kb=53196 thp_kb=43008 phase_peak_nonfile_kb=53196\nPHASE queries t_ms=191.88 anon_kb=54732 thp_kb=43008 phase_peak_nonfile_kb=64200\nPHASE output t_ms=193.93 anon_kb=54732 thp_kb=43008 phase_peak_nonfile_kb=54732\n"
+   },
+   {
+    "wall_s": 0.19185713400020177,
+    "cpu_s": 1.129695,
+    "maxrss_kib": 146864,
+    "minflt": 22899,
+    "samples": 522,
+    "peak_kib": {
+     "anon_shmem": 64312,
+     "RssAnon": 64312,
+     "RssShmem": 0,
+     "RssFile": 91884,
+     "VmPTE": 476,
+     "VmRSS": 156196
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 65.864527,
+    "est_M_pte_mb": 66.351951,
+    "ok": true,
+    "stderr_tail": "kb=61172\nPHASE renumber t_ms=72.91 anon_kb=59812 thp_kb=45056 phase_peak_nonfile_kb=59812\nPHASE drop_g t_ms=75.24 anon_kb=33552 thp_kb=22528 phase_peak_nonfile_kb=59812\nPHASE queries_text_wide t_ms=76.70 anon_kb=33552 thp_kb=22528 phase_peak_nonfile_kb=33552\nPHASE relabel t_ms=94.73 anon_kb=53192 thp_kb=43008 phase_peak_nonfile_kb=53192\nPHASE queries t_ms=183.83 anon_kb=54920 thp_kb=43008 phase_peak_nonfile_kb=64312\nPHASE output t_ms=185.79 anon_kb=54920 thp_kb=43008 phase_peak_nonfile_kb=54920\n"
+   },
+   {
+    "wall_s": 0.1913951279993853,
+    "cpu_s": 1.138066,
+    "maxrss_kib": 146668,
+    "minflt": 23361,
+    "samples": 484,
+    "peak_kib": {
+     "anon_shmem": 64332,
+     "RssAnon": 64332,
+     "RssShmem": 0,
+     "RssFile": 91876,
+     "VmPTE": 456,
+     "VmRSS": 156208
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 65.885007,
+    "est_M_pte_mb": 66.351951,
+    "ok": true,
+    "stderr_tail": "kb=61240\nPHASE renumber t_ms=73.25 anon_kb=59808 thp_kb=43008 phase_peak_nonfile_kb=59808\nPHASE drop_g t_ms=75.79 anon_kb=33552 thp_kb=22528 phase_peak_nonfile_kb=59808\nPHASE queries_text_wide t_ms=77.62 anon_kb=33552 thp_kb=22528 phase_peak_nonfile_kb=33552\nPHASE relabel t_ms=94.78 anon_kb=53196 thp_kb=43008 phase_peak_nonfile_kb=53196\nPHASE queries t_ms=183.24 anon_kb=54732 thp_kb=43008 phase_peak_nonfile_kb=64344\nPHASE output t_ms=185.33 anon_kb=54732 thp_kb=43008 phase_peak_nonfile_kb=54732\n"
+   },
+   {
+    "wall_s": 0.1897467280005003,
+    "cpu_s": 1.1131069999999998,
+    "maxrss_kib": 146952,
+    "minflt": 22408,
+    "samples": 489,
+    "peak_kib": {
+     "anon_shmem": 64936,
+     "RssAnon": 64936,
+     "RssShmem": 0,
+     "RssFile": 91772,
+     "VmPTE": 472,
+     "VmRSS": 156708
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 66.503503,
+    "est_M_pte_mb": 66.986831,
+    "ok": true,
+    "stderr_tail": "kb=59812\nPHASE renumber t_ms=71.26 anon_kb=59824 thp_kb=45056 phase_peak_nonfile_kb=59824\nPHASE drop_g t_ms=73.58 anon_kb=33552 thp_kb=22528 phase_peak_nonfile_kb=59824\nPHASE queries_text_wide t_ms=75.54 anon_kb=33552 thp_kb=22528 phase_peak_nonfile_kb=33552\nPHASE relabel t_ms=93.46 anon_kb=53188 thp_kb=45056 phase_peak_nonfile_kb=53188\nPHASE queries t_ms=182.02 anon_kb=55096 thp_kb=45056 phase_peak_nonfile_kb=64936\nPHASE output t_ms=183.98 anon_kb=55096 thp_kb=45056 phase_peak_nonfile_kb=55096\n"
+   },
+   {
+    "wall_s": 0.19477433700012625,
+    "cpu_s": 1.1383459999999999,
+    "maxrss_kib": 146920,
+    "minflt": 23707,
+    "samples": 534,
+    "peak_kib": {
+     "anon_shmem": 64444,
+     "RssAnon": 64444,
+     "RssShmem": 0,
+     "RssFile": 91980,
+     "VmPTE": 464,
+     "VmRSS": 156424
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 65.999695,
+    "est_M_pte_mb": 66.474831,
+    "ok": true,
+    "stderr_tail": "kb=56596\nPHASE renumber t_ms=70.76 anon_kb=59816 thp_kb=40960 phase_peak_nonfile_kb=59816\nPHASE drop_g t_ms=73.39 anon_kb=33552 thp_kb=20480 phase_peak_nonfile_kb=59816\nPHASE queries_text_wide t_ms=75.35 anon_kb=33552 thp_kb=20480 phase_peak_nonfile_kb=33552\nPHASE relabel t_ms=92.10 anon_kb=53192 thp_kb=40960 phase_peak_nonfile_kb=53192\nPHASE queries t_ms=186.52 anon_kb=54904 thp_kb=40960 phase_peak_nonfile_kb=64444\nPHASE output t_ms=188.57 anon_kb=54904 thp_kb=40960 phase_peak_nonfile_kb=54904\n"
+   },
+   {
+    "wall_s": 0.19640790800076502,
+    "cpu_s": 1.14609,
+    "maxrss_kib": 146748,
+    "minflt": 23185,
+    "samples": 542,
+    "peak_kib": {
+     "anon_shmem": 64432,
+     "RssAnon": 64432,
+     "RssShmem": 0,
+     "RssFile": 91976,
+     "VmPTE": 468,
+     "VmRSS": 156408
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 65.987407,
+    "est_M_pte_mb": 66.466639,
+    "ok": true,
+    "stderr_tail": "kb=60684\nPHASE renumber t_ms=74.02 anon_kb=59816 thp_kb=43008 phase_peak_nonfile_kb=59816\nPHASE drop_g t_ms=76.91 anon_kb=33556 thp_kb=22528 phase_peak_nonfile_kb=59816\nPHASE queries_text_wide t_ms=78.61 anon_kb=33556 thp_kb=22528 phase_peak_nonfile_kb=33556\nPHASE relabel t_ms=96.07 anon_kb=53196 thp_kb=43008 phase_peak_nonfile_kb=53196\nPHASE queries t_ms=188.31 anon_kb=54732 thp_kb=43008 phase_peak_nonfile_kb=64432\nPHASE output t_ms=190.27 anon_kb=54732 thp_kb=43008 phase_peak_nonfile_kb=54732\n"
+   },
+   {
+    "wall_s": 0.1959448830002657,
+    "cpu_s": 1.141269,
+    "maxrss_kib": 147024,
+    "minflt": 23922,
+    "samples": 537,
+    "peak_kib": {
+     "anon_shmem": 64516,
+     "RssAnon": 64516,
+     "RssShmem": 0,
+     "RssFile": 91888,
+     "VmPTE": 464,
+     "VmRSS": 156404
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 66.073423,
+    "est_M_pte_mb": 66.548559,
+    "ok": true,
+    "stderr_tail": "kb=58936\nPHASE renumber t_ms=73.72 anon_kb=59816 thp_kb=40960 phase_peak_nonfile_kb=59816\nPHASE drop_g t_ms=76.20 anon_kb=33556 thp_kb=20480 phase_peak_nonfile_kb=59816\nPHASE queries_text_wide t_ms=78.12 anon_kb=33556 thp_kb=20480 phase_peak_nonfile_kb=33556\nPHASE relabel t_ms=96.23 anon_kb=53196 thp_kb=40960 phase_peak_nonfile_kb=53196\nPHASE queries t_ms=187.19 anon_kb=55084 thp_kb=40960 phase_peak_nonfile_kb=64516\nPHASE output t_ms=189.55 anon_kb=55084 thp_kb=40960 phase_peak_nonfile_kb=55084\n"
+   },
+   {
+    "wall_s": 0.1961616939997839,
+    "cpu_s": 1.147182,
+    "maxrss_kib": 146664,
+    "minflt": 22912,
+    "samples": 523,
+    "peak_kib": {
+     "anon_shmem": 64284,
+     "RssAnon": 64284,
+     "RssShmem": 0,
+     "RssFile": 91876,
+     "VmPTE": 476,
+     "VmRSS": 156160
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 65.835855,
+    "est_M_pte_mb": 66.323279,
+    "ok": true,
+    "stderr_tail": "kb=62224\nPHASE renumber t_ms=73.60 anon_kb=59808 thp_kb=45056 phase_peak_nonfile_kb=59808\nPHASE drop_g t_ms=75.83 anon_kb=33552 thp_kb=22528 phase_peak_nonfile_kb=59808\nPHASE queries_text_wide t_ms=77.32 anon_kb=33552 thp_kb=22528 phase_peak_nonfile_kb=33552\nPHASE relabel t_ms=94.97 anon_kb=53192 thp_kb=43008 phase_peak_nonfile_kb=53192\nPHASE queries t_ms=187.89 anon_kb=54728 thp_kb=43008 phase_peak_nonfile_kb=64284\nPHASE output t_ms=189.89 anon_kb=54728 thp_kb=43008 phase_peak_nonfile_kb=54728\n"
+   },
+   {
+    "wall_s": 0.19491641500007972,
+    "cpu_s": 1.147958,
+    "maxrss_kib": 147080,
+    "minflt": 22370,
+    "samples": 537,
+    "peak_kib": {
+     "anon_shmem": 64456,
+     "RssAnon": 64456,
+     "RssShmem": 0,
+     "RssFile": 91916,
+     "VmPTE": 472,
+     "VmRSS": 156372
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 66.011983,
+    "est_M_pte_mb": 66.495311,
+    "ok": true,
+    "stderr_tail": "kb=58812\nPHASE renumber t_ms=73.99 anon_kb=59812 thp_kb=45056 phase_peak_nonfile_kb=59812\nPHASE drop_g t_ms=76.53 anon_kb=33552 thp_kb=24576 phase_peak_nonfile_kb=59812\nPHASE queries_text_wide t_ms=78.42 anon_kb=33552 thp_kb=24576 phase_peak_nonfile_kb=33552\nPHASE relabel t_ms=97.17 anon_kb=53192 thp_kb=45056 phase_peak_nonfile_kb=53192\nPHASE queries t_ms=187.08 anon_kb=55088 thp_kb=45056 phase_peak_nonfile_kb=64456\nPHASE output t_ms=189.07 anon_kb=55088 thp_kb=45056 phase_peak_nonfile_kb=55088\n"
+   },
+   {
+    "wall_s": 0.19077676500000962,
+    "cpu_s": 1.132021,
+    "maxrss_kib": 146680,
+    "minflt": 22737,
+    "samples": 518,
+    "peak_kib": {
+     "anon_shmem": 63732,
+     "RssAnon": 63732,
+     "RssShmem": 0,
+     "RssFile": 91912,
+     "VmPTE": 468,
+     "VmRSS": 155644
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 65.270607,
+    "est_M_pte_mb": 65.749839,
+    "ok": true,
+    "stderr_tail": "kb=60608\nPHASE renumber t_ms=71.87 anon_kb=59820 thp_kb=43008 phase_peak_nonfile_kb=59820\nPHASE drop_g t_ms=74.08 anon_kb=33552 thp_kb=20480 phase_peak_nonfile_kb=59820\nPHASE queries_text_wide t_ms=75.58 anon_kb=33552 thp_kb=20480 phase_peak_nonfile_kb=33552\nPHASE relabel t_ms=93.37 anon_kb=53192 thp_kb=43008 phase_peak_nonfile_kb=53192\nPHASE queries t_ms=182.61 anon_kb=54728 thp_kb=43008 phase_peak_nonfile_kb=63732\nPHASE output t_ms=184.61 anon_kb=54728 thp_kb=43008 phase_peak_nonfile_kb=54728\n"
+   },
+   {
+    "wall_s": 0.1971205479994751,
+    "cpu_s": 1.159546,
+    "maxrss_kib": 146684,
+    "minflt": 22884,
+    "samples": 510,
+    "peak_kib": {
+     "anon_shmem": 63752,
+     "RssAnon": 63752,
+     "RssShmem": 0,
+     "RssFile": 91916,
+     "VmPTE": 456,
+     "VmRSS": 155668
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 65.291087,
+    "est_M_pte_mb": 65.758031,
+    "ok": true,
+    "stderr_tail": "kb=60720\nPHASE renumber t_ms=73.88 anon_kb=59824 thp_kb=43008 phase_peak_nonfile_kb=59824\nPHASE drop_g t_ms=76.27 anon_kb=33556 thp_kb=22528 phase_peak_nonfile_kb=59824\nPHASE queries_text_wide t_ms=77.76 anon_kb=33556 thp_kb=22528 phase_peak_nonfile_kb=33556\nPHASE relabel t_ms=96.22 anon_kb=53196 thp_kb=43008 phase_peak_nonfile_kb=53196\nPHASE queries t_ms=188.56 anon_kb=54732 thp_kb=43008 phase_peak_nonfile_kb=63752\nPHASE output t_ms=190.88 anon_kb=54732 thp_kb=43008 phase_peak_nonfile_kb=54732\n"
+   }
+  ],
+  "prof-candidate": [
+   {
+    "wall_s": 0.20273918800012325,
+    "cpu_s": 1.213079,
+    "maxrss_kib": 137260,
+    "minflt": 14038,
+    "samples": 534,
+    "peak_kib": {
+     "anon_shmem": 53508,
+     "RssAnon": 53508,
+     "RssShmem": 0,
+     "RssFile": 91904,
+     "VmPTE": 428,
+     "VmRSS": 145412
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 54.801231,
+    "est_M_pte_mb": 55.239503,
+    "ok": true,
+    "stderr_tail": "b=26700\nPHASE pack t_ms=43.09 anon_kb=21720 thp_kb=16384 phase_peak_nonfile_kb=28284\nPHASE bfs_copy t_ms=76.79 anon_kb=48044 thp_kb=34816 phase_peak_nonfile_kb=48044\nPHASE fill_pack_text_wide t_ms=84.46 anon_kb=28672 thp_kb=18432 phase_peak_nonfile_kb=48044\nPHASE relabel t_ms=105.11 anon_kb=43216 thp_kb=34816 phase_peak_nonfile_kb=49788\nPHASE queries t_ms=195.08 anon_kb=45308 thp_kb=34816 phase_peak_nonfile_kb=53508\nPHASE output t_ms=197.05 anon_kb=45308 thp_kb=34816 phase_peak_nonfile_kb=45308\n"
+   },
+   {
+    "wall_s": 0.20315487100015162,
+    "cpu_s": 1.205606,
+    "maxrss_kib": 136788,
+    "minflt": 14225,
+    "samples": 511,
+    "peak_kib": {
+     "anon_shmem": 54704,
+     "RssAnon": 54704,
+     "RssShmem": 0,
+     "RssFile": 91824,
+     "VmPTE": 448,
+     "VmRSS": 146528
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 56.025935,
+    "est_M_pte_mb": 56.484687,
+    "ok": true,
+    "stderr_tail": "b=26692\nPHASE pack t_ms=42.09 anon_kb=21716 thp_kb=16384 phase_peak_nonfile_kb=28276\nPHASE bfs_copy t_ms=77.73 anon_kb=48040 thp_kb=34816 phase_peak_nonfile_kb=48040\nPHASE fill_pack_text_wide t_ms=85.12 anon_kb=28668 thp_kb=18432 phase_peak_nonfile_kb=48040\nPHASE relabel t_ms=104.75 anon_kb=43212 thp_kb=34816 phase_peak_nonfile_kb=49784\nPHASE queries t_ms=195.16 anon_kb=44904 thp_kb=34816 phase_peak_nonfile_kb=54704\nPHASE output t_ms=197.10 anon_kb=44904 thp_kb=34816 phase_peak_nonfile_kb=44904\n"
+   },
+   {
+    "wall_s": 0.19861066799967375,
+    "cpu_s": 1.183478,
+    "maxrss_kib": 137280,
+    "minflt": 14537,
+    "samples": 518,
+    "peak_kib": {
+     "anon_shmem": 54732,
+     "RssAnon": 54732,
+     "RssShmem": 0,
+     "RssFile": 91916,
+     "VmPTE": 436,
+     "VmRSS": 146648
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 56.054607,
+    "est_M_pte_mb": 56.501071,
+    "ok": true,
+    "stderr_tail": "kb=26688\nPHASE pack t_ms=38.12 anon_kb=21716 thp_kb=16384 phase_peak_nonfile_kb=28272\nPHASE bfs_copy t_ms=71.73 anon_kb=48040 thp_kb=32768 phase_peak_nonfile_kb=48040\nPHASE fill_pack_text_wide t_ms=79.28 anon_kb=28668 thp_kb=16384 phase_peak_nonfile_kb=48040\nPHASE relabel t_ms=99.80 anon_kb=43212 thp_kb=34816 phase_peak_nonfile_kb=49784\nPHASE queries t_ms=190.72 anon_kb=45288 thp_kb=34816 phase_peak_nonfile_kb=54732\nPHASE output t_ms=192.67 anon_kb=45288 thp_kb=34816 phase_peak_nonfile_kb=45288\n"
+   },
+   {
+    "wall_s": 0.20522507500027132,
+    "cpu_s": 1.200852,
+    "maxrss_kib": 136984,
+    "minflt": 14099,
+    "samples": 490,
+    "peak_kib": {
+     "anon_shmem": 54348,
+     "RssAnon": 54348,
+     "RssShmem": 0,
+     "RssFile": 91920,
+     "VmPTE": 428,
+     "VmRSS": 146268
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 55.661391,
+    "est_M_pte_mb": 56.099663,
+    "ok": true,
+    "stderr_tail": "b=26696\nPHASE pack t_ms=38.51 anon_kb=21716 thp_kb=16384 phase_peak_nonfile_kb=28280\nPHASE bfs_copy t_ms=71.35 anon_kb=48040 thp_kb=34816 phase_peak_nonfile_kb=48040\nPHASE fill_pack_text_wide t_ms=79.25 anon_kb=28668 thp_kb=18432 phase_peak_nonfile_kb=48040\nPHASE relabel t_ms=100.50 anon_kb=43212 thp_kb=34816 phase_peak_nonfile_kb=49784\nPHASE queries t_ms=197.42 anon_kb=45032 thp_kb=34816 phase_peak_nonfile_kb=54348\nPHASE output t_ms=199.42 anon_kb=45032 thp_kb=34816 phase_peak_nonfile_kb=45032\n"
+   },
+   {
+    "wall_s": 0.20654489799926523,
+    "cpu_s": 1.213322,
+    "maxrss_kib": 136984,
+    "minflt": 14568,
+    "samples": 563,
+    "peak_kib": {
+     "anon_shmem": 54332,
+     "RssAnon": 54332,
+     "RssShmem": 0,
+     "RssFile": 91876,
+     "VmPTE": 440,
+     "VmRSS": 146208
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 55.645007,
+    "est_M_pte_mb": 56.095567,
+    "ok": true,
+    "stderr_tail": "b=26684\nPHASE pack t_ms=42.85 anon_kb=21716 thp_kb=16384 phase_peak_nonfile_kb=28268\nPHASE bfs_copy t_ms=78.46 anon_kb=48040 thp_kb=32768 phase_peak_nonfile_kb=48040\nPHASE fill_pack_text_wide t_ms=85.88 anon_kb=28668 thp_kb=16384 phase_peak_nonfile_kb=48040\nPHASE relabel t_ms=106.27 anon_kb=43212 thp_kb=34816 phase_peak_nonfile_kb=49784\nPHASE queries t_ms=198.60 anon_kb=45044 thp_kb=34816 phase_peak_nonfile_kb=54348\nPHASE output t_ms=200.57 anon_kb=45044 thp_kb=34816 phase_peak_nonfile_kb=45044\n"
+   },
+   {
+    "wall_s": 0.20383669900002133,
+    "cpu_s": 1.199693,
+    "maxrss_kib": 136988,
+    "minflt": 14457,
+    "samples": 522,
+    "peak_kib": {
+     "anon_shmem": 54716,
+     "RssAnon": 54716,
+     "RssShmem": 0,
+     "RssFile": 91904,
+     "VmPTE": 432,
+     "VmRSS": 146620
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 56.038223,
+    "est_M_pte_mb": 56.480591,
+    "ok": true,
+    "stderr_tail": "b=26696\nPHASE pack t_ms=40.48 anon_kb=21716 thp_kb=16384 phase_peak_nonfile_kb=28280\nPHASE bfs_copy t_ms=76.03 anon_kb=48040 thp_kb=32768 phase_peak_nonfile_kb=48040\nPHASE fill_pack_text_wide t_ms=83.62 anon_kb=28668 thp_kb=16384 phase_peak_nonfile_kb=48040\nPHASE relabel t_ms=102.24 anon_kb=43212 thp_kb=34816 phase_peak_nonfile_kb=49784\nPHASE queries t_ms=195.94 anon_kb=45036 thp_kb=34816 phase_peak_nonfile_kb=54716\nPHASE output t_ms=197.91 anon_kb=45036 thp_kb=34816 phase_peak_nonfile_kb=45036\n"
+   },
+   {
+    "wall_s": 0.20553282200035028,
+    "cpu_s": 1.2077,
+    "maxrss_kib": 137560,
+    "minflt": 14141,
+    "samples": 541,
+    "peak_kib": {
+     "anon_shmem": 53984,
+     "RssAnon": 53984,
+     "RssShmem": 0,
+     "RssFile": 91896,
+     "VmPTE": 432,
+     "VmRSS": 145880
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 55.288655,
+    "est_M_pte_mb": 55.731023,
+    "ok": true,
+    "stderr_tail": "b=26688\nPHASE pack t_ms=42.77 anon_kb=21716 thp_kb=16384 phase_peak_nonfile_kb=28272\nPHASE bfs_copy t_ms=78.87 anon_kb=48040 thp_kb=34816 phase_peak_nonfile_kb=48040\nPHASE fill_pack_text_wide t_ms=86.80 anon_kb=28668 thp_kb=18432 phase_peak_nonfile_kb=48040\nPHASE relabel t_ms=105.90 anon_kb=43212 thp_kb=34816 phase_peak_nonfile_kb=49784\nPHASE queries t_ms=197.50 anon_kb=45612 thp_kb=34816 phase_peak_nonfile_kb=53984\nPHASE output t_ms=199.58 anon_kb=45612 thp_kb=34816 phase_peak_nonfile_kb=45612\n"
+   },
+   {
+    "wall_s": 0.21078916399983427,
+    "cpu_s": 1.2377,
+    "maxrss_kib": 136984,
+    "minflt": 14273,
+    "samples": 524,
+    "peak_kib": {
+     "anon_shmem": 54216,
+     "RssAnon": 54216,
+     "RssShmem": 0,
+     "RssFile": 91808,
+     "VmPTE": 440,
+     "VmRSS": 146024
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 55.526223,
+    "est_M_pte_mb": 55.976783,
+    "ok": true,
+    "stderr_tail": "b=26692\nPHASE pack t_ms=45.94 anon_kb=21716 thp_kb=16384 phase_peak_nonfile_kb=28276\nPHASE bfs_copy t_ms=81.79 anon_kb=48040 thp_kb=34816 phase_peak_nonfile_kb=48040\nPHASE fill_pack_text_wide t_ms=89.89 anon_kb=28668 thp_kb=18432 phase_peak_nonfile_kb=48040\nPHASE relabel t_ms=111.20 anon_kb=43212 thp_kb=34816 phase_peak_nonfile_kb=49784\nPHASE queries t_ms=202.93 anon_kb=45096 thp_kb=34816 phase_peak_nonfile_kb=54216\nPHASE output t_ms=204.89 anon_kb=45096 thp_kb=34816 phase_peak_nonfile_kb=45096\n"
+   },
+   {
+    "wall_s": 0.20809246400040138,
+    "cpu_s": 1.215923,
+    "maxrss_kib": 137040,
+    "minflt": 14425,
+    "samples": 536,
+    "peak_kib": {
+     "anon_shmem": 54580,
+     "RssAnon": 54580,
+     "RssShmem": 0,
+     "RssFile": 91896,
+     "VmPTE": 436,
+     "VmRSS": 146476
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 55.898959,
+    "est_M_pte_mb": 56.345423,
+    "ok": true,
+    "stderr_tail": "b=26688\nPHASE pack t_ms=42.56 anon_kb=21716 thp_kb=16384 phase_peak_nonfile_kb=28272\nPHASE bfs_copy t_ms=78.92 anon_kb=48040 thp_kb=34816 phase_peak_nonfile_kb=48040\nPHASE fill_pack_text_wide t_ms=87.17 anon_kb=28668 thp_kb=18432 phase_peak_nonfile_kb=48040\nPHASE relabel t_ms=107.77 anon_kb=43212 thp_kb=34816 phase_peak_nonfile_kb=49784\nPHASE queries t_ms=199.83 anon_kb=45092 thp_kb=34816 phase_peak_nonfile_kb=54580\nPHASE output t_ms=201.99 anon_kb=45092 thp_kb=34816 phase_peak_nonfile_kb=45092\n"
+   },
+   {
+    "wall_s": 0.20548115000019607,
+    "cpu_s": 1.213863,
+    "maxrss_kib": 137300,
+    "minflt": 14040,
+    "samples": 533,
+    "peak_kib": {
+     "anon_shmem": 54644,
+     "RssAnon": 54644,
+     "RssShmem": 0,
+     "RssFile": 91968,
+     "VmPTE": 440,
+     "VmRSS": 146612
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 55.964495,
+    "est_M_pte_mb": 56.415055,
+    "ok": true,
+    "stderr_tail": "b=26692\nPHASE pack t_ms=42.70 anon_kb=21720 thp_kb=16384 phase_peak_nonfile_kb=28276\nPHASE bfs_copy t_ms=78.13 anon_kb=48044 thp_kb=34816 phase_peak_nonfile_kb=48044\nPHASE fill_pack_text_wide t_ms=85.54 anon_kb=28672 thp_kb=18432 phase_peak_nonfile_kb=48044\nPHASE relabel t_ms=106.17 anon_kb=43216 thp_kb=34816 phase_peak_nonfile_kb=49788\nPHASE queries t_ms=197.26 anon_kb=45288 thp_kb=34816 phase_peak_nonfile_kb=54644\nPHASE output t_ms=199.23 anon_kb=45288 thp_kb=34816 phase_peak_nonfile_kb=45288\n"
+   },
+   {
+    "wall_s": 0.2025533460000588,
+    "cpu_s": 1.209867,
+    "maxrss_kib": 136952,
+    "minflt": 14120,
+    "samples": 497,
+    "peak_kib": {
+     "anon_shmem": 54380,
+     "RssAnon": 54380,
+     "RssShmem": 0,
+     "RssFile": 91864,
+     "VmPTE": 432,
+     "VmRSS": 146244
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 55.694159,
+    "est_M_pte_mb": 56.136527,
+    "ok": true,
+    "stderr_tail": "b=26692\nPHASE pack t_ms=39.38 anon_kb=21716 thp_kb=16384 phase_peak_nonfile_kb=28276\nPHASE bfs_copy t_ms=75.43 anon_kb=48040 thp_kb=34816 phase_peak_nonfile_kb=48040\nPHASE fill_pack_text_wide t_ms=83.41 anon_kb=28668 thp_kb=18432 phase_peak_nonfile_kb=48040\nPHASE relabel t_ms=102.89 anon_kb=43212 thp_kb=34816 phase_peak_nonfile_kb=49784\nPHASE queries t_ms=194.46 anon_kb=45052 thp_kb=34816 phase_peak_nonfile_kb=54380\nPHASE output t_ms=196.51 anon_kb=45052 thp_kb=34816 phase_peak_nonfile_kb=45052\n"
+   }
+  ]
+ }
+}
