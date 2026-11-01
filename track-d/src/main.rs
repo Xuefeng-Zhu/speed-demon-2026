@@ -19,7 +19,7 @@
 //! Override the directories with `SD_DATA` and `SD_OUT`.
 
 use std::sync::atomic::{AtomicI64, AtomicU32, AtomicU64, AtomicUsize, Ordering::Relaxed};
-use std::{fs, fs::File, os::fd::AsRawFd, thread};
+use std::{fs, fs::File, mem::take, os::fd::AsRawFd, thread};
 
 extern "C" {
     fn mmap(addr: *mut u8, len: usize, prot: i32, flags: i32, fd: i32, off: i64) -> *mut u8;
@@ -86,14 +86,6 @@ fn prefetch<T>(x: &[T], i: usize) {
     }
 }
 
-/// Calls `f(u, v, w)` for every `u v w` line in `text[p..end]`.
-fn each_edge(text: &[u8], mut p: usize, end: usize, mut f: impl FnMut(u32, u32, u32)) {
-    while p < end {
-        let (u, v) = (num(text, &mut p), num(text, &mut p));
-        f(u, v, num(text, &mut p));
-    }
-}
-
 /// Compressed sparse rows: the edges out of `u` are `adj[first[u]..first[u + 1]]`,
 /// each packed as `head | code << bits`, where `code` is the weight, or `wide`
 /// (all ones) for a weight that does not fit, found in `Net::wide` instead.
@@ -120,7 +112,8 @@ struct Net {
 /// Each thread sums its chunk, then adds the chunks before it to its own.
 fn ends(first: &[AtomicU32], threads: usize) {
     let parts: Vec<_> = first.chunks(first.len().div_ceil(threads)).collect();
-    let sums = parallel(parts.len(), &|i| parts[i].iter().map(|c| c.load(Relaxed)).sum::<u32>());
+    let sum = |c: &[AtomicU32]| c.iter().map(|c| c.load(Relaxed)).sum::<u32>();
+    let sums = parallel(parts.len(), &|i| sum(parts[i]));
     parallel(parts.len(), &|i| {
         parts[i].iter().fold(sums[..i].iter().sum(), |sum: u32, c| {
             c.store(c.load(Relaxed) + sum, Relaxed);
@@ -141,24 +134,26 @@ fn load_graph(path: &str, threads: usize) -> (Csr, u32, Vec<(u32, u32, u32)>) {
     let len = file.metadata().unwrap().len() as usize;
     let ptr = unsafe { mmap(std::ptr::null_mut(), len, 1, 2, file.as_raw_fd(), 0) };
     let text = unsafe { std::slice::from_raw_parts(ptr, len) };
-    let line_end = |p: usize| p + text[p..].iter().position(|&b| b == b'\n').map_or(len - p, |i| i + 1);
+    let line_end = |p: usize| (p..len).find(|&i| text[i] == b'\n').map_or(len, |i| i + 1);
     let mut p = 0;
     let (n, m) = (num(text, &mut p) as usize, num(text, &mut p) as usize);
     let bits = 32 - (n as u32).leading_zeros();
     let wide = u32::MAX >> bits;
-    let cuts: Vec<usize> = (0..=threads).map(|i| line_end((i * len / threads).max(1) - 1)).collect();
+    let cut = |i: usize| line_end((i * len / threads).max(1) - 1);
     let block_len = n.div_ceil(threads);
     let parts = parallel(threads, &|i| {
         // Sized for an even spread, so the lists rarely have to grow.
         let cap = m / threads / threads * 9 / 8 + 64;
         let mut lists: Vec<Vec<u64>> = (0..threads).map(|_| Vec::with_capacity(cap)).collect();
         let mut big = Vec::new();
-        each_edge(text, cuts[i], cuts[i + 1], |u, v, w| {
+        let (mut p, end) = (cut(i), cut(i + 1));
+        while p < end {
+            let (u, v, w) = (num(text, &mut p), num(text, &mut p), num(text, &mut p));
             lists[u as usize / block_len].push((u as u64) << 32 | (v | w.min(wide) << bits) as u64);
             if w >= wide {
                 big.push((u, v, w));
             }
-        });
+        }
         (lists, big)
     });
     let (mut buckets, big): (Vec<_>, Vec<_>) = parts.into_iter().unzip();
@@ -166,20 +161,20 @@ fn load_graph(path: &str, threads: usize) -> (Csr, u32, Vec<(u32, u32, u32)>) {
     let (mut adj_rest, mut start) = (&mut adj[..], 0);
     thread::scope(|sc| {
         for (j, first) in first[..n].chunks_mut(block_len).enumerate() {
-            let col: Vec<_> = buckets.iter_mut().map(|b| std::mem::take(&mut b[j])).collect();
+            let col: Vec<_> = buckets.iter_mut().map(|b| take(&mut b[j])).collect();
             let size: usize = col.iter().map(Vec::len).sum();
-            let (adj, rest) = std::mem::take(&mut adj_rest).split_at_mut(size);
-            let lo = j * block_len;
+            let (adj, rest) = take(&mut adj_rest).split_at_mut(size);
+            let at = move |e: u64| (e >> 32) as usize - j * block_len;
             adj_rest = rest;
             sc.spawn(move || {
-                col.iter().flatten().for_each(|&e| first[(e >> 32) as usize - lo] += 1);
+                col.iter().flatten().for_each(|&e| first[at(e)] += 1);
                 first.iter_mut().fold(start, |sum, c| {
                     *c += sum;
                     *c
                 });
                 for list in col {
                     for e in list {
-                        let c = &mut first[(e >> 32) as usize - lo];
+                        let c = &mut first[at(e)];
                         *c -= 1;
                         adj[(*c - start) as usize] = e as u32;
                     }
@@ -217,12 +212,14 @@ fn renumber(g: &Csr, bits: u32, threads: usize) -> (Vec<u32>, Csr) {
     let (n, m) = (g.first.len() - 1, g.adj.len());
     let (mut rank, mut first, mut adj) = (vec![0; n], zeros(n + 1), zeros(m));
     let (r, f, a) = (atomic(&mut rank), atomic(&mut first), atomic(&mut adj));
-    let claim = |v: usize| r[v].load(Relaxed) == 0 && r[v].compare_exchange(0, 1, Relaxed, Relaxed).is_ok();
+    // Unclaimed is 0; a claimed node holds 1 or its complemented id, never 0,
+    // so raising a slot to at least 1 claims it only if it was free.
+    let claim = |&v: &usize| r[v].load(Relaxed) == 0 && r[v].fetch_max(1, Relaxed) == 0;
     let next = AtomicU64::new(0);
     parallel(threads, &|i| {
         let mut roots = i * n / threads..(i + 1) * n / threads;
         let (mut mine, mut seed) = (Vec::with_capacity(CLUSTER), None);
-        while let Some(root) = seed.take().filter(|&v| claim(v)).or_else(|| roots.find(|&v| claim(v))) {
+        while let Some(root) = seed.take().filter(claim).or_else(|| roots.find(claim)) {
             mine.push(root as u32);
             let mut k = 0;
             'grow: while k < mine.len() {
@@ -232,7 +229,7 @@ fn renumber(g: &Csr, bits: u32, threads: usize) -> (Vec<u32>, Csr) {
                         seed = Some(v);
                         break 'grow;
                     }
-                    if claim(v) {
+                    if claim(&v) {
                         mine.push(v as u32);
                     }
                 }
@@ -331,11 +328,12 @@ struct Side<D> {
 
 impl<D: Dist> Side<D> {
     fn new(n: usize) -> Self {
+        let (last, buckets) = (0, std::array::from_fn(|_| Vec::new()));
         Side {
             map: vec![u16::MAX; (n >> BLOCK) + 1],
             pool: Vec::new(),
             owners: Vec::new(),
-            heap: RadixHeap { last: 0, buckets: std::array::from_fn(|_| Vec::new()) },
+            heap: RadixHeap { last, buckets },
             size: 0,
             cut: false,
         }

@@ -194,3 +194,8 @@ Board run `run-8fefae2c6482` at `804a03c`: T=163.10 ms, S=407, against 168.2 ms 
 ## Round 3: query-phase screens (2026-10-31, none kept)
 
 On `804a03c`, `SHIFT` 5 and 7, four other prefetch distances, a ring bucket queue in place of the radix heap, distances carried in heap entries, and expanding one side 8 or 16 times in a row were all neutral (within 1–2 ms of noise) or slower in the sandbox. Cycle timers put 45% of query-loop time in edge relaxation and 16% in queue `top()`. Same-distance repeat expansions are 3.3% of expansions. Query time was the same (83–90 ms) under four node orderings, including one whole-graph BFS, so renumbering locality is saturated. Details: `experiments/track-d-query-screens38/`.
+
+## Round 3: line trim (2026-10-31)
+
+Board S matches default-rustfmt code lines of `main.rs` plus the 7 Dockerfile lines for `ccbfbc0`, `dbab6be` and `804a03c` (390, 410, 407); this is inferred, not documented. The old source had eight lines that rustfmt splits, which cost 22 lines. The source is now rustfmt-formatted, `each_edge` is inlined, `claim` uses `fetch_max(1)`, and a few expressions are named, so they fit on one line. Formatted code lines went from 400 to 376, so expected S is about 383 (+0.9% K). Behaviour is unchanged: the full hash and all oracle suites passed, and 25 alternating sandbox runs measured 175.6 ms against 175.5 ms. Details: `experiments/track-d-line-trim39/`. Board run pending.
+
