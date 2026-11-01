@@ -24,7 +24,6 @@ const FILTER: usize = 1 << 20;
 /// Term roles: used by a BOOL query and gets a posting list; anchors a
 /// phrase; used by a BOOL query and common, so it gets a bitmap instead.
 const IN_BOOL: u8 = 1;
-const ANCHOR: u8 = 2;
 const BITMAP: u8 = 4;
 
 /// ONES[16 - n..32 - n] masks the first n of 16 bytes.
@@ -57,11 +56,9 @@ struct Plan {
     keys: Vec<[u64; 3]>,
     filter: Vec<u64>,
     empty: usize,
-    long: HashMap<Vec<u8>, u32>,
+    long: HashMap<Vec<u8>, u64>,
     role: Vec<u8>,
-    aoff: Vec<u32>,
-    anchors: Vec<(u32, u32, u32, u32)>,
-    flat: Vec<u32>,
+    phr: Vec<u32>,
     nlist: usize,
     nbm: usize,
     chunks: Vec<Chunk>,
@@ -90,7 +87,7 @@ impl Plan {
     fn intern(&mut self, data: &[u8], s: usize, e: usize, role: u8) -> u32 {
         let (w, k, t) = (&data[s..e], key(data, s, e - s), self.role.len() as u32);
         let t = if w.len() > 16 {
-            *self.long.entry(w.to_vec()).or_insert(t)
+            *self.long.entry(w.to_vec()).or_insert(t as u64) as u32
         } else {
             let i = self.slot(k, self.home(k));
             if self.keys[i][0] == 0 {
@@ -121,8 +118,8 @@ impl Plan {
 /// Calls `f` with the term ids (the last id for a token no query uses) of
 /// each document in data[lo..hi], which must be whole lines. Pages are released
 /// as the scan passes them, so only a few of them stay resident.
-fn for_each_doc(data: &[u8], lo: usize, hi: usize, plan: &Plan, mut f: impl FnMut(&[u32])) {
-    let (mut i, mut done, mut tokens, mut keys) = (lo, lo, Vec::new(), Vec::new());
+fn for_each_doc(data: &[u8], lo: usize, hi: usize, plan: &Plan, mut f: impl FnMut(&[u32], &[(usize, usize)])) {
+    let (mut i, mut done, mut tokens, mut keys, mut anch) = (lo, lo, Vec::new(), Vec::new(), Vec::new());
     while i < hi {
         i += data[i..].iter().position(|&b| b == b'\t').unwrap() + 1;
         // Key every token and prefetch its slot, then look them all up, so
@@ -140,15 +137,24 @@ fn for_each_doc(data: &[u8], lo: usize, hi: usize, plan: &Plan, mut f: impl FnMu
             _ = plan.keys.get(h).map(prefetch);
             keys.push((k, h, s));
         });
-        let none = plan.role.len() as u32 - 1;
+        let none = plan.role.len() as u64 - 1;
         let long = |w: &[u8]| *plan.long.get(&w.to_ascii_lowercase()).unwrap_or(&none);
-        tokens.extend(keys.iter().map(|&(k, h, s)| match plan.keys.get(h) {
-            Some(_) => plan.keys[plan.slot(k, h)][2] as u32,
-            None => long(&data[s..s + !h]),
-        }));
-        f(&tokens);
+        for &(k, h, s) in &keys {
+            let v = match plan.keys.get(h) {
+                Some(_) => plan.keys[plan.slot(k, h)][2],
+                None => long(&data[s..s + !h]),
+            };
+            // An anchor: its phrases start at phr[(v >> 32) - 1].
+            if v >> 32 != 0 {
+                prefetch(&plan.phr[(v >> 32) as usize - 1]);
+                anch.push((tokens.len(), (v >> 32) as usize - 1));
+            }
+            tokens.push(v as u32);
+        }
+        f(&tokens, &anch);
         tokens.clear();
         keys.clear();
+        anch.clear();
         if i - done >= SLICE || i >= hi {
             release(&data[done..i]);
             done = i;
@@ -264,7 +270,7 @@ fn scan_chunk(data: &[u8], lo: usize, hi: usize, plan: &Plan, rows: &[AtomicU64]
     let (nl, words) = (plan.nlist, rows.len() / plan.nbm.max(1));
     // The list-term ids of each document, each document ended by u16::MAX.
     let mut stream = Vec::with_capacity((hi - lo) / 16);
-    let (mut hits, mut doc, mut new, mut anch) = (Vec::new(), first, Vec::new(), Vec::new());
+    let (mut hits, mut doc, mut new) = (Vec::new(), first, Vec::new());
     // The bitmap words of the current 64 documents, stored when they are done.
     let mut group = vec![0u64; plan.nbm + 1]; // and one for all other terms
     let flush = |group: &mut [u64], doc: u32| {
@@ -272,41 +278,32 @@ fn scan_chunk(data: &[u8], lo: usize, hi: usize, plan: &Plan, rows: &[AtomicU64]
             rows[b * words + doc as usize / 64].store(std::mem::take(x), Relaxed);
         }
     };
-    for_each_doc(data, lo, hi, plan, |tokens| {
+    for_each_doc(data, lo, hi, plan, |tokens, anch| {
         if doc % 64 == 0 && doc != first {
             flush(&mut group, doc - 1);
         }
-        // Branch-free: write every term, keep the list terms and note the
-        // anchors; a term without a bitmap sets a bit in the spare group word.
+        // Branch-free: write every term and keep the list terms; a term
+        // without a bitmap sets a bit in the spare group word.
         new.resize(tokens.len(), 0);
-        anch.resize(tokens.len(), 0);
-        let (mut n, mut m) = (0, 0);
-        let bit = 1u64 << (doc & 63);
-        for (p, &t) in tokens.iter().enumerate() {
-            (new[n], anch[m]) = (t as u16, p);
+        let (mut n, bit) = (0, 1u64 << (doc & 63));
+        for &t in tokens {
+            new[n] = t as u16;
             n += ((t as usize) < nl) as usize;
-            m += (plan.role[t as usize] & ANCHOR != 0) as usize;
             group[(t as usize).wrapping_sub(nl).min(plan.nbm)] |= bit;
         }
         stream.extend_from_slice(&new[..n]);
         stream.push(u16::MAX);
-        // Phrases: compare the tokens around each anchor with its phrases,
-        // after prefetching what that reads, a level for all anchors at a time.
-        let (anch, term) = (&anch[..m], |p: &usize| tokens[*p] as usize);
-        let ranges = |p: &usize| plan.aoff[term(p)] as usize..plan.aoff[term(p) + 1] as usize;
-        anch.iter().for_each(|p| prefetch(&plan.aoff[term(p)]));
-        for p in anch {
-            _ = plan.anchors.get(ranges(p).start).map(prefetch);
-        }
-        for a in anch.iter().flat_map(ranges) {
-            prefetch(&plan.flat[plan.anchors[a].1 as usize]);
-        }
-        for &p in anch {
-            for &(q, s, n, j) in &plan.anchors[ranges(&p)] {
-                let (s, n, j) = (s as usize, n as usize, j as usize);
-                if p >= j && tokens.get(p - j..p - j + n) == Some(&plan.flat[s..s + n]) {
+        // Phrases: compare the tokens around each anchor with its phrases.
+        for &(p, mut i) in anch {
+            while let [q, n, j, ..] = plan.phr[i..] {
+                let (n, j) = (n as usize, j as usize);
+                if q == u32::MAX {
+                    break;
+                }
+                if p >= j && tokens.get(p - j..p - j + n) == Some(&plan.phr[i + 3..i + 3 + n]) {
                     hits.push((q, doc));
                 }
+                i += 3 + n;
             }
         }
         doc += 1;
@@ -558,7 +555,7 @@ fn main() {
     plan.role.push(0);
     // freq[t]: (sample documents with the term t, the last of them).
     let (mut freq, mut sdocs) = (vec![(0u32, 0u32); plan.role.len()], 0);
-    for_each_doc(data, 0, line_start(data, SAMPLE), &plan, |tokens| {
+    for_each_doc(data, 0, line_start(data, SAMPLE), &plan, |tokens, _| {
         sdocs += 1;
         for &t in tokens {
             let f = &mut freq[t as usize];
@@ -582,7 +579,7 @@ fn main() {
         new[t] = i as u32;
     }
     plan.keys.iter_mut().for_each(|e| e[2] = new[e[2] as usize] as u64);
-    plan.long.values_mut().for_each(|t| *t = new[*t as usize]);
+    plan.long.values_mut().for_each(|t| *t = new[*t as usize] as u64);
     plan.role = order.iter().map(|&t| plan.role[t]).collect();
     let df: Vec<u32> = order.iter().map(|&t| freq[t].0).collect();
     terms.iter_mut().for_each(|e| e.1 = new[e.1 as usize]);
@@ -591,20 +588,23 @@ fn main() {
     for qi in (0..nq).filter(|&i| qs[i].0 == b'P') {
         let p = query(qi).1;
         let j = (0..p.len()).min_by_key(|&j| df[p[j].1 as usize]).unwrap();
-        plan.role[p[j].1 as usize] |= ANCHOR;
         list.push((p[j].1, qi, p, j));
     }
     drop((qtext, freq, bools, order, new, df)); // the scan uses none of these
-    // One flat list of anchors, grouped by term, with copies of the phrases.
+    // The phrases by anchor, as (query, length, anchor position, terms); each
+    // anchor's end with u32::MAX, and its start + 1 in the high half of its value.
     list.sort_unstable_by_key(|a| a.0);
-    plan.aoff = vec![0; plan.role.len() + 1];
-    list.iter().for_each(|a| plan.aoff[a.0 as usize + 1] += 1);
-    (1..plan.aoff.len()).for_each(|t| plan.aoff[t] += plan.aoff[t - 1]);
-    for (_, qi, p, j) in list {
-        plan.anchors
-            .push((qi as u32, plan.flat.len() as u32, p.len() as u32, j as u32));
-        plan.flat.extend(p.iter().map(|e| e.1));
+    let mut start = vec![0u64; plan.role.len()];
+    for g in list.chunk_by(|a, b| a.0 == b.0) {
+        start[g[0].0 as usize] = plan.phr.len() as u64 + 1 << 32;
+        for (_, qi, p, j) in g {
+            plan.phr.extend([*qi as u32, p.len() as u32, *j as u32]);
+            plan.phr.extend(p.iter().map(|e| e.1));
+        }
+        plan.phr.extend([u32::MAX; 3]);
     }
+    plan.keys.iter_mut().for_each(|e| e[2] |= start[e[2] as usize]);
+    plan.long.values_mut().for_each(|t| *t |= start[*t as usize]);
 
     // Equal byte ranges, each moved to the next line whose id is a multiple
     // of 64; at most 65,536 lines per chunk.
@@ -636,7 +636,7 @@ fn main() {
     plan.chunks = chunks.into_iter().map(|c| c.1).collect();
     plan.rows = rows.into_iter().map(AtomicU64::into_inner).collect();
     // The scan's tables; the answers do not use them.
-    (plan.keys, plan.filter, plan.aoff, plan.anchors, plan.flat) = Default::default();
+    (plan.keys, plan.filter, plan.phr) = Default::default();
     // Phrase matches as sorted (query, id); a phrase can occur twice in a document.
     let mut hits = Vec::new();
     plan.chunks.iter().for_each(|c| hits.extend(&c.hits));
