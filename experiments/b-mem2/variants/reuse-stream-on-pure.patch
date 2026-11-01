@@ -1,0 +1,36 @@
+--- pure-savings.rs	2026-11-01 03:28:12.612461105 +0000
++++ reuse.rs	2026-11-01 03:21:28.560443265 +0000
+@@ -259,11 +259,12 @@
+ 
+ /// Indexes the whole lines in data[lo..hi]; their first id is a multiple of 64,
+ /// so the chunk owns whole words of the shared bitmap rows.
+-fn scan_chunk(data: &[u8], lo: usize, hi: usize, plan: &Plan, rows: &[AtomicU64]) -> Chunk {
++fn scan_chunk(data: &[u8], lo: usize, hi: usize, plan: &Plan, rows: &[AtomicU64], stream: &mut Vec<u16>) -> Chunk {
+     let first = id_at(data, lo);
+     let (nl, words) = (plan.nlist, rows.len() / plan.nbm.max(1));
+     // The list-term ids of each document, each document ended by u16::MAX.
+-    let mut stream = Vec::with_capacity((hi - lo) / 16);
++    stream.clear();
++    stream.reserve((hi - lo) / 16);
+     let (mut hits, mut doc, mut new, mut anch) = (Vec::new(), first, Vec::new(), Vec::new());
+     // The bitmap words of the current 64 documents, stored when they are done.
+     let mut group = vec![0u64; plan.nbm + 1]; // and one for all other terms
+@@ -323,7 +324,7 @@
+     }
+     (2..offs.len()).for_each(|l| offs[l] += offs[l - 1]);
+     let (mut docs, mut d) = (vec![0u16; offs[nl + 1] as usize], 0u16);
+-    for l in stream {
++    for &l in stream.iter() {
+         if l == u16::MAX {
+             d = d.wrapping_add(1);
+         } else {
+@@ -627,7 +628,8 @@
+     let take = || next.fetch_add(1, Relaxed);
+     let claim = |n| (0..).map(|_| take()).take_while(move |&k| k < n);
+     let mut chunks: Vec<_> = par(nthreads, |_| {
+-        claim(nchunks).map(|k| (k, scan_chunk(data, cut(k), cut(k + 1), &plan, &rows))).collect::<Vec<_>>()
++        let mut stream = Vec::new(); // reused by the thread's chunks
++        claim(nchunks).map(|k| (k, scan_chunk(data, cut(k), cut(k + 1), &plan, &rows, &mut stream))).collect::<Vec<_>>()
+     })
+     .into_iter()
+     .flatten()

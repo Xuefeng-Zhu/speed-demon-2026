@@ -1,0 +1,18 @@
+--- pure-savings.rs	2026-11-01 03:28:12.612461105 +0000
++++ trim.rs	2026-11-01 03:21:28.560443265 +0000
+@@ -479,6 +479,7 @@
+ extern "C" {
+     fn mmap(addr: *mut u8, len: usize, prot: i32, flags: i32, fd: i32, off: i64) -> *mut u8;
+     fn madvise(addr: *mut u8, len: usize, advice: i32) -> i32;
++    fn malloc_trim(pad: usize) -> i32;
+ }
+ 
+ /// Maps a read-only file into memory.
+@@ -637,6 +638,7 @@
+     plan.rows = rows.into_iter().map(AtomicU64::into_inner).collect();
+     // The scan's tables; the answers do not use them.
+     (plan.keys, plan.filter, plan.aoff, plan.anchors, plan.flat) = Default::default();
++    unsafe { malloc_trim(0) };
+     // Phrase matches as sorted (query, id); a phrase can occur twice in a document.
+     let mut hits = Vec::new();
+     plan.chunks.iter().for_each(|c| hits.extend(&c.hits));
