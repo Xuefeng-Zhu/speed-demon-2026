@@ -479,6 +479,7 @@ fn id_at(data: &[u8], i: usize) -> u32 {
 extern "C" {
     fn mmap(addr: *mut u8, len: usize, prot: i32, flags: i32, fd: i32, off: i64) -> *mut u8;
     fn madvise(addr: *mut u8, len: usize, advice: i32) -> i32;
+    fn sched_getaffinity(pid: i32, size: usize, mask: *mut u64) -> i32;
 }
 
 /// Maps a read-only file into memory.
@@ -606,11 +607,8 @@ fn main() {
         plan.flat.extend(p.iter().map(|e| e.1));
     }
 
-    // At least two rounds of nthreads byte ranges, the last round's a third as
-    // large as the others. The threads done first take them, so no slow thread
-    // holds a large range at the end, and the last streams, which coexist with
-    // most of the lists, are small. Each range is moved to the next line whose
-    // id is a multiple of 64; at most 65,536 lines per chunk.
+    // Equal byte ranges, each moved to the next line whose id is a multiple
+    // of 64; at most 65,536 lines per chunk.
     let last = data.rsplit(|&b| b == b'\n').nth(1); // the last line
     let ndocs = last.map_or(0, |l| id_at(l, 0) as usize + 1);
     let words = ndocs.div_ceil(64);
@@ -618,10 +616,9 @@ fn main() {
     let mut rows = std::mem::ManuallyDrop::new(vec![0u64; plan.nbm * words]);
     // SAFETY: AtomicU64 has the size, alignment and bit validity of u64.
     let rows: Vec<AtomicU64> = unsafe { Vec::from_raw_parts(rows.as_mut_ptr().cast(), rows.len(), rows.capacity()) };
-    let nchunks = nthreads * data.len().div_ceil(nthreads << 24).max(2);
-    let cut = |k: usize| {
-        let w = k + 2 * k.min(nchunks - nthreads);
-        let mut i = line_start(data, w * data.len() / (3 * nchunks - 2 * nthreads));
+    let nchunks = nthreads * data.len().div_ceil(nthreads << 24).max(1);
+    let cut = |k| {
+        let mut i = line_start(data, k * data.len() / nchunks);
         while i < data.len() && id_at(data, i) % 64 != 0 {
             i = line_start(data, i + 1);
         }
@@ -639,10 +636,8 @@ fn main() {
     chunks.sort_unstable_by_key(|c| c.0);
     plan.chunks = chunks.into_iter().map(|c| c.1).collect();
     plan.rows = rows.into_iter().map(AtomicU64::into_inner).collect();
-    // The scan's tables; the answers do not use them (long terms do not need
-    // their long key either, so the HashMap goes as well).
+    // The scan's tables; the answers do not use them.
     (plan.keys, plan.filter, plan.aoff, plan.anchors, plan.flat) = Default::default();
-    plan.long = Default::default();
     // Phrase matches as sorted (query, id); a phrase can occur twice in a document.
     let mut hits = Vec::new();
     plan.chunks.iter().for_each(|c| hits.extend(&c.hits));
@@ -679,5 +674,18 @@ fn main() {
     let out: String = outs.into_iter().map(|o| o.1).collect();
     fs::create_dir_all(&out_dir).ok();
     fs::write(format!("{out_dir}/results.txt"), out).expect("write results.txt");
+    // DIAGNOSTIC: M - M(b7c4ae5) is 32 MiB per available_parallelism() unit, plus 512 MiB if the
+    // affinity mask has more CPUs (a CPU quota); T - T(b7c4ae5) is the time of nthreads threads
+    // each taking about 32 MiB / 4 KiB first-touch faults of 4 KiB pages at once.
+    let ap = thread::available_parallelism().map_or(0, |n| n.get());
+    let mut set = [0u64; 16];
+    let ok = unsafe { sched_getaffinity(0, 128, set.as_mut_ptr()) } == 0;
+    let cpus = set.iter().map(|w| w.count_ones() as usize).sum::<usize>() * ok as usize;
+    let len = (32 * ap + 512 * (cpus > ap) as usize) << 20;
+    let a = unsafe { mmap(std::ptr::null_mut(), len, 3, 0x22, -1, 0) } as usize; // RW, private anonymous
+    assert!(a as isize != -1, "mmap failed");
+    unsafe { madvise(a as *mut u8, len, 15) }; // MADV_NOHUGEPAGE
+    let touch = |i: usize| unsafe { std::ptr::write_volatile((a + i) as *mut u8, 1) };
+    par(nthreads, |k| (len * k / nthreads..len * (k + 1) / nthreads).step_by(4096).for_each(touch));
     std::process::exit(0); // the OS frees everything faster than the destructors
 }

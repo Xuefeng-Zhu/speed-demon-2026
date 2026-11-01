@@ -209,3 +209,5 @@ Not kept:
 The final head `6d785be`, with #28 kept, ran `run-a283f9503c48`: T=173.0 ms, M=62.1 MB, S=586, K=27.86. That makes three same-code runs at K 27.67 to 27.86; this one is the new B best.
 
 - Nov 1 2026: shared bitmap rows MADV_HUGEPAGE + main-thread first write per 2 MiB (0be6bda): run-f2833d6d0039 T 168.0 ms M 62.6 MB S 594 K 28.17 vs 28.00 best; within noise, M unchanged, +8 S. Reverted.
+
+- Nov 1 2026: PR #35+#37 (small last chunk round, drop plan.long) 065dc1b run-8cd9eb202bd0 T 259.2 ms M 56.0 MB K 23.23; d5efd3a run-18f6dd08becc T 227.8 ms M 58.4 MB K 24.56. Lower M but much slower; reverted.
