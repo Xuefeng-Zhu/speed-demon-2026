@@ -223,3 +223,4 @@ The final head `6d785be`, with #28 kept, ran `run-a283f9503c48`: T=173.0 ms, M=6
 - Nov 1 2026: opt6 cand 1 caa397a run-31e9b1992632 T 191.2 ms M 47.2 MB S 647 K 27.58 (run 2; mean of two 28.23, T unstable). Trying << 24 (fewer chunks).
 - Nov 1 2026: opt6 cand 1 << 24 f7b5243 run-25fd35475e69 T 171.8 ms M 51.9 MB S 647 K 28.56. KEPT (T same as production ~170 ms, M -10 MB). Production B is now opt6 cand 1 with << 24.
 - Nov 1 2026: confirm run 2026af8 run-70872c8cda6a T 174.6 ms M 51.8 MB S 647 K 28.33 (<< 24 confirmed).
+- Nov 1 2026: opt7 b-prefault 40afe08 run-4eafa4d5d076 T 182.9 ms M 47.2 MB S 669 K 28.06 (run 1; A same run 29.5 ms, box slow?).
