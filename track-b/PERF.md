@@ -234,3 +234,8 @@ The final head `6d785be`, with #28 kept, ran `run-a283f9503c48`: T=173.0 ms, M=6
 - Nov 1 2026: PR #45 chunks48 (6 MiB) on #43 add9b13 run-bde68f12461c T 181.9 ms M 38.5 MB S 648 K 28.67 (M hits floor, T +7%, neutral). Trying 36 chunks (<< 23).
 - Nov 1 2026: 36 chunks (<< 23) on #43 d09fe4a run-33cb88f1c6c3 T 175.9 ms M 40.3 MB S 648 K 29.16 (run 1).
 - Nov 1 2026: 36 chunks run 2 79eabe0 run-c6e131974c09 T 187.9 ms M 40.0 MB S 648 K 28.21. Mean 28.68 < #43 28.87: memory gain offset by T. Reverted to #43 (<< 24).
+
+### PR #46 skip zero bitmap words (Nov 1 2026, not kept)
+- fb39dab run-edbd957a7d8c: T 182.7 ms, M 49.9 MB, S 651, K 27.88
+- e9a3433 run-79340111b370: T 174.3 ms, M 49.4 MB, S 651, K 28.61
+- Mean 28.24 < #43 28.87 (S +3, T not lower). Restored #43 source.
