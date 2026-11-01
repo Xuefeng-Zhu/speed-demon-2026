@@ -215,3 +215,4 @@ Spawning and joining the worker threads costs about 0.2 ms per `parallel` call i
 Board trial, 1 Nov 2026: PR #27 (`d-mem`, two-pass CSR from mmap, S 416) ran `run-a9c0c5ffe415` at `aa5ab52` (T=175.3 ms, M=74.8 MB, K=23.79). It is inside production's same-code range (23.6 to 24.3) and below the 24.50 best, so it was not kept. Production D in the same window: K 23.77, 24.05, 24.21, 23.73.
 
 - Nov 1 2026: PR #36 half-side CSR on THP-fixed D, d5efd3a run-245c4954b6f9 T 154.2 ms M 74.7 MB S 406 K 25.46 < 26.53 (M rose on board). Reverted.
+- Nov 1 2026: PR #42 d-reuse-spare cb9c687 run-012cda1c4d0c T 142.2 ms M 87.1 MB S 389 K 25.88 (run 1; M spike like production noise 69-87 MB).
