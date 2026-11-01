@@ -1,0 +1,89 @@
+{
+  "environment": {
+    "kernel": "6.1.188-233.393.amzn2023.x86_64",
+    "cpu_model": "Intel(R) Xeon(R) Platinum 8488C",
+    "cpus": 8,
+    "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)",
+    "python": "3.11.15",
+    "binary": "/projects/sandbox/.data/bin/ch2-base",
+    "binary_sha256": "53df5557047efffd21b6d5f17e03cce16d638eba5121743f80e8c37f5ef56c40",
+    "data": "/projects/sandbox/.data/speed-b-full",
+    "data_bytes": {
+      "docs.txt": 253827587,
+      "queries.txt": 1763534
+    },
+    "note": "local sandbox measurements, not official scores"
+  },
+  "expected_sha256": "f86973c210228141bcb6f1f1b10188ad2a9b65f71e7cd7cf4590b38de4e80927",
+  "warmup": 1,
+  "child_env": {},
+  "summary": {
+    "8": {
+      "runs": 1,
+      "median_wall_s": 0.18450132500038308,
+      "min_wall_s": 0.18450132500038308,
+      "max_wall_s": 0.18450132500038308,
+      "median_user_s": 1.243011,
+      "min_user_s": 1.243011,
+      "max_user_s": 1.243011,
+      "median_sys_s": 0.029834999999999997,
+      "min_sys_s": 0.029834999999999997,
+      "max_sys_s": 0.029834999999999997,
+      "median_cpu_s": 1.2728460000000001,
+      "min_cpu_s": 1.2728460000000001,
+      "max_cpu_s": 1.2728460000000001,
+      "median_maxrss_kib": 55348,
+      "min_maxrss_kib": 55348,
+      "max_maxrss_kib": 55348,
+      "median_minflt": 23743,
+      "min_minflt": 23743,
+      "max_minflt": 23743,
+      "median_majflt": 0,
+      "min_majflt": 0,
+      "max_majflt": 0,
+      "median_nvcsw": 143,
+      "min_nvcsw": 143,
+      "max_nvcsw": 143,
+      "median_nivcsw": 224,
+      "min_nivcsw": 224,
+      "max_nivcsw": 224,
+      "median_cpu_util": 6.898844764379645
+    }
+  },
+  "runs": [
+    {
+      "threads": 8,
+      "wall_s": 0.18596238300051482,
+      "sha256": "f86973c210228141bcb6f1f1b10188ad2a9b65f71e7cd7cf4590b38de4e80927",
+      "user_s": 1.190196,
+      "sys_s": 0.088528,
+      "cpu_s": 1.278724,
+      "maxrss_kib": 56712,
+      "minflt": 23186,
+      "majflt": 0,
+      "nvcsw": 142,
+      "nivcsw": 172,
+      "instr": {},
+      "stderr_other": [],
+      "run": -1,
+      "warmup": true
+    },
+    {
+      "threads": 8,
+      "wall_s": 0.18450132500038308,
+      "sha256": "f86973c210228141bcb6f1f1b10188ad2a9b65f71e7cd7cf4590b38de4e80927",
+      "user_s": 1.243011,
+      "sys_s": 0.029834999999999997,
+      "cpu_s": 1.2728460000000001,
+      "maxrss_kib": 55348,
+      "minflt": 23743,
+      "majflt": 0,
+      "nvcsw": 143,
+      "nivcsw": 224,
+      "instr": {},
+      "stderr_other": [],
+      "run": 0,
+      "warmup": false
+    }
+  ]
+}

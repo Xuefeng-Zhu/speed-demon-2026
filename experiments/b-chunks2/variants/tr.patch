@@ -1,0 +1,112 @@
+--- baseline.rs
++++ tr.rs
+@@ -12,7 +12,7 @@
+ //!    right on a sorted list, switching to a bitmap when a large set is ORed in.
+ 
+ use std::fmt::Write as _;
+-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering::Relaxed};
++use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering::Relaxed};
+ use std::{collections::HashMap, env, fs, thread};
+ 
+ /// Bytes of corpus read up front to estimate which phrase term is rarest.
+@@ -65,6 +65,7 @@
+     nlist: usize,
+     nbm: usize,
+     chunks: Vec<Chunk>,
++    starts: Vec<u32>,
+     rows: Vec<u64>,
+ }
+ 
+@@ -241,25 +242,25 @@
+     };
+ }
+ 
+-/// A chunk's posting lists: list l has the ids first + docs[offs[l]..offs[l + 1]],
+-/// and its phrase matches as (query, id).
++/// A chunk's posting lists and its phrase matches as (query, id). With n chunks, list
++/// l of chunk c has the ids first + docs[starts[l * n + c]..starts[(l + 1) * n + c]].
+ struct Chunk {
+     first: u32,
+-    offs: Vec<u32>,
+     docs: Vec<u16>,
+     hits: Vec<(u32, u32)>,
+ }
+ 
+-impl Chunk {
+-    /// The chunk-local ids of the documents in list l.
+-    fn post(&self, l: usize) -> &[u16] {
+-        &self.docs[self.offs[l] as usize..self.offs[l + 1] as usize]
++impl Plan {
++    /// The chunk-local ids of the documents of chunk c in list l.
++    fn post(&self, c: usize, l: usize) -> &[u16] {
++        let n = self.chunks.len();
++        &self.chunks[c].docs[self.starts[l * n + c] as usize..self.starts[l * n + n + c] as usize]
+     }
+ }
+ 
+ /// Indexes the whole lines in data[lo..hi]; their first id is a multiple of 64,
+ /// so the chunk owns whole words of the shared bitmap rows.
+-fn scan_chunk(data: &[u8], lo: usize, hi: usize, plan: &Plan, rows: &[AtomicU64]) -> Chunk {
++fn scan_chunk(data: &[u8], lo: usize, hi: usize, plan: &Plan, rows: &[AtomicU64], col: impl Fn(usize, u32)) -> Chunk {
+     let first = id_at(data, lo);
+     let (nl, words) = (plan.nlist, rows.len() / plan.nbm.max(1));
+     // The list-term ids of each document, each document ended by u16::MAX.
+@@ -344,7 +345,8 @@
+         }
+     }
+     offs[nl] = w as u32;
+-    Chunk { first, offs, docs, hits }
++    offs[..=nl].iter().enumerate().for_each(|(l, &o)| col(l, o));
++    Chunk { first, docs, hits }
+ }
+ 
+ /// Appends a query's answer line: the count, the id sum and the first ten ids.
+@@ -388,19 +390,19 @@
+             }
+             continue;
+         }
+-        let df: usize = chunks.iter().map(|c| c.post(t).len()).sum();
++        let df: usize = (0..chunks.len()).map(|c| plan.post(c, t).len()).sum();
+         if !is_bm && (and || op == b'N') && r.len() * 16 < df {
+             // Look the few ids of r up in the term's lists.
+             let has = |d: u32| {
+-                let c = &chunks[chunks.partition_point(|c| c.first <= d) - 1];
+-                c.post(t).binary_search(&((d - c.first) as u16)).is_ok()
++                let c = chunks.partition_point(|c| c.first <= d) - 1;
++                plan.post(c, t).binary_search(&((d - chunks[c].first) as u16)).is_ok()
+             };
+             r.retain(|&d| has(d) == and);
+             continue;
+         }
+         tl.clear();
+-        for c in chunks {
+-            tl.extend(c.post(t).iter().map(|&d| c.first + d as u32));
++        for (i, c) in chunks.iter().enumerate() {
++            tl.extend(plan.post(i, t).iter().map(|&d| c.first + d as u32));
+         }
+         if !is_bm && op == b'O' && r.len() + tl.len() > words / 4 {
+             r.drain(..).for_each(|d| set(bm, d));
+@@ -623,11 +625,14 @@
+         }
+         i
+     };
++    let mut starts = std::mem::ManuallyDrop::new(vec![0u32; (plan.nlist + 1) * nchunks]);
++    let starts: Vec<AtomicU32> =
++        unsafe { Vec::from_raw_parts(starts.as_mut_ptr().cast(), starts.len(), starts.capacity()) };
+     let next = AtomicUsize::new(0);
+     let take = || next.fetch_add(1, Relaxed);
+     let claim = |n| (0..).map(|_| take()).take_while(move |&k| k < n);
+     let mut chunks: Vec<_> = par(nthreads, |_| {
+-        claim(nchunks).map(|k| (k, scan_chunk(data, cut(k), cut(k + 1), &plan, &rows))).collect::<Vec<_>>()
++        claim(nchunks).map(|k| (k, scan_chunk(data, cut(k), cut(k + 1), &plan, &rows, |l, o| starts[l * nchunks + k].store(o, Relaxed)))).collect::<Vec<_>>()
+     })
+     .into_iter()
+     .flatten()
+@@ -635,6 +640,7 @@
+     chunks.sort_unstable_by_key(|c| c.0);
+     plan.chunks = chunks.into_iter().map(|c| c.1).collect();
+     plan.rows = rows.into_iter().map(AtomicU64::into_inner).collect();
++    plan.starts = starts.into_iter().map(AtomicU32::into_inner).collect();
+     // The scan's tables; the answers do not use them.
+     (plan.keys, plan.filter, plan.aoff, plan.anchors, plan.flat) = Default::default();
+     // Phrase matches as sorted (query, id); a phrase can occur twice in a document.

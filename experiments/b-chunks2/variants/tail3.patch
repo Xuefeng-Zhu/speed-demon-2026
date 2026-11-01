@@ -1,0 +1,30 @@
+--- baseline.rs
++++ tail3.rs
+@@ -606,8 +606,10 @@
+         plan.flat.extend(p.iter().map(|e| e.1));
+     }
+ 
+-    // Equal byte ranges, each moved to the next line whose id is a multiple
+-    // of 64; at most 65,536 lines per chunk.
++    // m rounds of nthreads equal byte ranges, then a round of nthreads ranges
++    // 1/3 as large, which the threads that are done first take, so slow threads
++    // end with small ranges. Each range is moved to the next line whose id is a
++    // multiple of 64; at most 65,536 lines per chunk.
+     let last = data.rsplit(|&b| b == b'\n').nth(1); // the last line
+     let ndocs = last.map_or(0, |l| id_at(l, 0) as usize + 1);
+     let words = ndocs.div_ceil(64);
+@@ -615,9 +617,11 @@
+     let mut rows = std::mem::ManuallyDrop::new(vec![0u64; plan.nbm * words]);
+     // SAFETY: AtomicU64 has the size, alignment and bit validity of u64.
+     let rows: Vec<AtomicU64> = unsafe { Vec::from_raw_parts(rows.as_mut_ptr().cast(), rows.len(), rows.capacity()) };
+-    let nchunks = nthreads * data.len().div_ceil(nthreads << 24).max(1);
+-    let cut = |k| {
+-        let mut i = line_start(data, k * data.len() / nchunks);
++    let m = data.len().div_ceil(nthreads << 24).max(1);
++    let nchunks = nthreads * (m + 1);
++    let cut = |k: usize| {
++        let w = 3 * k - 2 * k.saturating_sub(nthreads * m);
++        let mut i = line_start(data, w * data.len() / (nthreads * (3 * m + 1)));
+         while i < data.len() && id_at(data, i) % 64 != 0 {
+             i = line_start(data, i + 1);
+         }
