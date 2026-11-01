@@ -695,7 +695,7 @@ fn main() {
     // of 64; at most 65,536 lines per chunk.
     let last = data.rsplit(|&b| b == b'\n').nth(1); // the last line
     let ndocs = last.map_or(0, |l| id_at(l, 0) as usize + 1);
-    let nchunks = nthreads * data.len().div_ceil(nthreads * 6 << 20).max(1);
+    let nchunks = nthreads * data.len().div_ceil(nthreads << 23).max(1);
     let cut = |k| {
         let mut i = line_start(data, k * data.len() / nchunks);
         while i < data.len() && id_at(data, i) % 64 != 0 {

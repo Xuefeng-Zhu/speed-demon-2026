@@ -231,3 +231,4 @@ The final head `6d785be`, with #28 kept, ran `run-a283f9503c48`: T=173.0 ms, M=6
 - Nov 1 2026: PR #43 opt8 f16224a run-b9a04548e013 T 174.3 ms M 49.6 MB S 648 K 28.59 (run 1).
 - Nov 1 2026: PR #43 run 2 3a7999c run-e14a876157f2 T 167.9 ms M 49.4 MB S 648 K 29.16. KEPT (mean 28.87 = lean-reuse 28.85, S -6). Production B = PR #43 src.
 - Nov 1 2026: PR #44 slot prefetch on #43 4b8e342 run-ce7c25d14955 T 170.3 ms M 49.4 MB S 648 K 28.95 (run 1, neutral).
+- Nov 1 2026: PR #45 chunks48 (6 MiB) on #43 add9b13 run-bde68f12461c T 181.9 ms M 38.5 MB S 648 K 28.67 (M hits floor, T +7%, neutral). Trying 36 chunks (<< 23).
