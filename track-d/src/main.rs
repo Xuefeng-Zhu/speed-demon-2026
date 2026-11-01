@@ -223,6 +223,10 @@ fn renumber(g: &Csr, bits: u32, threads: usize) -> (Vec<u32>, Csr) {
             mine.push(root as u32);
             let mut k = 0;
             'grow: while k < mine.len() {
+                // A node queued ahead: start loading its row.
+                if let Some(&v) = mine.get(k + 8) {
+                    prefetch(&g.adj, g.first[v as usize] as usize);
+                }
                 for &e in edges(g, mine[k] as usize) {
                     let v = (e & ((1 << bits) - 1)) as usize;
                     if mine.len() == CLUSTER {
