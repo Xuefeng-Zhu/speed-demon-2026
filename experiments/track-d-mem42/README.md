@@ -69,6 +69,23 @@ Keep rule `T1/T0 < (M0/M1)^0.4 × (S0/S1)^0.3`, using the local peak as M (both 
 
 Predicted K uses `K ∝ T^-0.5 × M^-0.2 × S^-0.15`. Locally the change is neutral within noise: the 18% lower peak is about paid for by the extra parse pass, the row-index loads and 30 lines. On the board it gains only if board M falls by more than local M. If the board's extra 20 MB is a fixed amount, board M goes from about 85 to about 74 MB, about −1.5% K at +7% T. If it scales with the local peak, or comes from the build phase's buffers, the gain is larger. Only a board run can tell. Keep the change only if board K improves, and record board M, T and S.
 
+## Board trial plan and split variants
+
+The board runs 12 threads: the harness starts every timed container with `--cpuset-cpus=0-11` (the P-cores; `run_submission.py --cpuset` and `final_scoring.py --run-cpuset` default to `0-11`, and its README lists "6 P-cores and 12 threads"), so `available_parallelism` is 12. Track A's older notes that call 20 threads the board's default are wrong, and the 12-thread rows above are the ones that matter.
+
+Expected value: near zero, negative if the board's extra 20 MB is a fixed amount (about -1.5% K, see above). The trial is a probe of where that 20 MB comes from: if board M falls by more than the local 11 MB, the excess is in the build-phase buffers and the change is kept.
+
+If board K does not improve, splitting the change does not rescue it. From the 12-thread breakdowns above (no new build needed, the phase peaks are measured):
+
+| Variant at 12 threads | Highest phase | Peak | vs baseline 63.4 MB |
+|---|---|---:|---:|
+| baseline | queries | 63.4 MB | |
+| row index only (buckets kept) | CSR build: buckets 40 MB + u32 `first` 7 MB + `adj` 20 MB, as in the baseline; renumber at most 58.4 MB; queries 53.4 MB | about 60.5 MB | -2.9 MB (-4.6%) |
+| two-pass load only (u32 row starts) | queries: both graphs 53.9 MB + search state | 63.4 MB | 0 |
+| both (this branch) | queries | 53.4 MB | -10.0 MB |
+
+The row index only lowers the 12-thread peak to the old build phase, so it saves about 3 MB. It still pays the three `csr` packs (about 3.3 ms each) and the slower queries (1 to 3 ms), about +6% T, against a break-even of (63.4/60.5)^0.4 x (386/398)^0.3, about 1.010 with roughly 12 more lines: it fails. The two-pass load alone does not move the 12-thread peak at all. Only the combination reaches the query phase's 53 MB, so if the board rejects this branch, the idea is dropped rather than split.
+
 ## Tried and not kept
 
 - Prefetching the `adj` slot in the count pass too. The extra load of `first` lines that other threads are updating made the count pass 18.9 ms instead of 12 ms, so that stage only runs in the place pass.
