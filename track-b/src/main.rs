@@ -17,8 +17,6 @@ use std::{collections::HashMap, env, fs, thread};
 
 /// Bytes of corpus read up front to estimate which phrase term is rarest.
 const SAMPLE: usize = 1 << 19;
-/// Bytes of corpus a thread scans between releasing what it has read.
-const SLICE: usize = 1 << 20;
 /// Bits in the filter of the short query terms' hashes.
 const FILTER: usize = 1 << 20;
 /// Term roles: used by a BOOL query and gets a posting list; anchors a
@@ -119,10 +117,9 @@ impl Plan {
 }
 
 /// Calls `f` with the term ids (the last id for a token no query uses) of
-/// each document in data[lo..hi], which must be whole lines. Pages are released
-/// as the scan passes them, so only a few of them stay resident.
+/// each document in data[lo..hi], which must be whole lines.
 fn for_each_doc(data: &[u8], lo: usize, hi: usize, plan: &Plan, mut f: impl FnMut(&[u32])) {
-    let (mut i, mut done, mut tokens, mut keys) = (lo, lo, Vec::new(), Vec::new());
+    let (mut i, mut tokens, mut keys) = (lo, Vec::new(), Vec::new());
     while i < hi {
         i += data[i..].iter().position(|&b| b == b'\t').unwrap() + 1;
         // Key every token and prefetch its slot, then look them all up, so
@@ -149,10 +146,6 @@ fn for_each_doc(data: &[u8], lo: usize, hi: usize, plan: &Plan, mut f: impl FnMu
         f(&tokens);
         tokens.clear();
         keys.clear();
-        if i - done >= SLICE || i >= hi {
-            release(&data[done..i]);
-            done = i;
-        }
     }
 }
 
@@ -478,10 +471,10 @@ fn id_at(data: &[u8], i: usize) -> u32 {
 // std has no mmap; libc is always linked.
 extern "C" {
     fn mmap(addr: *mut u8, len: usize, prot: i32, flags: i32, fd: i32, off: i64) -> *mut u8;
-    fn madvise(addr: *mut u8, len: usize, advice: i32) -> i32;
 }
 
-/// Maps a read-only file into memory.
+/// Maps a read-only file into memory. Its pages stay in the shared page cache and
+/// are not released while scanning: no MADV_DONTNEED (and TLB shootdown) per MiB.
 fn map_file(path: &str) -> &'static [u8] {
     let f = fs::File::open(path).expect("open docs.txt");
     let len = f.metadata().unwrap().len() as usize;
@@ -490,14 +483,6 @@ fn map_file(path: &str) -> &'static [u8] {
     let p = unsafe { mmap(std::ptr::null_mut(), len, 1, 2, fd, 0) };
     assert!(p as isize != -1, "mmap failed");
     unsafe { std::slice::from_raw_parts(p, len) }
-}
-
-/// Drops the whole pages inside `s` from this process's mapping of the file;
-/// the page cache keeps them, so a later read just maps them again.
-fn release(s: &[u8]) {
-    let lo = (s.as_ptr() as usize).next_multiple_of(4096);
-    let hi = (s.as_ptr() as usize + s.len()) & !4095;
-    unsafe { madvise(lo as *mut u8, hi.saturating_sub(lo), 4) }; // MADV_DONTNEED
 }
 
 /// Runs f(0), ..., f(n - 1) on n threads and returns the results in order.
