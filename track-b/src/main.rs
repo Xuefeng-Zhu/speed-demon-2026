@@ -315,31 +315,33 @@ fn scan_chunk(data: &[u8], lo: usize, hi: usize, plan: &Plan, rows: &[AtomicU64]
         flush(&mut group, doc - 1);
     }
     assert!(doc - first <= 1 << 16, "chunk too large");
-    // Counting sort of the stream, dropping a term's repeats within a document.
-    let mut offs = vec![0u32; nl + 1];
+    // Counting sort of the stream. offs[l + 2] counts list l, then offs[l + 1] is
+    // where its next id goes, and after the fill offs[l] is where list l starts.
+    let mut offs = vec![0u32; nl + 2];
     for &l in stream.iter().filter(|&&l| l != u16::MAX) {
-        offs[l as usize + 1] += 1;
+        offs[l as usize + 2] += 1;
     }
-    (1..=nl).for_each(|l| offs[l] += offs[l - 1]);
-    let (mut end, mut docs, mut d) = (offs.clone(), vec![0u16; offs[nl] as usize], 0u16);
+    (2..offs.len()).for_each(|l| offs[l] += offs[l - 1]);
+    let (mut docs, mut d) = (vec![0u16; offs[nl + 1] as usize], 0u16);
     for l in stream {
         if l == u16::MAX {
             d = d.wrapping_add(1);
         } else {
-            let e = &mut end[l as usize];
-            if *e == offs[l as usize] || docs[*e as usize - 1] != d {
-                docs[*e as usize] = d;
-                *e += 1;
-            }
+            let e = &mut offs[l as usize + 1];
+            docs[*e as usize] = d;
+            *e += 1;
         }
     }
-    // Close the gaps the repeats left.
+    // Drop a term's repeats within a document: equal neighbours in its list.
     let mut w = 0;
     for l in 0..nl {
-        let (a, b) = (offs[l] as usize, end[l] as usize);
-        docs.copy_within(a..b, w);
+        let (a, b) = (offs[l] as usize, offs[l + 1] as usize);
         offs[l] = w as u32;
-        w += b - a;
+        for i in a..b {
+            let keep = i == a || docs[i] != docs[i - 1];
+            docs[w] = docs[i];
+            w += keep as usize;
+        }
     }
     offs[nl] = w as u32;
     Chunk { first, offs, docs, hits }
@@ -531,7 +533,7 @@ fn main() {
     let (mut qs, mut terms, mut i, mut op) = (Vec::new(), Vec::new(), 0, 0);
     while i < qtext.len() {
         i = each_token(&qtext, i, |s, e| match qtext[s] {
-            b'B' | b'P' => qs.push((qtext[s], terms.len())),
+            b'B' | b'P' => qs.push((qtext[s], terms.len() as u32)),
             b'A' | b'O' | b'N' => op = qtext[s],
             _ => {
                 let role = IN_BOOL * (qs[qs.len() - 1].0 == b'B') as u8;
@@ -540,7 +542,7 @@ fn main() {
         });
     }
     let nq = qs.len();
-    qs.push((0, terms.len()));
+    qs.push((0, terms.len() as u32));
     let data = map_file(&format!("{data_dir}/docs.txt"));
 
     // Anchor each phrase on its rarest term in a sample of the corpus.
@@ -582,16 +584,17 @@ fn main() {
     plan.keys.iter_mut().for_each(|e| e[2] = new[e[2] as usize] as u64);
     plan.long.values_mut().for_each(|t| *t = new[*t as usize]);
     plan.role = order.iter().map(|&t| plan.role[t]).collect();
-    let freq: Vec<u32> = order.iter().map(|&t| freq[t].0).collect();
+    let df: Vec<u32> = order.iter().map(|&t| freq[t].0).collect();
     terms.iter_mut().for_each(|e| e.1 = new[e.1 as usize]);
-    let query = |i: usize| (qs[i].0, &terms[qs[i].1..qs[i + 1].1]);
+    let query = |i: usize| (qs[i].0, &terms[qs[i].1 as usize..qs[i + 1].1 as usize]);
     let mut list = Vec::new();
     for qi in (0..nq).filter(|&i| qs[i].0 == b'P') {
         let p = query(qi).1;
-        let j = (0..p.len()).min_by_key(|&j| freq[p[j].1 as usize]).unwrap();
+        let j = (0..p.len()).min_by_key(|&j| df[p[j].1 as usize]).unwrap();
         plan.role[p[j].1 as usize] |= ANCHOR;
         list.push((p[j].1, qi, p, j));
     }
+    drop((qtext, freq, bools, order, new, df)); // the scan uses none of these
     // One flat list of anchors, grouped by term, with copies of the phrases.
     list.sort_unstable_by_key(|a| a.0);
     plan.aoff = vec![0; plan.role.len() + 1];
@@ -632,6 +635,8 @@ fn main() {
     chunks.sort_unstable_by_key(|c| c.0);
     plan.chunks = chunks.into_iter().map(|c| c.1).collect();
     plan.rows = rows.into_iter().map(AtomicU64::into_inner).collect();
+    // The scan's tables; the answers do not use them.
+    (plan.keys, plan.filter, plan.aoff, plan.anchors, plan.flat) = Default::default();
     // Phrase matches as sorted (query, id); a phrase can occur twice in a document.
     let mut hits = Vec::new();
     plan.chunks.iter().for_each(|c| hits.extend(&c.hits));
