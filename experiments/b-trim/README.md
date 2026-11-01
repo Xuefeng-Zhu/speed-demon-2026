@@ -49,3 +49,7 @@ SD_DATA=<b-full> SD_OUT=/tmp/o track-b/target/release/solution && sha256sum /tmp
 sh experiments/b-filter-parse/check_all.sh track-b/target/release/solution 12
 python3 official/harness/dockerfile_check.py track-b/Dockerfile official/harness/allowlist.json
 ```
+
+## Overlap with other branches
+
+`b-mem2` and `b-pure` edit the same functions of `track-b/src/main.rs` (`scan_chunk`, the counting sort, the query parse). The branches are separate board trials off `f828bd8` and are not rebased onto each other here. Whichever lands after another must be rebased, rebuilt, re-hashed (full seed 1 and `check_all.sh`) and re-counted: S 519 here and S 586 there are both relative to the untrimmed base.
