@@ -24,6 +24,7 @@ const MIX: u64 = 0x9E37_79B9_7F4A_7C15;
 extern "C" {
     fn mmap(addr: *mut u8, len: usize, prot: i32, flags: i32, fd: i32, off: i64) -> *mut u8;
     fn madvise(addr: *const u8, len: usize, advice: i32) -> i32;
+    fn mallopt(param: i32, value: i32) -> i32;
 }
 
 /// Maps the file read-only followed by at least 4 KiB of zeros, so 8-byte loads that run past
@@ -238,6 +239,19 @@ fn parse(d: &[u8], mut i: usize, end: usize, shared: &[Shared], next_id: &Atomic
     hours
 }
 
+/// Drops the whole pages inside the `len` bytes at `p`, a heap buffer about to be freed, from the
+/// resident set, like the munmap that freeing a large buffer would otherwise do, but without
+/// taking the process's memory-map lock for writing. The partial pages at either end, which may
+/// hold allocator metadata, are kept.
+fn release(p: *const u8, len: usize) {
+    let (a, b) = ((p as usize + 4095) & !4095, (p as usize + len) & !4095);
+    if a < b {
+        // SAFETY: the pages lie inside a buffer the caller owns and frees next; the allocator
+        // only writes to them again, after which they read as zeros.
+        unsafe { madvise(a as *const u8, b - a, 4) }; // MADV_DONTNEED
+    }
+}
+
 /// Writes " " and the decimal digits of `v` at `b[at..]`; returns the index past them.
 #[inline(always)]
 fn put_num(b: &mut [u8], at: usize, mut v: u64) -> usize {
@@ -349,6 +363,9 @@ fn summarize(hour: usize, chunks: Vec<Records>, order: &[u32], names: &[Vec<u8>]
         lat[*slot as usize] = latency;
         *slot += 1;
     });
+    for (records, _) in &chunks {
+        release(records.as_ptr().cast(), records.capacity() * 4);
+    }
     drop(chunks);
     let (day, hh) = ((18 + hour) / 24, (18 + hour) % 24);
     let (month, dd) = (10 + day / 2, [30, 31, 1, 2][day]);
@@ -406,6 +423,14 @@ fn make_plan(shared: &[Shared], parsed: &[Mutex<Vec<Records>>]) -> (Vec<u32>, Ve
 }
 
 fn main() {
+    // Keep every allocation in the malloc heap, grown in large steps and never trimmed. Otherwise
+    // each large buffer is its own mmap and munmap, and each of those takes the memory-map lock
+    // for writing, which stalls every other thread's page faults. `release` gives the memory back.
+    unsafe {
+        mallopt(-3, 1 << 25); // M_MMAP_THRESHOLD, the largest value glibc accepts
+        mallopt(-2, 1 << 25); // M_TOP_PAD
+        mallopt(-1, i32::MAX); // M_TRIM_THRESHOLD
+    }
     let data_dir = env::var("SD_DATA").unwrap_or_else(|_| "/data".into());
     let out_dir = env::var("SD_OUT").unwrap_or_else(|_| "/out".into());
     let file = fs::File::open(format!("{data_dir}/requests.log")).expect("open requests.log");
@@ -458,6 +483,7 @@ fn main() {
             pending[h] = Some(out);
             while let Some(out) = pending.get_mut(written).and_then(Option::take) {
                 f.write_all(&out).unwrap();
+                release(out.as_ptr(), out.capacity());
                 written += 1;
             }
         }
