@@ -107,21 +107,6 @@ struct Net {
     wide: Vec<(u64, u32)>,
 }
 
-/// Turns per-node counts into running sums, so `first[u]` is the end of u's
-/// edges; threads then place each edge by taking one off its tail's end.
-/// Each thread sums its chunk, then adds the chunks before it to its own.
-fn ends(first: &[AtomicU32], threads: usize) {
-    let parts: Vec<_> = first.chunks(first.len().div_ceil(threads)).collect();
-    let sum = |c: &[AtomicU32]| c.iter().map(|c| c.load(Relaxed)).sum::<u32>();
-    let sums = parallel(parts.len(), &|i| sum(parts[i]));
-    parallel(parts.len(), &|i| {
-        parts[i].iter().fold(sums[..i].iter().sum(), |sum: u32, c| {
-            c.store(c.load(Relaxed) + sum, Relaxed);
-            c.load(Relaxed)
-        })
-    });
-}
-
 /// The forward graph in the file's ids, plus the edges with wide weights as
 /// (tail, head, weight). The file is mapped, not read: its pages are already
 /// cached and are not charged to this process. Thread i parses the lines that
@@ -257,32 +242,62 @@ fn renumber(g: &Csr, bits: u32, threads: usize) -> (Vec<u32>, Csr) {
     (rank, Csr { first, adj })
 }
 
-/// The forward and backward graphs in the new ids: the forward rows' heads
-/// are moved to the new ids (counting each node's in-edges on the way), and
-/// the backward graph is then built from the forward one.
+/// The forward and backward graphs in the new ids. Thread i owns the heads
+/// in `span(i)`: their in-edge counts and backward rows. It renames the heads
+/// of its own tails' edges and counts those that land in its own span; an
+/// edge landing in another span (about 7% after renumbering) is handed to
+/// that span's owner in a list. So every counter and row has one writer, and
+/// no atomic read-modify-write is needed.
 fn relabel(mut fwd: Csr, rank: Vec<u32>, bits: u32, threads: usize) -> [Csr; 2] {
     let (n, m, mask) = (rank.len(), fwd.adj.len(), (1 << bits) - 1);
-    let span = |i: usize| i * n / threads..(i + 1) * n / threads;
+    let len = n.div_ceil(threads);
+    let span = |i: usize| i * len..((i + 1) * len).min(n);
     let (mut first, mut adj) = (zeros(n + 1), zeros(m));
-    let (f, a) = (atomic(&mut first), atomic(&mut fwd.adj));
-    parallel(threads, &|i| {
-        for e in &a[i * m / threads..(i + 1) * m / threads] {
-            let old = e.load(Relaxed);
-            let head = !rank[(old & mask) as usize];
-            e.store(head | old & !mask, Relaxed);
-            f[head as usize].fetch_add(1, Relaxed);
+    let (f, a, b) = (atomic(&mut first), atomic(&mut fwd.adj), atomic(&mut adj));
+    let bump = |v: u32| f[v as usize].store(f[v as usize].load(Relaxed) + 1, Relaxed);
+    let away = parallel(threads, &|i| {
+        let mut away = vec![Vec::new(); threads];
+        for u in span(i) {
+            for e in &a[fwd.first[u] as usize..fwd.first[u + 1] as usize] {
+                let old = e.load(Relaxed);
+                let head = !rank[(old & mask) as usize];
+                e.store(head | old & !mask, Relaxed);
+                match head as usize / len {
+                    j if j == i => bump(head),
+                    j => away[j].push((head, u as u32 | old & !mask)),
+                }
+            }
         }
+        away
     });
     drop(rank);
-    ends(f, threads);
-    let mine = |i: usize| span(i).flat_map(|u| edges(&fwd, u).iter().map(move |&e| (u as u32, e)));
-    let a = atomic(&mut adj);
-    parallel(threads, &|i| {
-        for (u, e) in mine(i) {
-            let p = f[(e & mask) as usize].fetch_sub(1, Relaxed) - 1;
-            a[p as usize].store(u | e & !mask, Relaxed);
-        }
+    let theirs = |j: usize| away.iter().flat_map(move |l| &l[j]);
+    // Each owner adds the handed-over edges to its counts, then turns them
+    // into running sums from the end of the spans before it.
+    let sizes = parallel(threads, &|j| {
+        theirs(j).for_each(|&(v, _)| bump(v));
+        span(j).map(|v| f[v].load(Relaxed)).sum::<u32>()
     });
+    let place = |v: usize, x: u32| {
+        let p = f[v].load(Relaxed) - 1;
+        f[v].store(p, Relaxed);
+        b[p as usize].store(x, Relaxed);
+    };
+    parallel(threads, &|j| {
+        span(j).fold(sizes[..j].iter().sum(), |sum: u32, v| {
+            f[v].store(sum + f[v].load(Relaxed), Relaxed);
+            f[v].load(Relaxed)
+        });
+        for u in span(j) {
+            for &e in edges(&fwd, u) {
+                if (e & mask) as usize / len == j {
+                    place((e & mask) as usize, u as u32 | e & !mask);
+                }
+            }
+        }
+        theirs(j).for_each(|&(v, x)| place(v as usize, x));
+    });
+    first[n] = m as u32;
     [fwd, Csr { first, adj }]
 }
 

@@ -211,3 +211,7 @@ Board run at `7b43b63` (run ID not recorded): T=160 ms, K=24.50, a new D best (p
 
 Spawning and joining the worker threads costs about 0.2 ms per `parallel` call in the sandbox. A persistent channel-fed pool measured 171.0 ms median against 169.5 ms over 31 alternating runs (no measurable gain) and adds 22 counted lines, about −0.8% K. Details: `experiments/track-d-thread-pool41/`.
 
+## Round 3: backward graph without atomic read-modify-writes (2026-10-31, PR)
+
+`relabel` used two locked instructions per edge: a `fetch_add` to count in-degrees and a `fetch_sub` to place the edge. Now each thread owns the counts and backward rows of one contiguous span of new ids. Edges landing in another span, 6.5–6.9% after renumbering, are handed over in lists, and each owner computes its own running sums. Sandbox relabel phase: 19–22 ms against 24–25 ms. Two batches of 31 alternating full-seed runs: 164.1 against 167.8 ms and 161.0 against 168.3 ms. Counted lines go from 379 to 393. Peak memory is unchanged within sampling. The full hash at 1, 3, 5 and 8 CPUs and the checked oracle suites at 1, 3 and 8 CPUs passed. Sandbox times are not board results. Details: `experiments/track-d-owner-relabel42/`. Board run pending.
+
