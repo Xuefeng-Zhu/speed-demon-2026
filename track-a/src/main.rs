@@ -24,7 +24,6 @@ const MIX: u64 = 0x9E37_79B9_7F4A_7C15;
 extern "C" {
     fn mmap(addr: *mut u8, len: usize, prot: i32, flags: i32, fd: i32, off: i64) -> *mut u8;
     fn madvise(addr: *const u8, len: usize, advice: i32) -> i32;
-    fn mallopt(param: i32, value: i32) -> i32;
 }
 
 /// Maps the file read-only followed by at least 4 KiB of zeros, so 8-byte loads that run past
@@ -407,10 +406,6 @@ fn make_plan(shared: &[Shared], parsed: &[Mutex<Vec<Records>>]) -> (Vec<u32>, Ve
 }
 
 fn main() {
-    // A fixed mmap threshold (M_MMAP_THRESHOLD): every buffer of 64 KiB or more is its own mapping
-    // and goes back to the kernel when freed. Otherwise glibc raises the threshold at the first
-    // free and keeps later record and output buffers in its arenas until exit, adding to M.
-    unsafe { mallopt(-3, 1 << 16) };
     let data_dir = env::var("SD_DATA").unwrap_or_else(|_| "/data".into());
     let out_dir = env::var("SD_OUT").unwrap_or_else(|_| "/out".into());
     let file = fs::File::open(format!("{data_dir}/requests.log")).expect("open requests.log");
