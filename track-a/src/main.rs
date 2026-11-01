@@ -411,8 +411,7 @@ fn main() {
     let file = fs::File::open(format!("{data_dir}/requests.log")).expect("open requests.log");
     let len = file.metadata().unwrap().len() as usize;
     let d = map_file(&file, len);
-    // Probe: cap the default thread count at 14.
-    let cpus = thread::available_parallelism().map_or(1, |n| n.get()).min(14);
+    let cpus = thread::available_parallelism().map_or(1, |n| n.get());
     let threads = env::var("SD_THREADS").map_or(cpus, |t| t.parse().unwrap());
 
     let mut cuts = vec![0];
@@ -439,6 +438,9 @@ fn main() {
                 (tx.clone(), &shared, &next_id, &parsed, &plan, &barrier);
             let (start, end) = (cuts[t], cuts[t + 1]);
             s.spawn(move || {
+                // Probe: parse the chunk twice and discard the first result, so the increase in T
+                // is about the parse phase's wall time on this machine.
+                drop(std::hint::black_box(parse(d, start, end, shared, next_id)));
                 *parsed[t].lock().unwrap() = parse(d, start, end, shared, next_id);
                 if barrier.wait().is_leader() {
                     let _ = plan.set(make_plan(shared, parsed));
