@@ -203,5 +203,7 @@ Board run at `97df345` (run ID not recorded): S=383, as predicted, which confirm
 
 ## Round 3: BFS row prefetch, re-screened (2026-10-31)
 
-The reverted three-stage BFS prefetch was re-screened stage by stage on `97df345` (`experiments/track-d-bfs-row-prefetch40/`). Prefetching the adjacency row of the node eight places ahead in the clustering BFS carries the gain; prefetching the row bounds and the claim slots adds lines without a reliable extra gain. The selected one-stage version adds 3 counted lines (expected S about 386). In 31 alternating sandbox runs it measured 167.4 ms median against 174.7 ms for `97df345`; the full hash and all oracle suites passed. Sandbox times are not board results. Board run pending.
+The reverted three-stage BFS prefetch was re-screened stage by stage on `97df345` (`experiments/track-d-bfs-row-prefetch40/`). Prefetching the adjacency row of the node eight places ahead in the clustering BFS carries the gain; prefetching the row bounds and the claim slots adds lines without a reliable extra gain. The selected one-stage version adds 3 counted lines (expected S about 386). In 31 alternating sandbox runs it measured 167.4 ms median against 174.7 ms for `97df345`; the full hash and all oracle suites passed. Sandbox times are not board results.
+
+Board run at `7b43b63` (run ID not recorded): T=160 ms, K=24.50, a new D best (previous best K=24.11 at T=163.10 ms, S=407). The K model predicts 24.11 × (163.10/160)^0.5 × (407/386)^0.15 ≈ 24.54 if S=386, as expected; board S was not recorded.
 
