@@ -68,7 +68,7 @@ const K: u64 = 0x517cc1b727220a95; // FxHash's multiplier
 #[repr(align(128))]
 struct Pad<T>(T);
 const RING: usize = 16;
-const BLOCK: usize = 1024;
+const BLOCK: usize = 256;
 
 /// Bit i of each mask is set where byte i of the block is a quote, a comma or an LF. The
 /// build targets x86-64-v3 (.cargo/config.toml), so AVX2 is always there.
@@ -247,7 +247,7 @@ fn main() {
             // The chunk is read through buf, which holds the file from offset `off`: when the
             // parse reaches its end, the unfinished record and the eight bytes before it (read
             // by `ld`) move to the front and the rest is refilled. Positions are into buf.
-            let mut buf = vec![0u8; (1 << 16) + 64];
+            let mut buf = vec![0u8; (1 << 15) + 64];
             while let Some(c) = claim() {
                 // Masks of quotes, commas and LFs, 64 bytes at a time. A byte is inside quotes
                 // when an odd number of quotes precede it in the record, so the commas and LFs
@@ -312,7 +312,7 @@ fn main() {
                         qs += quote.count_ones() as usize;
                         base += 64;
                     }
-                    mark(&mut agg); // after every 64 KiB, so few blocks wait in the inbox
+                    mark(&mut agg); // after every 32 KiB, so few blocks wait in the inbox
                     if done {
                         break;
                     }
