@@ -448,9 +448,6 @@ fn main() {
                 let (order, names, jobs) = plan.get().unwrap();
                 let mut scratch = Scratch::default();
                 while let Some((h, records)) = { let job = jobs.lock().unwrap().next(); job } {
-                    // Probe: summarize every hour twice and discard the first result, so the increase
-                    // in T is about the summary phase's wall time on this machine.
-                    drop(std::hint::black_box(summarize(h, records.clone(), order, names, &mut scratch)));
                     tx.send((h, summarize(h, records, order, names, &mut scratch))).unwrap();
                 }
             });
