@@ -146,7 +146,8 @@ fn for_each_doc(data: &[u8], lo: usize, hi: usize, plan: &Plan, mut f: impl FnMu
             let miss = ((e - s <= 16) as u64 & !plan.filter[f / 64] >> f % 64 & 1).wrapping_neg();
             let h = if e - s <= 16 { plan.home(k) } else { !(e - s) };
             let (k, h) = (k.map(|x| x & !miss), h ^ (h ^ plan.empty) & miss as usize);
-            _ = plan.keys.get(h).map(prefetch);
+            // A 24-byte slot can cross into the next 64-byte line; fetch both.
+            _ = plan.keys.get(h).map(|e| (prefetch(e), prefetch(&e[2])));
             keys.push((k, h, s));
         });
         let none = plan.role.len() as u64 - 1;
