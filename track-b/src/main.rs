@@ -479,7 +479,6 @@ fn id_at(data: &[u8], i: usize) -> u32 {
 extern "C" {
     fn mmap(addr: *mut u8, len: usize, prot: i32, flags: i32, fd: i32, off: i64) -> *mut u8;
     fn madvise(addr: *mut u8, len: usize, advice: i32) -> i32;
-    fn sched_getaffinity(pid: i32, size: usize, mask: *mut u64) -> i32;
 }
 
 /// Maps a read-only file into memory.
@@ -674,18 +673,5 @@ fn main() {
     let out: String = outs.into_iter().map(|o| o.1).collect();
     fs::create_dir_all(&out_dir).ok();
     fs::write(format!("{out_dir}/results.txt"), out).expect("write results.txt");
-    // DIAGNOSTIC: M - M(b7c4ae5) is 32 MiB per available_parallelism() unit, plus 512 MiB if the
-    // affinity mask has more CPUs (a CPU quota); T - T(b7c4ae5) is the time of nthreads threads
-    // each taking about 32 MiB / 4 KiB first-touch faults of 4 KiB pages at once.
-    let ap = thread::available_parallelism().map_or(0, |n| n.get());
-    let mut set = [0u64; 16];
-    let ok = unsafe { sched_getaffinity(0, 128, set.as_mut_ptr()) } == 0;
-    let cpus = set.iter().map(|w| w.count_ones() as usize).sum::<usize>() * ok as usize;
-    let len = (32 * ap + 512 * (cpus > ap) as usize) << 20;
-    let a = unsafe { mmap(std::ptr::null_mut(), len, 3, 0x22, -1, 0) } as usize; // RW, private anonymous
-    assert!(a as isize != -1, "mmap failed");
-    unsafe { madvise(a as *mut u8, len, 15) }; // MADV_NOHUGEPAGE
-    let touch = |i: usize| unsafe { std::ptr::write_volatile((a + i) as *mut u8, 1) };
-    par(nthreads, |k| (len * k / nthreads..len * (k + 1) / nthreads).step_by(4096).for_each(touch));
     std::process::exit(0); // the OS frees everything faster than the destructors
 }

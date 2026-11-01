@@ -211,3 +211,5 @@ The final head `6d785be`, with #28 kept, ran `run-a283f9503c48`: T=173.0 ms, M=6
 - Nov 1 2026: shared bitmap rows MADV_HUGEPAGE + main-thread first write per 2 MiB (0be6bda): run-f2833d6d0039 T 168.0 ms M 62.6 MB S 594 K 28.17 vs 28.00 best; within noise, M unchanged, +8 S. Reverted.
 
 - Nov 1 2026: PR #35+#37 (small last chunk round, drop plan.long) 065dc1b run-8cd9eb202bd0 T 259.2 ms M 56.0 MB K 23.23; d5efd3a run-18f6dd08becc T 227.8 ms M 58.4 MB K 24.56. Lower M but much slower; reverted.
+
+- Nov 1 2026: b-diag-probe block on production B, 574870e run-92ca52f14c05 M 466.07 MB vs 62.59 base: (403.5+1.5)/33.55 = 12.07, so available_parallelism = 12 and no CPU quota (affinity mask = 12). T 282.0 ms (+~111 ms for 384 MiB of 4 KiB first-touch faults over 12 threads). Probe reverted.
