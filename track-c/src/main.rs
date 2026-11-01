@@ -14,11 +14,18 @@ fn map(path: String) -> &'static [u8] {
     unsafe { std::slice::from_raw_parts(mmap(0 as _, len, 1, 2, f.as_raw_fd(), 0), len) }
 }
 
-/// `n` zeroed atomics from an anonymous map, so pages are only touched when used.
+/// `n` zeroed atomics from an anonymous map. Advice 14 (MADV_HUGEPAGE) asks for huge pages,
+/// which mean fewer TLB misses; 15 (MADV_NOHUGEPAGE) forbids them. The calling thread writes
+/// one byte per 2 MiB, so each huge page is faulted in by this thread alone. When several
+/// threads fault the same empty huge page at once, each allocates and charges one and all
+/// but one are thrown away, which raises the measured peak memory.
 fn zeroed<T>(n: usize, advice: i32) -> &'static [T] {
     let len = n * std::mem::size_of::<T>();
     let p = unsafe { mmap(0 as _, len, 3, 0x22, -1, 0) };
-    unsafe { madvise(p, len, advice) }; // 14 = MADV_HUGEPAGE: fewer TLB misses
+    unsafe { madvise(p, len, advice) };
+    (0..len)
+        .step_by(1 << 21)
+        .for_each(|o| unsafe { *p.add(o) = 0 });
     unsafe { std::slice::from_raw_parts(p as _, n) }
 }
 
@@ -140,7 +147,7 @@ fn main() {
         + 1;
     let comma = |p: usize| p + regs[p..].iter().position(|&c| c == b',').unwrap();
     let max = num(ld(regs, comma(last) - 8), comma(last) - last) as usize;
-    let region: &[AtomicU8] = zeroed(max + 1, 14);
+    let region: &[AtomicU8] = zeroed(max + 1, 15); // no huge pages: all threads fill it at once
     let seen: Vec<AtomicU8> = (0..17577).map(|_| AtomicU8::new(0)).collect();
     // Records are cut into 16 chunks per thread, each moved to start after a CRLF: CR only
     // ever occurs in a record terminator (spec 2.2), so this needs no knowledge of quotes.
