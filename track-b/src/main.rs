@@ -606,8 +606,11 @@ fn main() {
         plan.flat.extend(p.iter().map(|e| e.1));
     }
 
-    // Equal byte ranges, each moved to the next line whose id is a multiple
-    // of 64; at most 65,536 lines per chunk.
+    // At least two rounds of nthreads byte ranges, the last round's a third as
+    // large as the others. The threads done first take them, so no slow thread
+    // holds a large range at the end, and the last streams, which coexist with
+    // most of the lists, are small. Each range is moved to the next line whose
+    // id is a multiple of 64; at most 65,536 lines per chunk.
     let last = data.rsplit(|&b| b == b'\n').nth(1); // the last line
     let ndocs = last.map_or(0, |l| id_at(l, 0) as usize + 1);
     let words = ndocs.div_ceil(64);
@@ -615,9 +618,10 @@ fn main() {
     let mut rows = std::mem::ManuallyDrop::new(vec![0u64; plan.nbm * words]);
     // SAFETY: AtomicU64 has the size, alignment and bit validity of u64.
     let rows: Vec<AtomicU64> = unsafe { Vec::from_raw_parts(rows.as_mut_ptr().cast(), rows.len(), rows.capacity()) };
-    let nchunks = nthreads * data.len().div_ceil(nthreads << 24).max(1);
-    let cut = |k| {
-        let mut i = line_start(data, k * data.len() / nchunks);
+    let nchunks = nthreads * data.len().div_ceil(nthreads << 24).max(2);
+    let cut = |k: usize| {
+        let w = k + 2 * k.min(nchunks - nthreads);
+        let mut i = line_start(data, w * data.len() / (3 * nchunks - 2 * nthreads));
         while i < data.len() && id_at(data, i) % 64 != 0 {
             i = line_start(data, i + 1);
         }
@@ -635,8 +639,10 @@ fn main() {
     chunks.sort_unstable_by_key(|c| c.0);
     plan.chunks = chunks.into_iter().map(|c| c.1).collect();
     plan.rows = rows.into_iter().map(AtomicU64::into_inner).collect();
-    // The scan's tables; the answers do not use them.
+    // The scan's tables; the answers do not use them (long terms do not need
+    // their long key either, so the HashMap goes as well).
     (plan.keys, plan.filter, plan.aoff, plan.anchors, plan.flat) = Default::default();
+    plan.long = Default::default();
     // Phrase matches as sorted (query, id); a phrase can occur twice in a document.
     let mut hits = Vec::new();
     plan.chunks.iter().for_each(|c| hits.extend(&c.hits));
