@@ -66,9 +66,11 @@ fn num(x: u64, n: usize) -> u64 {
 /// probability ~7e-8. The hash folds the name's bytes eight at a time, zero padded (names
 /// never contain a zero byte).
 fn name_hash(b: &[u8], s: usize, e: usize) -> u64 {
-    let h = (s..e.max(s + 1)).step_by(8).fold(K, |h, o| {
-        (h ^ word(b, o, e)).wrapping_mul(K).rotate_left(31)
-    });
+    // Always three words (no length-dependent branch); names over 24 bytes are rare.
+    let mix = |h: u64, o: usize| (h ^ word(b, o, e)).wrapping_mul(K).rotate_left(31);
+    let h = (s + 24..e)
+        .step_by(8)
+        .fold(mix(mix(mix(K, s), s + 8), s + 16), mix);
     (h ^ h >> 33).wrapping_mul(0xff51afd7ed558ccd) ^ h >> 29
 }
 const K: u64 = 0x517cc1b727220a95; // FxHash's multiplier
@@ -181,6 +183,8 @@ fn main() {
             // Copies of what the hot loops read, so no worker reads a line another one writes.
             let (region, inbox, n, m) = (region, &inbox[..], n, m);
             let mine = &table[5 * m * t..5 * m * (t + 1)];
+            // Fault this owner's pages in now, before other threads start sending it events.
+            mine.iter().step_by(512).for_each(|w| w.store(0, Relaxed));
             let mut used = 0;
             // Every thread reads its share of the regions twice: first to note which countries
             // occur, then to map each region id to its country's group. Groups are numbered in
@@ -196,7 +200,9 @@ fn main() {
                     );
                     p = e;
                     match pass {
-                        0 => seen[c].store(1, Relaxed),
+                        // Load first: once a country is set, no thread writes its line again.
+                        0 if seen[c].load(Relaxed) == 0 => seen[c].store(1, Relaxed),
+                        0 => {}
                         _ => region[id].store(group[c], Relaxed),
                     }
                     p += 5;
@@ -338,6 +344,7 @@ fn main() {
                         qs += quote.count_ones() as usize;
                         base += 64;
                     }
+                    mark(&mut agg); // after every 64 KiB, so few blocks wait in the inbox
                     if done {
                         break;
                     }
@@ -351,7 +358,6 @@ fn main() {
                         (off + shift, filled - shift, base - shift, rs - shift);
                     f[..k].iter_mut().for_each(|p| *p -= shift);
                 }
-                mark(&mut agg);
             }
             for j in 0..RING {
                 finish(ring[(r + j) % RING], &mut agg, &mut out);

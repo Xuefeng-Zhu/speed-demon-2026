@@ -220,3 +220,13 @@ The board penalises cross-core traffic far more than the sandbox (PR #8's `fetch
 ## Trial: route events by name hash to owners with private tables (2026-11-01)
 
 On top of the change above. The shared name dictionary is gone: a producer hashes the name and sends `hash & !0xFF | group` (u64) to owner `(hash >> 32) * n >> 32`. Each owner keeps a private table of five-word slots (key, then a 256-bit group set) for its share of the names, prefetching each event's slot eight events ahead, and counts first sightings per group. Total table size is unchanged (5.2 MB). Name identity becomes 56 bits of the hash, a collision probability of about 7e-8 per dataset (3e-10 before). Sandbox, 8 threads, interleaved trimmed means: 50.8 / 51.3 ms vs 52.2–52.5 ms for the change above and 56.2–56.5 ms for `e4308ed`; single thread 215 ms. Anonymous RSS at exit 7.6 MB vs 7.4 MB. Formatted lines 340 → 328. Reference checks pass under 1, 3, 5 and 8 threads, including a build that starts from 2^6 slots and restarts repeatedly. Board run pending; keep only if K beats the change above.
+
+## Prefault owner slots, quiet country flags, three-word hash, frequent draining (2026-11-01)
+
+After #23 (board `run-603a0d204651`, T 41.0 ms, M 13.8 MB, S 335, K 30.54), phase timing on a 1,000-record file showed 60–170 page faults per worker inside the final `mark`: the first touch of each owner's slots, which on the full file are spread across the run and contend for the address-space lock. Four small changes, detailed in section 8 of `experiments/c-deep-profile/README.md`:
+1. **Prefault.** Each owner writes one word per page of its own slots before parsing.
+2. **Quiet country flags.** The first regions pass loads a country's flag before storing it, so threads stop writing the same lines.
+3. **Three-word name hash.** Every name folds three words, with no length loop; names over 24 bytes add more.
+4. **Frequent draining.** `mark` drains the inbox after every 64 KiB refill rather than once per chunk.
+
+Sandbox, 8 threads, 30-round interleaved batches in both orders: 43.7 / 43.7 ms vs 50.4 / 50.3 ms (about −13%); single thread 211 vs 217 ms; minor faults per run about 2,300 vs 3,700; max RSS unchanged at a median of 11.7 MB. Formatted lines 328 → 331 by the local count. Reference checks pass under 1, 3, 5 and 8 threads, including the long-name, 15–100 KB-record and unterminated-file fixtures. Board run pending.
