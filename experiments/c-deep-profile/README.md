@@ -102,4 +102,4 @@ Also measured and not kept:
 
 `profile-prefault-8t.txt` is the line profile after k8. Owner probing and group bits take 16.8% of worker CPU, number parsing about 25%, the field-end loop 8.5%, `pread` copies 8.8% and the 64-byte scan about 9%.
 
-Synthetic check of branch cost (`pad128` vs `padrnd`, not committed): the same records padded to exactly 128 bytes each, against the same padding spread at random, run in the parse-only build. Fixed-length records parsed 26% faster per byte (172 vs 232 ms for 425 vs 647 MB). This bounds what a branch-free field-end loop could gain on the real file at roughly 10–15% of parse time.
+A synthetic check of branch cost (all records padded to exactly 128 bytes, against random padding) was inconclusive. The randomly padded file came out 52% larger (647 MB vs 425 MB), so the two parse times (232 vs 172 ms) do not isolate the branch effect, and no conclusion is drawn from them.
