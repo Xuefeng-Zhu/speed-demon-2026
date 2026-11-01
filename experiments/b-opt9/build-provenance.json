@@ -1,0 +1,33 @@
+{
+  "compiler": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "build_image": "halloumee/speed-demon-rust:1.99.1-trixie-llvm-tools@sha256:13e4ee7135d8eac6c56476c7d1aee201f36479f4745fd5d0e6b4529f4e13251a",
+  "execution": "Linux x86-64 under Rosetta on ARM; not a native Intel board result",
+  "rustflags": [
+    "-Ctarget-cpu=x86-64-v3",
+    "-Copt-level=3",
+    "-Clto=fat",
+    "-Ccodegen-units=1",
+    "-Cpanic=abort"
+  ],
+  "pgo_training": {
+    "seed": 2,
+    "scale": "sample",
+    "threads": 12
+  },
+  "cases": {
+    "baseline": {
+      "source_sha256": "c5cced6f876b8c89cb7c11874580c81d60554ce1e73ff7dc8426d0d4fe30ce19",
+      "binary_sha256": "50ebcb9035174474c4d429c0f28ff1ed1ba5abb6fd78cd4350130a39150d9124",
+      "profile_summary": "Instrumentation level: IR  entry_first = 0  instrument_loop_entries = 0\nTotal functions: 88\nMaximum function count: 3420894\nMaximum internal block count: 3548495\nTotal number of blocks: 1536\nTotal count: 36128705\n",
+      "instrument_build_log": "   Compiling solution v0.1.0 (/result/opt9-source-pgo/context)\n    Finished `release` profile [optimized] target(s) in 13.34s\n",
+      "optimized_build_log": "   Compiling solution v0.1.0 (/result/opt9-source-pgo/context)\n    Finished `release` profile [optimized] target(s) in 9.37s\n"
+    },
+    "zero": {
+      "source_sha256": "9f97748a1522bbf333cdfe39056a66a5a1ee6c6f34b54854b598fc3c8ac21030",
+      "binary_sha256": "ee7ac77635732dd8782126e31af02432552974194c0d07379380cec2a30e1f26",
+      "profile_summary": "Instrumentation level: IR  entry_first = 0  instrument_loop_entries = 0\nTotal functions: 88\nMaximum function count: 3437983\nMaximum internal block count: 3550970\nTotal number of blocks: 1537\nTotal count: 36731758\n",
+      "instrument_build_log": "   Compiling solution v0.1.0 (/result/opt9-source-pgo/context)\n    Finished `release` profile [optimized] target(s) in 8.71s\n",
+      "optimized_build_log": "   Compiling solution v0.1.0 (/result/opt9-source-pgo/context)\n    Finished `release` profile [optimized] target(s) in 9.01s\n"
+    }
+  }
+}

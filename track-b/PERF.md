@@ -234,3 +234,13 @@ The final head `6d785be`, with #28 kept, ran `run-a283f9503c48`: T=173.0 ms, M=6
 - Nov 1 2026: PR #45 chunks48 (6 MiB) on #43 add9b13 run-bde68f12461c T 181.9 ms M 38.5 MB S 648 K 28.67 (M hits floor, T +7%, neutral). Trying 36 chunks (<< 23).
 - Nov 1 2026: 36 chunks (<< 23) on #43 d09fe4a run-33cb88f1c6c3 T 175.9 ms M 40.3 MB S 648 K 29.16 (run 1).
 - Nov 1 2026: 36 chunks run 2 79eabe0 run-c6e131974c09 T 187.9 ms M 40.0 MB S 648 K 28.21. Mean 28.68 < #43 28.87: memory gain offset by T. Reverted to #43 (<< 24).
+
+## Local opt9: zero bitmap words; planning-memory and full-PGO experiments
+
+Selected source SHA-256 `9f97748a1522bbf333cdfe39056a66a5a1ee6c6f34b54854b598fc3c8ac21030` adds only a guard that skips zero words during final Boolean-result count/sum aggregation. Word indices, lazy first ten and bitmap clearing are unchanged. The local formatted Rust count rises 622 -> 625; estimated total S is 651 versus 648, pending pinned counting. No dependency or Dockerfile changes are selected.
+
+Pinned Rust 1.99.1, x86-64-v3 and fresh seed-2 sample PGO, Linux x86-64 under Rosetta on ARM: 31 paired full seed-1 runs gave median paired wall -2.90% and CPU -4.30% (18/31 wall wins). A separate 21-pair full seed-2 comparison gave wall -8.03% and CPU -8.52% (15/21 wins). All complete output hashes matched. Timings were noisy local emulation, not native Intel, official T/M/K or a guaranteed hidden-seed gain. Seven fresh restricted x86 cgroups on seed 2 measured max peak 49,852,416 -> 50,307,072 bytes (+0.91%); this includes a waiting shell and emulation and is not official M.
+
+Rejected: early planning-buffer frees reduced seed-1 residency but raised the seed-2 cgroup maximum by 7.73%. Query-page release added no clear cgroup benefit. Full seed-2 PGO generation/build fit the 2 GiB/600 s limits locally, but full training measured +3.37% paired wall versus sample in 31 seed-1 pairs, so sample training remains. Sparse-word enumeration at popcount thresholds 2/3/8 did not justify its extra source lines. Raw reports, exact source/binary hashes, memory diagnostics, property tests, oracle and reproduction are in `experiments/b-opt9/README.md` and its accompanying reports. No official board run exists for this candidate.
+
+The selected pinned x86 PGO binary passed 80 reference comparisons at 1/2/7/12 threads, 40 additional mixed-reference corpora and the 65,536/250,000-document set-oracle boundary fixtures; restricted runtime checks wrote exactly the expected output file.
