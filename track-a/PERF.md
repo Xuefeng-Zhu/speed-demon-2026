@@ -216,3 +216,23 @@ A one-thread CPU attribution of `e4308ed` showed that the parse loop ran as one 
 ### Lesson
 
 Two local gains in a row, one from removing kernel lock waits and one from cutting parse CPU, did not carry over. By a rough bound, the box's T of about 25 ms is well above its CPU-only floor, so local profiles no longer predict where the box spends its time. The next step is to measure on the box itself (`experiments/a-box-probes/`). Details: `experiments/a-cpu-profile/README.md`.
+
+## Hours closed and written during the parse (sandbox, not board results; branch a-mem)
+
+**Board run pending.** The board's baseline figures (`f828bd8`) are T about 24.8 ms, M about 22.3 MB and S 414. Local estimates of M use live M: the peak over 100 to 350 µs samples of anonymous RSS plus the size of `summary.txt` (tmpfs) at that same moment. For the baseline at 20 threads, the board's default, it is 22.5 MB, close to the board's figure. The older estimate, peak anonymous RSS plus the final output size, gives 28.1 MB, because those two peaks do not happen at the same time.
+
+Baseline breakdown (`experiments/a-mem/README.md`): at the barrier every record is held at once, 13.0 MB of record buffers (12.1 MB of 4-byte records). On top of that come about 0.14 MB of endpoint table per thread, malloc arenas of 1.6 MB at 8 threads and 5.2 MB at 20, about 0.3 MB of summary scratch per worker, and output buffers that wait in the main thread for an earlier hour (up to 2.1 MB at 8 threads and 7.0 MB at 20). The live peak comes partway through the summary phase: 17.2 MB (10.7 anonymous + 6.1 output) at 8 threads, 23.2 MB (14.9 + 8.3) at 20.
+
+Change: about 512 KiB chunks taken in file order. Hours before the latest hour seen in the parsed prefix, except the last one, are closed, summarized and written during the parse. At most four hours are summarized at a time, and each writes once the hours before it are written. A record that arrives for a closed hour makes the run start over without early closing, so any line order gives the right output. Record buffers go back to a spare pool, and output and `lat` buffers stay in four scratch sets. They are freed only when no chunk or hour is left: freeing mapped buffers during the run raises glibc's dynamic mmap threshold, and later buffers then come from the heaps and stay resident. There are no `mallopt` or trim settings and no `MADV_DONTNEED` release.
+
+Local medians, 21 interleaved runs (`experiments/a-mem/reports/memrun-t*.json`), all outputs hash-checked:
+
+| Threads | T base / cand | paired T1/T0 | live M base / cand | est M base / cand | keep-rule break-even T1/T0 |
+|---:|---|---:|---|---|---:|
+| 8 | 38.5 / 34.6 ms | 0.909 | 17.05 / 15.45 MB | 25.10 / 16.02 MB | 1.003 |
+| 12 | 45.6 / 39.5 ms | 0.868 | 19.24 / 16.92 MB | 26.23 / 17.75 MB | 1.015 |
+| 20 | 52.7 / 47.8 ms | 0.912 | 22.49 / 19.46 MB | 28.07 / 20.97 MB | 1.021 |
+
+S rises from 414 to 468 (`sloc.py`). With the 20-thread M ratio, the change pays if board T rises by less than 2.1%; at equal T the predicted K gain is 2.2%. The local speedup comes from the chunk queue and from summaries overlapping the parse. As with PR #19 and #21, it may not carry over to the board. Rejected locally: `MADV_DONTNEED` on returned record buffers (+12% T at 8 threads), table entries pointing at shared name copies (+5% T), writing under the state lock (+3.5% T), and two summary scratch sets (slower at 20 threads). Three sets (about 0.4 to 0.9 MB lower) are the first follow-up for the board.
+
+Correctness: the full seed-1 hash at 1 to 64 threads and the default thread count; `smallcheck` tiny and sample seeds 2 and 7 at 1, 3, 8 and 20 threads; `track-a-verification` `test.py`, `page_end_test.py` and `latency_grid_test.py`; `adversarial.py --spec`; and a new `experiments/a-mem/order_test.py` (32 of 32 reordered inputs, both with and without the rerun).
