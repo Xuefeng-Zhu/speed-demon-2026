@@ -5,6 +5,8 @@
 //!    Thread j then turns block j into its slice of a CSR graph. An edge is
 //!    one u32: the head in the low bits, the weight in the rest, or an escape
 //!    code for the rare weight that does not fit (looked up in a sorted list).
+//!    Row starts are packed into a byte per node plus a u32 per block, so the
+//!    two final graphs cost about ten megabytes less than one `u32` per row.
 //! 2. The file's ids carry no locality, so nodes are renumbered: threads
 //!    grow breadth-first clusters of nearby nodes and number each cluster
 //!    contiguously. The forward graph's rows are moved to the new ids, and
@@ -90,16 +92,40 @@ fn prefetch<T>(x: &[T], i: usize) {
     }
 }
 
-/// Compressed sparse rows: the edges out of `u` are `adj[first[u]..first[u + 1]]`,
+/// Compressed sparse rows: the edges out of `u` are `adj[at(u)..at(u + 1)]`,
 /// each packed as `head | code << bits`, where `code` is the weight, or `wide`
 /// (all ones) for a weight that does not fit, found in `Net::wide` instead.
+/// A row starts at `base[u >> k] + off[u]`: a u32 per block of `1 << k` rows
+/// plus a byte per row, with blocks as long as a byte can span (64 rows on
+/// road graphs, 1 at worst), so the row index is 1.1 bytes per node, not 4.
 struct Csr {
-    first: Vec<u32>,
+    base: Vec<u32>,
+    off: Vec<u8>,
+    k: u32,
     adj: Vec<u32>,
 }
 
+fn at(g: &Csr, u: usize) -> usize {
+    g.base[u >> g.k] as usize + g.off[u] as usize
+}
+
 fn edges(g: &Csr, u: usize) -> &[u32] {
-    &g.adj[g.first[u] as usize..g.first[u + 1] as usize]
+    &g.adj[at(g, u)..at(g, u + 1)]
+}
+
+/// Packs row starts `first` (with `first[n] = m`) into a `Csr`, freeing
+/// `first` on return so the two row-start arrays never coexist.
+fn csr(first: Vec<u32>, adj: Vec<u32>) -> Csr {
+    let fits = |k: u32| first.chunks(1 << k).all(|c| c[c.len() - 1] - c[0] < 256);
+    let k = (0..7).rev().find(|&k| fits(k)).unwrap();
+    let mut off = vec![0u8; first.len()];
+    for (o, c) in off.chunks_mut(1 << k).zip(first.chunks(1 << k)) {
+        for (o, &f) in o.iter_mut().zip(c) {
+            *o = (f - c[0]) as u8;
+        }
+    }
+    let base = first.chunks(1 << k).map(|c| c[0]).collect();
+    Csr { base, off, k, adj }
 }
 
 /// The two graphs (forward, backward), in the new ids, plus the encoding.
@@ -132,7 +158,8 @@ fn ends(first: &[AtomicU32], threads: usize) {
 /// start in its share of the bytes and buckets each edge, packed into a u64,
 /// by the block of ids its tail falls in; thread j then turns block j into
 /// its slice of the arrays with a counting sort, so no atomics are needed and
-/// each thread writes a small window of memory.
+/// each thread writes a small window of memory. The u32 row starts are then
+/// packed into the byte row index.
 fn load_graph(path: &str, threads: usize) -> (Csr, u32, Vec<(u32, u32, u32)>) {
     let file = File::open(path).unwrap();
     let len = file.metadata().unwrap().len() as usize;
@@ -188,7 +215,7 @@ fn load_graph(path: &str, threads: usize) -> (Csr, u32, Vec<(u32, u32, u32)>) {
         }
     });
     first[n] = m as u32;
-    (Csr { first, adj }, bits, big.concat())
+    (csr(first, adj), bits, big.concat())
 }
 
 /// Nodes per cluster: a ball of this many nodes fills a few pages of the
@@ -213,7 +240,7 @@ const SHIFT: u32 = 6;
 /// are still in cache. Nodes are claimed atomically; which thread wins a
 /// node changes the numbering but never an answer.
 fn renumber(g: &Csr, bits: u32, threads: usize) -> (Vec<u32>, Csr) {
-    let (n, m) = (g.first.len() - 1, g.adj.len());
+    let (n, m) = (g.off.len() - 1, g.adj.len());
     let (mut rank, mut first, mut adj) = (vec![0; n], zeros(n + 1), zeros(m));
     let (r, f, a) = (atomic(&mut rank), atomic(&mut first), atomic(&mut adj));
     // Unclaimed is 0; a claimed node holds 1 or its complemented id, never 0,
@@ -229,7 +256,7 @@ fn renumber(g: &Csr, bits: u32, threads: usize) -> (Vec<u32>, Csr) {
             'grow: while k < mine.len() {
                 // A node queued ahead: start loading its row.
                 if let Some(&v) = mine.get(k + 8) {
-                    prefetch(&g.adj, g.first[v as usize] as usize);
+                    prefetch(&g.adj, at(g, v as usize));
                 }
                 for &e in edges(g, mine[k] as usize) {
                     let v = (e & ((1 << bits) - 1)) as usize;
@@ -258,7 +285,7 @@ fn renumber(g: &Csr, bits: u32, threads: usize) -> (Vec<u32>, Csr) {
         }
     });
     first[n] = m as u32;
-    (rank, Csr { first, adj })
+    (rank, csr(first, adj))
 }
 
 /// The forward and backward graphs in the new ids: the forward rows' heads
@@ -287,7 +314,7 @@ fn relabel(mut fwd: Csr, rank: Vec<u32>, bits: u32, threads: usize) -> [Csr; 2] 
             a[p as usize].store(u | e & !mask, Relaxed);
         }
     });
-    [fwd, Csr { first, adj }]
+    [fwd, csr(first, adj)]
 }
 
 /// A tentative distance as stored: the bitwise complement, so that zero
@@ -421,11 +448,11 @@ fn distance<D: Dist>(sides: &mut [Side<D>; 2], net: &Net, s: u32, t: u32) -> (u6
         // The next two nodes this side pops: start loading their rows.
         let q = &me.heap.buckets[0];
         if let Some(&(_, next)) = q.len().checked_sub(2).map(|i| &q[i]) {
-            prefetch(&net.graphs[side].first, next as usize);
+            prefetch(&net.graphs[side].off, next as usize);
         }
         if let Some(&(_, next)) = q.last() {
             let g = &net.graphs[side];
-            prefetch(&g.adj, g.first[next as usize] as usize);
+            prefetch(&g.adj, at(g, next as usize));
         }
         let d = me.get(u);
         if d >> SHIFT < key {
@@ -467,7 +494,7 @@ impl RadixHeap {
     fn top(&mut self) -> Option<u64> {
         if self.buckets[0].is_empty() {
             let i = self.buckets.iter().position(|b| !b.is_empty())?;
-            let (mut b, old) = (std::mem::take(&mut self.buckets[i]), self.last);
+            let (mut b, old) = (take(&mut self.buckets[i]), self.last);
             let key = |k: u32| old + k.wrapping_sub(old as u32) as u64;
             self.last = b.iter().map(|e| key(e.0)).min().unwrap();
             b.drain(..).for_each(|(k, v)| self.push(key(k), v));
@@ -480,8 +507,9 @@ impl RadixHeap {
 fn main() {
     let dir = |key, default: &str| std::env::var(key).unwrap_or(default.into());
     let (data, out) = (dir("SD_DATA", "/data"), dir("SD_OUT", "/out"));
-    // M_MMAP_THRESHOLD: big blocks (the edge buckets) go straight back to
-    // the kernel when freed, instead of lingering in per-thread arenas.
+    // M_MMAP_THRESHOLD: big blocks (the edge buckets and the u32 row starts
+    // packed out in `csr`) go straight back to the kernel when freed,
+    // instead of lingering in per-thread arenas.
     unsafe { mallopt(-3, 1 << 17) };
     let threads = thread::available_parallelism().map_or(1, |n| n.get());
     let (g, bits, big) = load_graph(&format!("{data}/graph.txt"), threads);
