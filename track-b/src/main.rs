@@ -146,8 +146,7 @@ fn for_each_doc(data: &[u8], lo: usize, hi: usize, plan: &Plan, mut f: impl FnMu
             let miss = ((e - s <= 16) as u64 & !plan.filter[f / 64] >> f % 64 & 1).wrapping_neg();
             let h = if e - s <= 16 { plan.home(k) } else { !(e - s) };
             let (k, h) = (k.map(|x| x & !miss), h ^ (h ^ plan.empty) & miss as usize);
-            // A 24-byte slot can cross into the next 64-byte line; fetch both.
-            _ = plan.keys.get(h).map(|e| (prefetch(e), prefetch(&e[2])));
+            _ = plan.keys.get(h).map(prefetch);
             keys.push((k, h, s));
         });
         let none = plan.role.len() as u64 - 1;
@@ -696,7 +695,7 @@ fn main() {
     // of 64; at most 65,536 lines per chunk.
     let last = data.rsplit(|&b| b == b'\n').nth(1); // the last line
     let ndocs = last.map_or(0, |l| id_at(l, 0) as usize + 1);
-    let nchunks = nthreads * data.len().div_ceil(nthreads << 24).max(1);
+    let nchunks = nthreads * data.len().div_ceil(nthreads * 6 << 20).max(1);
     let cut = |k| {
         let mut i = line_start(data, k * data.len() / nchunks);
         while i < data.len() && id_at(data, i) % 64 != 0 {
