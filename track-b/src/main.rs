@@ -683,11 +683,11 @@ fn main() {
     plan.long.values_mut().for_each(|t| *t |= start[*t as usize]);
 
     (plan.qs, plan.terms) = (qs, terms);
-    // Equal byte ranges, each moved to the next line whose id is a multiple
-    // of 64; at most 65,536 lines per chunk.
+    // Equal byte ranges of at most 6 MiB, each moved to the next line whose id
+    // is a multiple of 64; at most 65,536 lines per chunk.
     let last = data.rsplit(|&b| b == b'\n').nth(1); // the last line
     let ndocs = last.map_or(0, |l| id_at(l, 0) as usize + 1);
-    let nchunks = nthreads * data.len().div_ceil(nthreads << 24).max(1);
+    let nchunks = nthreads * data.len().div_ceil(nthreads * 6 << 20).max(1);
     let cut = |k| {
         let mut i = line_start(data, k * data.len() / nchunks);
         while i < data.len() && id_at(data, i) % 64 != 0 {
