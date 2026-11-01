@@ -160,3 +160,7 @@ SD_THREADS=12 SD_DATA=$D/b-full SD_OUT=/dev/shm/o $D/b2/sysc $D/bin/b2-final
 python3 $T/series.py b2-final 12
 python3 $T/sloc.py $E/candidate.rs
 ```
+
+## Overlap with other branches
+
+`b-trim` (line trims) and `b-pure` edit the same functions of `track-b/src/main.rs`. The branches are separate board trials off `f828bd8` and are not rebased onto each other here. Whichever lands after another must be rebased, rebuilt, re-hashed (full seed 1 and `check_all.sh`) and re-counted: S 586 here is relative to the untrimmed base.
