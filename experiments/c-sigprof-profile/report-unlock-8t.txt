@@ -1,0 +1,106 @@
+samples 54244 over 25 runs (434 ms CPU per run); outside binary: 
+
+== innermost main.rs line (inlined helpers attributed to their call site in main.rs) ==
+  9.7%  main.rs:294
+  5.0%  main.rs:114
+  4.4%  main.rs:87
+  3.6%  main.rs:368
+  3.4%  main.rs:310
+  3.4%  main.rs:38
+  3.4%  main.rs:?
+  3.2%  main.rs:58
+  2.9%  main.rs:91
+  2.7%  main.rs:130
+  2.5%  main.rs:293
+  2.5%  main.rs:337
+  2.5%  main.rs:300
+  2.3%  main.rs:306
+  2.3%  main.rs:79
+  2.3%  main.rs:75
+  2.2%  main.rs:88
+  2.2%  main.rs:60
+  1.9%  main.rs:59
+  1.8%  main.rs:93
+  1.8%  main.rs:116
+  1.6%  main.rs:366
+  1.6%  main.rs:367
+  1.5%  main.rs:78
+  1.3%  main.rs:309
+  1.0%  main.rs:344
+  1.0%  main.rs:358
+  1.0%  main.rs:343
+  1.0%  main.rs:346
+  0.8%  main.rs:89
+  0.8%  main.rs:375
+  0.8%  main.rs:53
+  0.7%  main.rs:52
+  0.7%  main.rs:99
+  0.7%  main.rs:61
+  0.7%  main.rs:347
+  0.7%  main.rs:330
+  0.7%  main.rs:345
+  0.6%  main.rs:349
+  0.6%  main.rs:76
+
+== innermost location ==
+  6.3%  atomic.rs:3935 [solution::main::{{closure}}::{{closure}}]
+  4.8%  atomic.rs:3950 [solution::main::{{closure}}::{{closure}}]
+  3.6%  main.rs:368 [{closure#10}]
+  3.4%  main.rs:? [{closure#10}]
+  3.3%  main.rs:294 [solution::main::{{closure}}::{{closure}}]
+  3.2%  main.rs:58 [num]
+  2.9%  mod.rs:547 [copy_nonoverlapping<u8>]
+  2.9%  atomic.rs:4026 [solution::main::{{closure}}::{{closure}}]
+  2.9%  main.rs:38 [std::sys::backtrace::__rust_begin_short_backtrace]
+  2.7%  main.rs:87 [solution::main::{{closure}}::{{closure}}]
+  2.6%  main.rs:130 [merge]
+  2.5%  main.rs:300 [solution::main::{{closure}}::{{closure}}]
+  2.2%  main.rs:88 [id]
+  2.2%  mod.rs:2651 [solution::main::{{closure}}::{{closure}}]
+  2.2%  uint_macros.rs:153 [std::sys::backtrace::__rust_begin_short_backtrace]
+  2.1%  mod.rs:547 [std::sys::backtrace::__rust_begin_short_backtrace]
+  1.9%  main.rs:60 [num]
+  1.8%  main.rs:93 [id]
+  1.6%  main.rs:366 [{closure#10}]
+  1.6%  option.rs:1228 [solution::main::{{closure}}::{{closure}}]
+  1.6%  main.rs:59 [num]
+  1.2%  range.rs:765 [spec_next<usize>]
+  1.0%  main.rs:358 [{closure#10}]
+  1.0%  main.rs:309 [solution::main::{{closure}}::{{closure}}]
+  1.0%  option.rs:1163 [std::sys::backtrace::__rust_begin_short_backtrace]
+
+== libc symbols ==
+  2.8%  madvise
+  2.7%  syscall
+  0.9%  mprotect
+  0.4%  __lll_lock_wait_private
+  0.3%  sysmalloc
+  0.3%  _int_malloc
+  0.0%  malloc
+  0.0%  _int_free
+  0.0%  free
+  0.0%  __lll_lock_wake_private
+  0.0%  unlink_chunk.constprop.0
+  0.0%  realloc
+
+== by stage ==
+ 13.6%  dictionary probe/insert (id)
+ 13.0%  owner mark (bitset RMW)
+  9.6%  record fields (numbers, lengths)
+  9.5%  ld/word/num (number+word loads)
+  7.1%  name hash (key)
+  6.7%  AVX2 masks
+  5.2%  finish: probe+region lookup
+  5.2%  finish: route push to owner
+  5.0%  field-end loop
+  4.2%  block scan + quote prefix
+  3.5%  merge
+  3.4%  other/unknown
+  3.4%  prefetch helper (region/slot prefetch sites)
+  2.8%  libc madvise
+  2.7%  libc syscall (futex)
+  2.2%  libc other
+  1.6%  ring + key call
+  0.9%  other main.rs
+  0.5%  regions setup
+  0.0%  chunk madvise call
