@@ -8,7 +8,7 @@
 //! 2. The file's ids carry no locality, so nodes are renumbered: threads
 //!    grow breadth-first clusters of nearby nodes and number each cluster
 //!    contiguously. The forward graph's rows are moved to the new ids, and
-//!    the backward graph is built from it.
+//!    the backward graph is built from it, in the old graph's arrays.
 //! 3. Threads pull queries from a shared counter and answer each with a
 //!    bidirectional Dijkstra search that expands the side with the smaller
 //!    heap. It keeps u32 distances in blocks handed out on demand, so twelve
@@ -263,11 +263,15 @@ fn renumber(g: &Csr, bits: u32, threads: usize) -> (Vec<u32>, Csr) {
 
 /// The forward and backward graphs in the new ids: the forward rows' heads
 /// are moved to the new ids (counting each node's in-edges on the way), and
-/// the backward graph is then built from the forward one.
-fn relabel(mut fwd: Csr, rank: Vec<u32>, bits: u32, threads: usize) -> [Csr; 2] {
+/// the backward graph is then built from the forward one. It is built in
+/// `spare`, the graph in the file's ids, whose arrays have the right sizes
+/// and are no longer needed: their pages are already mapped, so only the
+/// counts need zeroing, and no fresh pages are faulted in.
+fn relabel(mut fwd: Csr, spare: Csr, rank: Vec<u32>, bits: u32, threads: usize) -> [Csr; 2] {
     let (n, m, mask) = (rank.len(), fwd.adj.len(), (1 << bits) - 1);
     let span = |i: usize| i * n / threads..(i + 1) * n / threads;
-    let (mut first, mut adj) = (zeros(n + 1), zeros(m));
+    let Csr { mut first, mut adj } = spare;
+    first.fill(0);
     let (f, a) = (atomic(&mut first), atomic(&mut fwd.adj));
     parallel(threads, &|i| {
         for e in &a[i * m / threads..(i + 1) * m / threads] {
@@ -486,7 +490,6 @@ fn main() {
     let threads = thread::available_parallelism().map_or(1, |n| n.get());
     let (g, bits, big) = load_graph(&format!("{data}/graph.txt"), threads);
     let (rank, fwd) = renumber(&g, bits, threads);
-    drop(g);
     let r = |v: u32| !rank[v as usize];
     let (text, mut p, mut ids) = (fs::read(format!("{data}/queries.txt")).unwrap(), 0, vec![]);
     while p < text.len() {
@@ -497,7 +500,7 @@ fn main() {
     wide.sort_unstable();
     wide.dedup_by_key(|x| x.0);
     let n = rank.len();
-    let graphs = relabel(fwd, rank, bits, threads);
+    let graphs = relabel(fwd, g, rank, bits, threads);
     let net = Net { graphs, bits, wide };
     let answers: Vec<AtomicI64> = (0..ids.len() / 2).map(|_| AtomicI64::new(0)).collect();
     let next = AtomicUsize::new(0);
