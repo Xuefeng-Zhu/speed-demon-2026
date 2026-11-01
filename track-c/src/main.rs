@@ -78,7 +78,7 @@ const K: u64 = 0x517cc1b727220a95; // FxHash's multiplier
 #[repr(align(128))]
 struct Pad<T>(T);
 const RING: usize = 16;
-const BLOCK: usize = 1024;
+const BLOCK: usize = 256;
 
 /// Bit i of each mask is set where byte i of the block is a quote, a comma or an LF.
 #[cfg(target_feature = "avx2")]
@@ -171,7 +171,8 @@ fn main() {
         // Names are split between the threads by hash. Thread o owns slots o * m.. (o + 1) * m
         // of `table`, five words each: the name's key, then a 256-bit set of the groups it
         // occurs in. Other threads hand it (name, group) events in blocks of BLOCK through its
-        // inbox, so only the owner reads or writes its slots.
+        // inbox, so only the owner reads or writes its slots. Owners empty their inbox at
+        // every buffer refill, so few blocks wait there.
         let m = (1 << bits) / n + 1;
         let table: &[AtomicU64] = zeroed(5 * m * n, 14);
         let full = &zeroed::<AtomicBool>(1, 0)[0];
@@ -268,7 +269,7 @@ fn main() {
             // The chunk is read through buf, which holds the file from offset `off`: when the
             // parse reaches its end, the unfinished record and the eight bytes before it (read
             // by `ld`) move to the front and the rest is refilled. Positions are into buf.
-            let mut buf = vec![0u8; (1 << 16) + 64];
+            let mut buf = vec![0u8; (1 << 15) + 64];
             while let Some(c) = claim() {
                 // Masks of quotes, commas and LFs, 64 bytes at a time. A byte is inside quotes
                 // when an odd number of quotes precede it in the record, so the commas and LFs
@@ -341,6 +342,7 @@ fn main() {
                     if done {
                         break;
                     }
+                    mark(&mut agg);
                     let shift = rs - 8;
                     if shift == 0 {
                         buf.resize(2 * buf.len() - 64, 0); // one record fills the buffer
