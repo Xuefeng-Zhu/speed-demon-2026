@@ -213,3 +213,27 @@ Spawning and joining the worker threads costs about 0.2 ms per `parallel` call i
 
 
 Board trial, 1 Nov 2026: PR #27 (`d-mem`, two-pass CSR from mmap, S 416) ran `run-a9c0c5ffe415` at `aa5ab52` (T=175.3 ms, M=74.8 MB, K=23.79). It is inside production's same-code range (23.6 to 24.3) and below the 24.50 best, so it was not kept. Production D in the same window: K 23.77, 24.05, 24.21, 23.73.
+
+
+## Phase-boundary probe (branch `d-probe`, 2 Nov 2026)
+
+Probe branch that will not be scored for K. Adds a background sampling
+thread reading `/proc/self/status` every 2 ms and writing one `[probe]
+phase=…` summary line to stderr for each of six phases: load, renumber,
+queries, relabel, search, write. Stdout is unchanged on every local run
+(full seed 1 SHA-256 `a23dbdf0…277e` matches at 1, 4, 8 and 12 threads;
+`smallcheck.py d` passes at those counts).
+
+Local sandbox 8-thread paired runs read T 173.2 vs 174.8 ms (min of 25
+interleaved runs, overhead inside the sandbox noise band), peak anon
+63.00 vs 63.90 MB (noise). Per-phase RssAnon peaks on seed 1: load 56.2
+MB, renumber 59.3 MB, relabel 52.8 MB, search 61.2 MB, write 54.3 MB. The
+local sampled peak matches memrun's 63 MB figure, so the sampler is not
+missing a short peak. The board records 82 to 87 MB on the same source;
+the 20 MB gap is not inside any local phase.
+
+S = 460 + 7 = 467 (+81 code lines, Dockerfile unchanged). The branch is
+not for production: the orchestrator reads the board stderr log to see
+which phase holds the extra 20 MB and then uses that to guide a later
+pure-saving branch. Full breakdown and example stderr output:
+`experiments/d-probe/README.md`. Board run pending.

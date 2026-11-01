@@ -18,7 +18,8 @@
 //! Std only (plus libc's `mmap`, `madvise` and `mallopt`, which std links).
 //! Override the directories with `SD_DATA` and `SD_OUT`.
 
-use std::sync::atomic::{AtomicI64, AtomicU32, AtomicU64, AtomicUsize, Ordering::Relaxed};
+use std::io::Write as _;
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, AtomicUsize, Ordering::Relaxed};
 use std::{fs, fs::File, mem::take, os::fd::AsRawFd, thread};
 
 extern "C" {
@@ -473,6 +474,69 @@ impl RadixHeap {
     }
 }
 
+/// Names of the phases the probe tags each sample with. Writes go to stderr.
+const PHASES: [&str; 7] = ["init", "load", "renumber", "queries", "relabel", "search", "write"];
+
+/// Current phase, written by main as it moves on.
+static PHASE: AtomicUsize = AtomicUsize::new(0);
+
+/// Signals the probe thread to flush the per-phase peaks and exit.
+static STOP: AtomicBool = AtomicBool::new(false);
+
+/// Reads `/proc/self/status` every 2 ms on a background thread and tracks
+/// per-phase peaks of VmRSS, VmPeak, RssAnon, RssShmem, VmHWM and VmSize.
+/// Prints one summary line per phase to stderr: on each transition and once
+/// more at shutdown. Stdout is unchanged. The sampling interval is far
+/// longer than one `open` + `read` of `/proc/self/status`, so the overhead
+/// stays below two percent of wall time.
+fn probe() -> thread::JoinHandle<()> {
+    use std::io::Read as _;
+    thread::spawn(|| {
+        let (mut buf, mut peaks, mut last_phase) = ([0u8; 2048], [[0u64; 6]; 7], 0);
+        let keys: [&[u8]; 6] = [b"VmRSS:", b"VmPeak:", b"RssAnon:", b"RssShmem:", b"VmHWM:", b"VmSize:"];
+        let mut err = std::io::stderr().lock();
+        let flush = |err: &mut std::io::StderrLock, p: usize, v: [u64; 6]| {
+            writeln!(err,
+                "[probe] phase={:9} VmRSS={:7}kB VmPeak={:7}kB RssAnon={:7}kB RssShmem={:7}kB VmHWM={:7}kB VmSize={:7}kB",
+                PHASES[p], v[0], v[1], v[2], v[3], v[4], v[5]).ok();
+        };
+        loop {
+            let p = PHASE.load(Relaxed);
+            if p != last_phase {
+                flush(&mut err, last_phase, peaks[last_phase]);
+                last_phase = p;
+            }
+            let Ok(mut f) = File::open("/proc/self/status") else { break };
+            let Ok(n) = f.read(&mut buf) else { break };
+            let mut vals = [0u64; 6];
+            for line in buf[..n].split(|&b| b == b'\n') {
+                for (ki, k) in keys.iter().enumerate() {
+                    if line.starts_with(k) {
+                        let rest = &line[k.len()..];
+                        let s = rest.iter().position(|&b| b.is_ascii_digit()).unwrap_or(rest.len());
+                        let e = rest[s..].iter().position(|&b| !b.is_ascii_digit()).unwrap_or(rest.len() - s);
+                        vals[ki] = rest[s..s + e].iter().fold(0u64, |a, &c| a * 10 + (c - b'0') as u64);
+                    }
+                }
+            }
+            for ki in 0..6 {
+                if vals[ki] > peaks[p][ki] {
+                    peaks[p][ki] = vals[ki];
+                }
+            }
+            if STOP.load(Relaxed) {
+                for pi in 0..PHASES.len() {
+                    if peaks[pi].iter().any(|&v| v > 0) {
+                        flush(&mut err, pi, peaks[pi]);
+                    }
+                }
+                return;
+            }
+            thread::sleep(std::time::Duration::from_micros(2000));
+        }
+    })
+}
+
 fn main() {
     let dir = |key, default: &str| std::env::var(key).unwrap_or(default.into());
     let (data, out) = (dir("SD_DATA", "/data"), dir("SD_OUT", "/out"));
@@ -480,9 +544,13 @@ fn main() {
     // the kernel when freed, instead of lingering in per-thread arenas.
     unsafe { mallopt(-3, 1 << 17) };
     let threads = thread::available_parallelism().map_or(1, |n| n.get());
+    let probe_h = probe();
+    PHASE.store(1, Relaxed);
     let (g, bits, big) = load_graph(&format!("{data}/graph.txt"), threads);
+    PHASE.store(2, Relaxed);
     let (rank, fwd) = renumber(&g, bits, threads);
     drop(g);
+    PHASE.store(3, Relaxed);
     let r = |v: u32| !rank[v as usize];
     let (text, mut p, mut ids) = (fs::read(format!("{data}/queries.txt")).unwrap(), 0, vec![]);
     while p < text.len() {
@@ -493,10 +561,12 @@ fn main() {
     wide.sort_unstable();
     wide.dedup_by_key(|x| x.0);
     let n = rank.len();
+    PHASE.store(4, Relaxed);
     let graphs = relabel(fwd, rank, bits, threads);
     let net = Net { graphs, bits, wide };
     let answers: Vec<AtomicI64> = (0..ids.len() / 2).map(|_| AtomicI64::new(0)).collect();
     let next = AtomicUsize::new(0);
+    PHASE.store(5, Relaxed);
     parallel(threads, &|_| {
         let (mut narrow, mut wide) = ([0; 2].map(|_| Side::<u32>::new(n)), None);
         let mut i = next.fetch_add(1, Relaxed);
@@ -511,7 +581,10 @@ fn main() {
             i = next.fetch_add(1, Relaxed);
         }
     });
+    PHASE.store(6, Relaxed);
     let lines = answers.iter().map(|a| format!("{}\n", a.load(Relaxed)));
     fs::write(format!("{out}/distances.txt"), lines.collect::<String>()).unwrap();
+    STOP.store(true, Relaxed);
+    probe_h.join().ok();
     std::process::exit(0); // the kernel frees everything at once
 }

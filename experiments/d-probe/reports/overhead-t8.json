@@ -1,0 +1,649 @@
+{
+ "note": "local sandbox measurements, not official scores",
+ "track": "d",
+ "data": "/projects/sandbox/.data/d-full",
+ "threads": 8,
+ "env": {},
+ "runs_per_binary": 15,
+ "interval_us": 200,
+ "binaries": {
+  "base-d": "9b1408ca56d366debc8305c355515e5c771b86a28d8fc28b38142f0a4f1e0792",
+  "d-probe": "538a260ecd68a16e62efab16674a7b54832d44a775bb9d1dca177f82128a9f5b"
+ },
+ "summary": {
+  "base-d": {
+   "wall_ms_median": 331.33211899985326,
+   "wall_ms_min": 186.34264600041206,
+   "cpu_ms_median": 1197.485,
+   "maxrss_mb_median": 156.622848,
+   "peak_anon_shmem_mb_median": 62.681088,
+   "peak_anon_shmem_mb_max": 64.249856,
+   "peak_file_mb_median": 94.031872,
+   "peak_pte_kib_median": 428,
+   "out_mb": 0.009039,
+   "est_M_mb_median": 62.690127,
+   "est_M_pte_mb_median": 63.132495,
+   "samples_median": 795
+  },
+  "d-probe": {
+   "wall_ms_median": 339.58095599973603,
+   "wall_ms_min": 203.52704699962487,
+   "cpu_ms_median": 1185.7340000000002,
+   "maxrss_mb_median": 156.762112,
+   "peak_anon_shmem_mb_median": 62.7712,
+   "peak_anon_shmem_mb_max": 63.287296,
+   "peak_file_mb_median": 94.056448,
+   "peak_pte_kib_median": 436,
+   "out_mb": 0.009039,
+   "est_M_mb_median": 62.780239,
+   "est_M_pte_mb_median": 63.218511,
+   "samples_median": 867
+  }
+ },
+ "runs": {
+  "base-d": [
+   {
+    "wall_s": 0.18634264600041206,
+    "cpu_s": 1.20662,
+    "maxrss_kib": 153140,
+    "minflt": 22972,
+    "samples": 511,
+    "peak_kib": {
+     "anon_shmem": 62744,
+     "RssAnon": 62744,
+     "RssShmem": 0,
+     "RssFile": 91880,
+     "VmPTE": 428,
+     "VmRSS": 153140
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 64.258895,
+    "est_M_pte_mb": 64.697167,
+    "ok": true,
+    "stderr_tail": ""
+   },
+   {
+    "wall_s": 0.1967237489998297,
+    "cpu_s": 1.176293,
+    "maxrss_kib": 153124,
+    "minflt": 22257,
+    "samples": 511,
+    "peak_kib": {
+     "anon_shmem": 62220,
+     "RssAnon": 62220,
+     "RssShmem": 0,
+     "RssFile": 91956,
+     "VmPTE": 432,
+     "VmRSS": 153124
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 63.722319,
+    "est_M_pte_mb": 64.164687,
+    "ok": true,
+    "stderr_tail": ""
+   },
+   {
+    "wall_s": 0.19918767399940407,
+    "cpu_s": 1.121673,
+    "maxrss_kib": 153376,
+    "minflt": 21857,
+    "samples": 542,
+    "peak_kib": {
+     "anon_shmem": 61580,
+     "RssAnon": 61580,
+     "RssShmem": 0,
+     "RssFile": 91796,
+     "VmPTE": 432,
+     "VmRSS": 153376
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 63.066959,
+    "est_M_pte_mb": 63.509327,
+    "ok": true,
+    "stderr_tail": ""
+   },
+   {
+    "wall_s": 0.2630125469995619,
+    "cpu_s": 1.1607420000000002,
+    "maxrss_kib": 152432,
+    "minflt": 21450,
+    "samples": 657,
+    "peak_kib": {
+     "anon_shmem": 60588,
+     "RssAnon": 60588,
+     "RssShmem": 0,
+     "RssFile": 91844,
+     "VmPTE": 420,
+     "VmRSS": 152432
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 62.051151,
+    "est_M_pte_mb": 62.481231,
+    "ok": true,
+    "stderr_tail": ""
+   },
+   {
+    "wall_s": 0.3529273779995492,
+    "cpu_s": 1.2610739999999998,
+    "maxrss_kib": 153012,
+    "minflt": 21507,
+    "samples": 969,
+    "peak_kib": {
+     "anon_shmem": 61212,
+     "RssAnon": 61212,
+     "RssShmem": 0,
+     "RssFile": 91800,
+     "VmPTE": 432,
+     "VmRSS": 153012
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 62.690127,
+    "est_M_pte_mb": 63.132495,
+    "ok": true,
+    "stderr_tail": ""
+   },
+   {
+    "wall_s": 0.3493460480003705,
+    "cpu_s": 1.1935559999999998,
+    "maxrss_kib": 153104,
+    "minflt": 21576,
+    "samples": 865,
+    "peak_kib": {
+     "anon_shmem": 61252,
+     "RssAnon": 61252,
+     "RssShmem": 0,
+     "RssFile": 91852,
+     "VmPTE": 420,
+     "VmRSS": 153104
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 62.731087,
+    "est_M_pte_mb": 63.161167,
+    "ok": true,
+    "stderr_tail": ""
+   },
+   {
+    "wall_s": 0.3220124190002025,
+    "cpu_s": 1.197485,
+    "maxrss_kib": 152704,
+    "minflt": 21473,
+    "samples": 689,
+    "peak_kib": {
+     "anon_shmem": 60876,
+     "RssAnon": 60876,
+     "RssShmem": 0,
+     "RssFile": 91828,
+     "VmPTE": 428,
+     "VmRSS": 152704
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 62.346063,
+    "est_M_pte_mb": 62.784335,
+    "ok": true,
+    "stderr_tail": ""
+   },
+   {
+    "wall_s": 0.3647998490005193,
+    "cpu_s": 1.2139849999999999,
+    "maxrss_kib": 152604,
+    "minflt": 22261,
+    "samples": 965,
+    "peak_kib": {
+     "anon_shmem": 60804,
+     "RssAnon": 60804,
+     "RssShmem": 0,
+     "RssFile": 91800,
+     "VmPTE": 420,
+     "VmRSS": 152604
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 62.272335,
+    "est_M_pte_mb": 62.702415,
+    "ok": true,
+    "stderr_tail": ""
+   },
+   {
+    "wall_s": 0.3570830830003615,
+    "cpu_s": 1.263298,
+    "maxrss_kib": 153192,
+    "minflt": 21464,
+    "samples": 990,
+    "peak_kib": {
+     "anon_shmem": 61404,
+     "RssAnon": 61404,
+     "RssShmem": 0,
+     "RssFile": 91788,
+     "VmPTE": 416,
+     "VmRSS": 153192
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 62.886735,
+    "est_M_pte_mb": 63.312719,
+    "ok": true,
+    "stderr_tail": ""
+   },
+   {
+    "wall_s": 0.30448471999989124,
+    "cpu_s": 1.1766320000000001,
+    "maxrss_kib": 152268,
+    "minflt": 22242,
+    "samples": 635,
+    "peak_kib": {
+     "anon_shmem": 60472,
+     "RssAnon": 60472,
+     "RssShmem": 0,
+     "RssFile": 91796,
+     "VmPTE": 432,
+     "VmRSS": 152268
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 61.932367,
+    "est_M_pte_mb": 62.374735,
+    "ok": true,
+    "stderr_tail": ""
+   },
+   {
+    "wall_s": 0.33978453100007755,
+    "cpu_s": 1.290781,
+    "maxrss_kib": 152840,
+    "minflt": 21589,
+    "samples": 781,
+    "peak_kib": {
+     "anon_shmem": 61052,
+     "RssAnon": 61052,
+     "RssShmem": 0,
+     "RssFile": 91788,
+     "VmPTE": 424,
+     "VmRSS": 152840
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 62.526287,
+    "est_M_pte_mb": 62.960463,
+    "ok": true,
+    "stderr_tail": ""
+   },
+   {
+    "wall_s": 0.3201013759999114,
+    "cpu_s": 1.1720979999999999,
+    "maxrss_kib": 153188,
+    "minflt": 21832,
+    "samples": 795,
+    "peak_kib": {
+     "anon_shmem": 61344,
+     "RssAnon": 61344,
+     "RssShmem": 0,
+     "RssFile": 91844,
+     "VmPTE": 428,
+     "VmRSS": 153188
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 62.825295,
+    "est_M_pte_mb": 63.263567,
+    "ok": true,
+    "stderr_tail": ""
+   },
+   {
+    "wall_s": 0.3682553140006348,
+    "cpu_s": 1.320036,
+    "maxrss_kib": 152952,
+    "minflt": 21694,
+    "samples": 929,
+    "peak_kib": {
+     "anon_shmem": 61120,
+     "RssAnon": 61120,
+     "RssShmem": 0,
+     "RssFile": 91832,
+     "VmPTE": 420,
+     "VmRSS": 152952
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 62.595919,
+    "est_M_pte_mb": 63.025999,
+    "ok": true,
+    "stderr_tail": ""
+   },
+   {
+    "wall_s": 0.33133211899985326,
+    "cpu_s": 1.180378,
+    "maxrss_kib": 152860,
+    "minflt": 21465,
+    "samples": 873,
+    "peak_kib": {
+     "anon_shmem": 61996,
+     "RssAnon": 61996,
+     "RssShmem": 0,
+     "RssFile": 91896,
+     "VmPTE": 428,
+     "VmRSS": 152860
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 63.492943,
+    "est_M_pte_mb": 63.931215,
+    "ok": true,
+    "stderr_tail": ""
+   },
+   {
+    "wall_s": 0.40140908600005787,
+    "cpu_s": 1.222079,
+    "maxrss_kib": 152716,
+    "minflt": 21703,
+    "samples": 1080,
+    "peak_kib": {
+     "anon_shmem": 60888,
+     "RssAnon": 60888,
+     "RssShmem": 0,
+     "RssFile": 91828,
+     "VmPTE": 424,
+     "VmRSS": 152716
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 62.358351,
+    "est_M_pte_mb": 62.792527,
+    "ok": true,
+    "stderr_tail": ""
+   }
+  ],
+  "d-probe": [
+   {
+    "wall_s": 0.20352704699962487,
+    "cpu_s": 1.185734,
+    "maxrss_kib": 153140,
+    "minflt": 21637,
+    "samples": 539,
+    "peak_kib": {
+     "anon_shmem": 61324,
+     "RssAnon": 61324,
+     "RssShmem": 0,
+     "RssFile": 91816,
+     "VmPTE": 440,
+     "VmRSS": 153140
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 62.804815,
+    "est_M_pte_mb": 63.255375,
+    "ok": true,
+    "stderr_tail": "phase=renumber  VmRSS= 151456kB VmPeak= 771824kB RssAnon=  59640kB RssShmem=      0kB VmHWM= 151512kB VmSize= 760924kB\n[probe] phase=relabel   VmRSS= 144908kB VmPeak= 771824kB RssAnon=  53092kB RssShmem=      0kB VmHWM= 151572kB VmSize= 761076kB\n[probe] phase=search    VmRSS= 153140kB VmPeak= 771824kB RssAnon=  61324kB RssShmem=      0kB VmHWM= 153140kB VmSize= 761508kB\n[probe] phase=write     VmRSS= 145944kB VmPeak= 771824kB RssAnon=  54128kB RssShmem=      0kB VmHWM= 153140kB VmSize= 754180kB\n"
+   },
+   {
+    "wall_s": 0.20451287899959425,
+    "cpu_s": 1.125302,
+    "maxrss_kib": 153336,
+    "minflt": 23011,
+    "samples": 515,
+    "peak_kib": {
+     "anon_shmem": 61588,
+     "RssAnon": 61588,
+     "RssShmem": 0,
+     "RssFile": 91748,
+     "VmPTE": 436,
+     "VmRSS": 153336
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 63.075151,
+    "est_M_pte_mb": 63.521615,
+    "ok": true,
+    "stderr_tail": "phase=renumber  VmRSS= 150448kB VmPeak= 791052kB RssAnon=  58700kB RssShmem=      0kB VmHWM= 152048kB VmSize= 760924kB\n[probe] phase=relabel   VmRSS= 144808kB VmPeak= 791052kB RssAnon=  53060kB RssShmem=      0kB VmHWM= 152048kB VmSize= 761076kB\n[probe] phase=search    VmRSS= 153336kB VmPeak= 791052kB RssAnon=  61588kB RssShmem=      0kB VmHWM= 153336kB VmSize= 761764kB\n[probe] phase=write     VmRSS= 146256kB VmPeak= 791052kB RssAnon=  54508kB RssShmem=      0kB VmHWM= 153336kB VmSize= 754180kB\n"
+   },
+   {
+    "wall_s": 0.22504250899964973,
+    "cpu_s": 1.143236,
+    "maxrss_kib": 153088,
+    "minflt": 21109,
+    "samples": 572,
+    "peak_kib": {
+     "anon_shmem": 61396,
+     "RssAnon": 61396,
+     "RssShmem": 0,
+     "RssFile": 91692,
+     "VmPTE": 440,
+     "VmRSS": 153088
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 62.878543,
+    "est_M_pte_mb": 63.329103,
+    "ok": true,
+    "stderr_tail": "phase=renumber  VmRSS= 151316kB VmPeak= 771800kB RssAnon=  59624kB RssShmem=      0kB VmHWM= 151316kB VmSize= 760924kB\n[probe] phase=relabel   VmRSS= 144800kB VmPeak= 771800kB RssAnon=  53108kB RssShmem=      0kB VmHWM= 151456kB VmSize= 761072kB\n[probe] phase=search    VmRSS= 153088kB VmPeak= 771800kB RssAnon=  61396kB RssShmem=      0kB VmHWM= 153088kB VmSize= 761760kB\n[probe] phase=write     VmRSS= 145824kB VmPeak= 771800kB RssAnon=  54132kB RssShmem=      0kB VmHWM= 153088kB VmSize= 754176kB\n"
+   },
+   {
+    "wall_s": 0.3470304689999466,
+    "cpu_s": 1.204281,
+    "maxrss_kib": 153140,
+    "minflt": 21758,
+    "samples": 938,
+    "peak_kib": {
+     "anon_shmem": 61552,
+     "RssAnon": 61552,
+     "RssShmem": 0,
+     "RssFile": 91856,
+     "VmPTE": 440,
+     "VmRSS": 153140
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 63.038287,
+    "est_M_pte_mb": 63.488847,
+    "ok": true,
+    "stderr_tail": "phase=renumber  VmRSS= 151492kB VmPeak= 771824kB RssAnon=  59700kB RssShmem=      0kB VmHWM= 152252kB VmSize= 760924kB\n[probe] phase=relabel   VmRSS= 144880kB VmPeak= 771824kB RssAnon=  53088kB RssShmem=      0kB VmHWM= 152252kB VmSize= 761072kB\n[probe] phase=search    VmRSS= 153140kB VmPeak= 771824kB RssAnon=  61348kB RssShmem=      0kB VmHWM= 153140kB VmSize= 761504kB\n[probe] phase=write     VmRSS= 146100kB VmPeak= 771824kB RssAnon=  54308kB RssShmem=      0kB VmHWM= 153140kB VmSize= 754176kB\n"
+   },
+   {
+    "wall_s": 0.33758304599996336,
+    "cpu_s": 1.200896,
+    "maxrss_kib": 152796,
+    "minflt": 21837,
+    "samples": 857,
+    "peak_kib": {
+     "anon_shmem": 60880,
+     "RssAnon": 60880,
+     "RssShmem": 0,
+     "RssFile": 91916,
+     "VmPTE": 432,
+     "VmRSS": 152796
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 62.350159,
+    "est_M_pte_mb": 62.792527,
+    "ok": true,
+    "stderr_tail": "phase=renumber  VmRSS= 151140kB VmPeak= 796568kB RssAnon=  59224kB RssShmem=      0kB VmHWM= 151672kB VmSize= 760924kB\n[probe] phase=relabel   VmRSS= 145016kB VmPeak= 796568kB RssAnon=  53100kB RssShmem=      0kB VmHWM= 151672kB VmSize= 761072kB\n[probe] phase=search    VmRSS= 152796kB VmPeak= 796568kB RssAnon=  60880kB RssShmem=      0kB VmHWM= 152796kB VmSize= 761248kB\n[probe] phase=write     VmRSS= 146380kB VmPeak= 796568kB RssAnon=  54464kB RssShmem=      0kB VmHWM= 152796kB VmSize= 754176kB\n"
+   },
+   {
+    "wall_s": 0.3486308100000315,
+    "cpu_s": 1.215007,
+    "maxrss_kib": 153136,
+    "minflt": 21563,
+    "samples": 872,
+    "peak_kib": {
+     "anon_shmem": 61300,
+     "RssAnon": 61300,
+     "RssShmem": 0,
+     "RssFile": 91836,
+     "VmPTE": 428,
+     "VmRSS": 153136
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 62.780239,
+    "est_M_pte_mb": 63.218511,
+    "ok": true,
+    "stderr_tail": "phase=renumber  VmRSS= 151080kB VmPeak= 826436kB RssAnon=  59244kB RssShmem=      0kB VmHWM= 151080kB VmSize= 760924kB\n[probe] phase=relabel   VmRSS= 144388kB VmPeak= 826436kB RssAnon=  52552kB RssShmem=      0kB VmHWM= 151588kB VmSize= 761072kB\n[probe] phase=search    VmRSS= 153136kB VmPeak= 826436kB RssAnon=  61300kB RssShmem=      0kB VmHWM= 153136kB VmSize= 761248kB\n[probe] phase=write     VmRSS= 146168kB VmPeak= 826436kB RssAnon=  54332kB RssShmem=      0kB VmHWM= 153136kB VmSize= 754176kB\n"
+   },
+   {
+    "wall_s": 0.34020274900012737,
+    "cpu_s": 1.1620879999999998,
+    "maxrss_kib": 153232,
+    "minflt": 21904,
+    "samples": 846,
+    "peak_kib": {
+     "anon_shmem": 61380,
+     "RssAnon": 61380,
+     "RssShmem": 0,
+     "RssFile": 91852,
+     "VmPTE": 428,
+     "VmRSS": 153232
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 62.862159,
+    "est_M_pte_mb": 63.300431,
+    "ok": true,
+    "stderr_tail": "phase=renumber  VmRSS= 150852kB VmPeak= 771740kB RssAnon=  59000kB RssShmem=      0kB VmHWM= 151608kB VmSize= 760924kB\n[probe] phase=relabel   VmRSS= 144956kB VmPeak= 771740kB RssAnon=  53104kB RssShmem=      0kB VmHWM= 151608kB VmSize= 761072kB\n[probe] phase=search    VmRSS= 153232kB VmPeak= 771740kB RssAnon=  61380kB RssShmem=      0kB VmHWM= 153232kB VmSize= 760992kB\n[probe] phase=write     VmRSS= 145980kB VmPeak= 771740kB RssAnon=  54128kB RssShmem=      0kB VmHWM= 153232kB VmSize= 754176kB\n"
+   },
+   {
+    "wall_s": 0.39405940799952077,
+    "cpu_s": 1.273756,
+    "maxrss_kib": 152828,
+    "minflt": 22214,
+    "samples": 992,
+    "peak_kib": {
+     "anon_shmem": 60976,
+     "RssAnon": 60976,
+     "RssShmem": 0,
+     "RssFile": 91916,
+     "VmPTE": 440,
+     "VmRSS": 152828
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 62.448463,
+    "est_M_pte_mb": 62.899023,
+    "ok": true,
+    "stderr_tail": "phase=queries   VmRSS= 125324kB VmPeak= 799320kB RssAnon=  33472kB RssShmem=      0kB VmHWM= 151600kB VmSize= 734648kB\n[probe] phase=relabel   VmRSS= 144812kB VmPeak= 799320kB RssAnon=  52960kB RssShmem=      0kB VmHWM= 151600kB VmSize= 761076kB\n[probe] phase=search    VmRSS= 152828kB VmPeak= 799320kB RssAnon=  60976kB RssShmem=      0kB VmHWM= 152828kB VmSize= 761252kB\n[probe] phase=write     VmRSS= 146160kB VmPeak= 799320kB RssAnon=  54308kB RssShmem=      0kB VmHWM= 152828kB VmSize= 754180kB\n"
+   },
+   {
+    "wall_s": 0.3504647499994462,
+    "cpu_s": 1.1910479999999999,
+    "maxrss_kib": 152640,
+    "minflt": 22306,
+    "samples": 882,
+    "peak_kib": {
+     "anon_shmem": 60800,
+     "RssAnon": 60800,
+     "RssShmem": 0,
+     "RssFile": 91840,
+     "VmPTE": 432,
+     "VmRSS": 152640
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 62.268239,
+    "est_M_pte_mb": 62.710607,
+    "ok": true,
+    "stderr_tail": "phase=renumber  VmRSS= 150680kB VmPeak= 785548kB RssAnon=  58840kB RssShmem=      0kB VmHWM= 151600kB VmSize= 760924kB\n[probe] phase=relabel   VmRSS= 144944kB VmPeak= 785548kB RssAnon=  53104kB RssShmem=      0kB VmHWM= 151600kB VmSize= 761060kB\n[probe] phase=search    VmRSS= 152640kB VmPeak= 785548kB RssAnon=  60800kB RssShmem=      0kB VmHWM= 152640kB VmSize= 761248kB\n[probe] phase=write     VmRSS= 145968kB VmPeak= 785548kB RssAnon=  54128kB RssShmem=      0kB VmHWM= 152640kB VmSize= 754176kB\n"
+   },
+   {
+    "wall_s": 0.3201333679999152,
+    "cpu_s": 1.1852749999999999,
+    "maxrss_kib": 152844,
+    "minflt": 21470,
+    "samples": 841,
+    "peak_kib": {
+     "anon_shmem": 61040,
+     "RssAnon": 61040,
+     "RssShmem": 0,
+     "RssFile": 91868,
+     "VmPTE": 432,
+     "VmRSS": 152844
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 62.513999,
+    "est_M_pte_mb": 62.956367,
+    "ok": true,
+    "stderr_tail": "phase=renumber  VmRSS= 151416kB VmPeak= 796568kB RssAnon=  59612kB RssShmem=      0kB VmHWM= 151416kB VmSize= 760924kB\n[probe] phase=relabel   VmRSS= 144716kB VmPeak= 796568kB RssAnon=  52912kB RssShmem=      0kB VmHWM= 151556kB VmSize= 761072kB\n[probe] phase=search    VmRSS= 152844kB VmPeak= 796568kB RssAnon=  61040kB RssShmem=      0kB VmHWM= 152844kB VmSize= 761248kB\n[probe] phase=write     VmRSS= 146076kB VmPeak= 796568kB RssAnon=  54272kB RssShmem=      0kB VmHWM= 152844kB VmSize= 754176kB\n"
+   },
+   {
+    "wall_s": 0.33166395599982934,
+    "cpu_s": 1.203613,
+    "maxrss_kib": 153068,
+    "minflt": 21641,
+    "samples": 864,
+    "peak_kib": {
+     "anon_shmem": 61240,
+     "RssAnon": 61240,
+     "RssShmem": 0,
+     "RssFile": 91828,
+     "VmPTE": 440,
+     "VmRSS": 153068
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 62.718799,
+    "est_M_pte_mb": 63.169359,
+    "ok": true,
+    "stderr_tail": "phase=renumber  VmRSS= 151376kB VmPeak= 771788kB RssAnon=  59548kB RssShmem=      0kB VmHWM= 151376kB VmSize= 760924kB\n[probe] phase=relabel   VmRSS= 144868kB VmPeak= 771788kB RssAnon=  53040kB RssShmem=      0kB VmHWM= 151584kB VmSize= 761076kB\n[probe] phase=search    VmRSS= 153068kB VmPeak= 771788kB RssAnon=  61240kB RssShmem=      0kB VmHWM= 153068kB VmSize= 761252kB\n[probe] phase=write     VmRSS= 145960kB VmPeak= 771788kB RssAnon=  54132kB RssShmem=      0kB VmHWM= 153068kB VmSize= 754180kB\n"
+   },
+   {
+    "wall_s": 0.329115229999843,
+    "cpu_s": 1.141289,
+    "maxrss_kib": 152880,
+    "minflt": 22203,
+    "samples": 904,
+    "peak_kib": {
+     "anon_shmem": 61040,
+     "RssAnon": 61040,
+     "RssShmem": 0,
+     "RssFile": 91840,
+     "VmPTE": 436,
+     "VmRSS": 152880
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 62.513999,
+    "est_M_pte_mb": 62.960463,
+    "ok": true,
+    "stderr_tail": "phase=renumber  VmRSS= 151516kB VmPeak= 793116kB RssAnon=  59676kB RssShmem=      0kB VmHWM= 151516kB VmSize= 762976kB\n[probe] phase=relabel   VmRSS= 144932kB VmPeak= 793116kB RssAnon=  53092kB RssShmem=      0kB VmHWM= 151600kB VmSize= 763124kB\n[probe] phase=search    VmRSS= 152880kB VmPeak= 793116kB RssAnon=  61040kB RssShmem=      0kB VmHWM= 152880kB VmSize= 763300kB\n[probe] phase=write     VmRSS= 146300kB VmPeak= 793116kB RssAnon=  54460kB RssShmem=      0kB VmHWM= 152880kB VmSize= 756228kB\n"
+   },
+   {
+    "wall_s": 0.34160546000020986,
+    "cpu_s": 1.130645,
+    "maxrss_kib": 153272,
+    "minflt": 21883,
+    "samples": 939,
+    "peak_kib": {
+     "anon_shmem": 61404,
+     "RssAnon": 61404,
+     "RssShmem": 0,
+     "RssFile": 91868,
+     "VmPTE": 432,
+     "VmRSS": 153272
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 62.886735,
+    "est_M_pte_mb": 63.329103,
+    "ok": true,
+    "stderr_tail": "phase=renumber  VmRSS= 151000kB VmPeak= 794504kB RssAnon=  59132kB RssShmem=      0kB VmHWM= 151624kB VmSize= 762976kB\n[probe] phase=relabel   VmRSS= 144816kB VmPeak= 794504kB RssAnon=  52948kB RssShmem=      0kB VmHWM= 151624kB VmSize= 763124kB\n[probe] phase=search    VmRSS= 153272kB VmPeak= 794504kB RssAnon=  61404kB RssShmem=      0kB VmHWM= 153272kB VmSize= 763300kB\n[probe] phase=write     VmRSS= 146004kB VmPeak= 794504kB RssAnon=  54136kB RssShmem=      0kB VmHWM= 153272kB VmSize= 756228kB\n"
+   },
+   {
+    "wall_s": 0.33958095599973603,
+    "cpu_s": 1.179189,
+    "maxrss_kib": 152816,
+    "minflt": 21068,
+    "samples": 921,
+    "peak_kib": {
+     "anon_shmem": 60916,
+     "RssAnon": 60916,
+     "RssShmem": 0,
+     "RssFile": 91900,
+     "VmPTE": 432,
+     "VmRSS": 152816
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 62.387023,
+    "est_M_pte_mb": 62.829391,
+    "ok": true,
+    "stderr_tail": "phase=renumber  VmRSS= 151260kB VmPeak= 855888kB RssAnon=  59360kB RssShmem=      0kB VmHWM= 151260kB VmSize= 760924kB\n[probe] phase=relabel   VmRSS= 145004kB VmPeak= 855888kB RssAnon=  53104kB RssShmem=      0kB VmHWM= 151656kB VmSize= 761072kB\n[probe] phase=search    VmRSS= 152816kB VmPeak= 855888kB RssAnon=  60916kB RssShmem=      0kB VmHWM= 152816kB VmSize= 761504kB\n[probe] phase=write     VmRSS= 146372kB VmPeak= 855888kB RssAnon=  54472kB RssShmem=      0kB VmHWM= 152816kB VmSize= 754176kB\n"
+   },
+   {
+    "wall_s": 0.3515943239999615,
+    "cpu_s": 1.346912,
+    "maxrss_kib": 153664,
+    "minflt": 21129,
+    "samples": 867,
+    "peak_kib": {
+     "anon_shmem": 61804,
+     "RssAnon": 61804,
+     "RssShmem": 0,
+     "RssFile": 91860,
+     "VmPTE": 440,
+     "VmRSS": 153664
+    },
+    "out_bytes": 9039,
+    "est_M_mb": 63.296335,
+    "est_M_pte_mb": 63.746895,
+    "ok": true,
+    "stderr_tail": "phase=queries   VmRSS= 125332kB VmPeak= 781420kB RssAnon=  33472kB RssShmem=      0kB VmHWM= 151612kB VmSize= 734644kB\n[probe] phase=relabel   VmRSS= 144820kB VmPeak= 781420kB RssAnon=  52960kB RssShmem=      0kB VmHWM= 151612kB VmSize= 761072kB\n[probe] phase=search    VmRSS= 153664kB VmPeak= 781420kB RssAnon=  61804kB RssShmem=      0kB VmHWM= 153664kB VmSize= 760992kB\n[probe] phase=write     VmRSS= 146164kB VmPeak= 781420kB RssAnon=  54304kB RssShmem=      0kB VmHWM= 153664kB VmSize= 754176kB\n"
+   }
+  ]
+ }
+}
