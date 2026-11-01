@@ -227,3 +227,13 @@ The final head `6d785be`, with #28 kept, ran `run-a283f9503c48`: T=173.0 ms, M=6
 - Nov 1 2026: opt7 b-prefault run 2 fd1e2df run-64eea32f1163 T 203.3 ms M 47.2 MB S 669 K 26.62. LOST (early worker prefault likely contends with main-thread parse faults). Reverted to chunkwise << 24. b-prefault-36 not run (same change).
 - Nov 1 2026: opt7 b-lean-reuse a3589b2 run-3ae685d64d7d T 170.0 ms M 49.2 MB S 654 K 28.96 (run 1).
 - Nov 1 2026: opt7 b-lean-reuse run 2 a3f78a7 run-4f443b004c3d T 171.9 ms M 49.8 MB S 654 K 28.73. KEPT (mean 28.85 vs 28.45 for chunkwise << 24). Production B = opt7/b/cand/b-lean-reuse.
+
+## Local opt8: sorted top-ten insertion and cache-line alignment
+
+Based on `a3f78a7` (the opt7 lean/reuse trial), this candidate preserves buffer reuse, packed atomic count/sum and direct postings/output. It inserts at most ten sorted chunk IDs into the existing top ten instead of sorting ten entries and storing `max` after every accepted ID, then stores `max` once under the same mutex. Linux accumulators are aligned to their 64-byte size to avoid sharing cache lines. Shared remap/anchor closures and a named chunk iterator reduce locally formatted Rust code from 628 to 622 lines; total S=648 versus the previous 654 is an estimate pending the pinned counter. No dependency or Dockerfile changes. Exact source SHA-256: `c5cced6f876b8c89cb7c11874580c81d60554ce1e73ff7dc8426d0d4fe30ce19`.
+
+Local Linux x86-64 under Rosetta on ARM, pinned Rust 1.99.1, x86-64-v3 and offline PGO on generator seed-2 sample: one warmup and 31 interleaved full seed-1 pairs at 12 threads gave median wall 331.24 -> 306.39 ms, median paired wall -5.49% (22/31 wins), process CPU 1.6697 -> 1.5095 s and median process peak RSS 60.81 -> 60.26 MB. Host load varied. Every output matched the published full hash. These are emulated local measurements, not native x86 or official T/M/K, and process RSS is not cgroup peak memory.
+
+The final PGO binary passed 80 reference comparisons across 20 corpora and 1/2/7/12 threads, 40 additional mixed-case/Unicode/repeated-phrase fuzz corpora, and independent 65,536/250,000-document set-algebra fixtures. ARM release also passed the 80 reference comparisons. See `experiments/b-opt8/README.md` and `emulated-x86-final-vs-a3f-t12.json` for exact sources, raw observations, concurrency/layout checks, discarded variants and reproduction. No official board run exists yet for this candidate.
+
+The final source also passed the pinned x86 overflow-checked 40-order concurrent accumulator test and 64-byte layout assertions. An unprivileged, offline, read-only restricted runtime check using the verified amd64 child of the pinned Debian runtime wrote exactly `results.txt` with the full expected hash.
