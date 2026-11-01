@@ -225,3 +225,4 @@ The final head `6d785be`, with #28 kept, ran `run-a283f9503c48`: T=173.0 ms, M=6
 - Nov 1 2026: confirm run 2026af8 run-70872c8cda6a T 174.6 ms M 51.8 MB S 647 K 28.33 (<< 24 confirmed).
 - Nov 1 2026: opt7 b-prefault 40afe08 run-4eafa4d5d076 T 182.9 ms M 47.2 MB S 669 K 28.06 (run 1; A same run 29.5 ms, box slow?).
 - Nov 1 2026: opt7 b-prefault run 2 fd1e2df run-64eea32f1163 T 203.3 ms M 47.2 MB S 669 K 26.62. LOST (early worker prefault likely contends with main-thread parse faults). Reverted to chunkwise << 24. b-prefault-36 not run (same change).
+- Nov 1 2026: opt7 b-lean-reuse a3589b2 run-3ae685d64d7d T 170.0 ms M 49.2 MB S 654 K 28.96 (run 1).
