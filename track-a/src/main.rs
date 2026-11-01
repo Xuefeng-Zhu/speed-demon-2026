@@ -438,9 +438,6 @@ fn main() {
                 (tx.clone(), &shared, &next_id, &parsed, &plan, &barrier);
             let (start, end) = (cuts[t], cuts[t + 1]);
             s.spawn(move || {
-                // Probe: parse the chunk twice and discard the first result, so the increase in T
-                // is about the parse phase's wall time on this machine.
-                drop(std::hint::black_box(parse(d, start, end, shared, next_id)));
                 *parsed[t].lock().unwrap() = parse(d, start, end, shared, next_id);
                 if barrier.wait().is_leader() {
                     let _ = plan.set(make_plan(shared, parsed));
@@ -451,6 +448,9 @@ fn main() {
                 let (order, names, jobs) = plan.get().unwrap();
                 let mut scratch = Scratch::default();
                 while let Some((h, records)) = { let job = jobs.lock().unwrap().next(); job } {
+                    // Probe: summarize every hour twice and discard the first result, so the increase
+                    // in T is about the summary phase's wall time on this machine.
+                    drop(std::hint::black_box(summarize(h, records.clone(), order, names, &mut scratch)));
                     tx.send((h, summarize(h, records, order, names, &mut scratch))).unwrap();
                 }
             });
