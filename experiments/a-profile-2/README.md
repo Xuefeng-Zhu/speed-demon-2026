@@ -47,3 +47,12 @@ Speed, `bench.py` paired median ratio against `base` (below 1 is faster):
 The gain grows with the thread count because each mmap or munmap stalls more faulting threads. The scoring box runs 20 threads by default, which may explain why the earlier box speedup (PR #4, about 16%) fell short of the local 8-thread estimate (about 22%).
 
 Correctness of production: `check.py` 14 of 14, `adversarial.py` 0 failures, and the scalar (no AVX2) build passes `adversarial.py --quick` with 0 failures. The source grows from 467 to 483 code lines (`experiments/a-trim/sloc.py`).
+
+## Rebased on the trimmed source (171ca6f)
+
+`base-trim.rs` is production at `171ca6f` (PR #10 line trim applied); `final-trim.rs` is the same change rebased onto it, the only conflict being the removed `PAIRS` table. `adversarial.py` is brought over from the `a-trim` branch for its `--spec` mode, since the trimmed source stops on inputs outside the spec.
+
+- Correctness: `check.py` 14 of 14; `adversarial.py --spec` 0 failures, for both `base-trim` and `final-trim`.
+- Code lines (`experiments/a-trim/sloc.py`): 407 to 423. The board counted 414 for `171ca6f`, about 7 more than this script, so expect about 430.
+- Speed, paired median `final-trim` / `base-trim`: 0.8513 / 0.8373 / 0.7352 at 8 / 12 / 20 threads (41 rounds, seed 1201, `bench-trim.json`), and 0.8649 / 0.8383 / 0.7276, 0.8819 at the default thread count (61 rounds, seed 1202, `bench-trim-2.json`).
+- Sampled peak `RssAnon` (11 runs, max / median): 8 threads 15.1 / 14.7 to 17.1 / 15.9 MB; 12 threads 16.2 / 15.8 to 17.8 / 16.5 MB; 20 threads 17.8 / 17.1 to 20.5 / 19.3 MB.
