@@ -223,3 +223,8 @@ Board trials, 1 Nov 2026: PR #30 (`a-mem`, hours streamed during the parse, pool
 
 - Nov 1 2026: opt6 hour-block store + 2 KiB prefetch probe 9313ee3 run-b09a7d9a032c T 28.8 ms M 20.8 MB K 39.88: prefetch does not help on the box; memory-latency reading not supported. Reverted.
 - Nov 1 2026: PR #41 a-direct (O_DIRECT output) 0da83ae run-4f0849dc691c T 33.0 ms M 21.1 MB S 512 K 35.98. M unchanged (/out refuses O_DIRECT, output stays charged). Reverted.
+
+### PR #47 shared OnceLock endpoint dictionary (Nov 1 2026, kept)
+- f888b90 run-2cbfc20aac8c: T 26.3 ms, M 24.0 MB, S 405, K 40.70
+- 632f485 run-8a26a2326c3e: T 25.1 ms, M 23.0 MB, S 405, K 41.96
+- Mean 41.33 vs same-session previous A 41.26 / 39.64. Lower T and S; M +1-2 MB. Now production A.
