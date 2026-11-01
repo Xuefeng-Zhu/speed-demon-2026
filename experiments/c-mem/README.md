@@ -162,3 +162,7 @@ but PR #8 showed the board charging cross-core traffic far more than the sandbox
 * `compare.py REPORT...`: tables in `reports/summary.md`. `reports/*.json`: memrun reports
   (`screen*` per thread count, `arena*` arena-max batches, `final-*`). `reports/cm-profile*.txt`: profile
   output.
+
+## Overlap with other branches
+
+`c-trim` (line trims) edits the same worker code of `track-c/src/main.rs`. The branches are separate board trials off `f828bd8` and are not rebased onto each other here. Whichever lands after the other must be rebased, rebuilt, re-hashed (full seed 1, `smallcheck`, `fixtures.py`) and re-counted: S 337 here is relative to the untrimmed base.
