@@ -11,9 +11,11 @@
 //! 3. The threads then answer blocks of queries. A BOOL query runs left to
 //!    right on a sorted list, switching to a bitmap when a large set is ORed in.
 
+use std::arch::x86_64::*;
 use std::fmt::Write as _;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering::Relaxed};
-use std::{collections::HashMap, env, fs, thread};
+use std::thread::{self, available_parallelism};
+use std::{collections::HashMap, env, fs, iter};
 
 /// Bytes of corpus read up front to estimate which phrase term is rarest.
 const SAMPLE: usize = 1 << 19;
@@ -197,9 +199,8 @@ fn masks(data: &[u8], i: usize) -> (u64, u64) {
             &pad
         }
     };
-    #[cfg(target_feature = "avx2")]
+    // The build targets x86-64-v3 (.cargo/config.toml), so AVX2 is always there.
     unsafe {
-        use std::arch::x86_64::*;
         let half = |h: usize| {
             let v = _mm256_loadu_si256(b.as_ptr().add(32 * h).cast());
             // Unsigned x - lo < n, as min(x - lo, n - 1) == x - lo.
@@ -216,38 +217,18 @@ fn masks(data: &[u8], i: usize) -> (u64, u64) {
         let ((m0, l0), (m1, l1)) = (half(0), half(1));
         (m0 | m1 << 32, l0 | l1 << 32)
     }
-    #[cfg(not(target_feature = "avx2"))]
-    {
-        let (mut m, mut lf) = (0u64, 0u64);
-        for (j, &c) in b.iter().enumerate() {
-            let tok = (c | 0x20).wrapping_sub(b'a') < 26 || c.wrapping_sub(b'0') < 10;
-            m |= (tok as u64) << j;
-            lf |= ((c == b'\n') as u64) << j;
-        }
-        (m, lf)
-    }
 }
 
 /// Asks the CPU to start loading the cache line of `p`.
 fn prefetch<T>(p: &T) {
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        use std::arch::x86_64::{_mm_prefetch, _MM_HINT_T0};
-        _mm_prefetch::<_MM_HINT_T0>(p as *const T as *const i8)
-    };
-    #[cfg(target_arch = "aarch64")]
-    unsafe {
-        std::arch::asm!("prfm pldl1keep, [{0}]", in(reg) p, options(nostack, readonly, preserves_flags))
-    };
+    unsafe { _mm_prefetch::<_MM_HINT_T0>(p as *const T as *const i8) };
 }
 
-/// A chunk's posting lists: list l has the ids first + docs[offs[l]..offs[l + 1]],
-/// and its phrase matches as (query, id).
+/// A chunk's posting lists: list l has the ids first + docs[offs[l]..offs[l + 1]].
 struct Chunk {
     first: u32,
     offs: Vec<u32>,
     docs: Vec<u16>,
-    hits: Vec<(u32, u32)>,
 }
 
 impl Chunk {
@@ -257,9 +238,13 @@ impl Chunk {
     }
 }
 
+/// Phrase matches as (query, id).
+type Hits = Vec<(u32, u32)>;
+
 /// Indexes the whole lines in data[lo..hi]; their first id is a multiple of 64,
-/// so the chunk owns whole words of the shared bitmap rows.
-fn scan_chunk(data: &[u8], lo: usize, hi: usize, plan: &Plan, rows: &[AtomicU64]) -> Chunk {
+/// so the chunk owns whole words of the shared bitmap rows. Also returns the
+/// chunk's phrase matches.
+fn scan_chunk(data: &[u8], lo: usize, hi: usize, plan: &Plan, rows: &[AtomicU64]) -> (Chunk, Hits) {
     let first = id_at(data, lo);
     let (nl, words) = (plan.nlist, rows.len() / plan.nbm.max(1));
     // The list-term ids of each document, each document ended by u16::MAX.
@@ -342,7 +327,7 @@ fn scan_chunk(data: &[u8], lo: usize, hi: usize, plan: &Plan, rows: &[AtomicU64]
         w += b - a;
     }
     offs[nl] = w as u32;
-    Chunk { first, offs, docs, hits }
+    (Chunk { first, offs, docs }, hits)
 }
 
 /// Appends a query's answer line: the count, the id sum and the first ten ids.
@@ -361,9 +346,8 @@ fn sorted_line(out: &mut String, d: impl ExactSizeIterator<Item = u32> + Clone) 
 /// list `r` until a large set is ORed in, then the bitmap `bm`, which is all
 /// zero whenever it is not in use.
 fn boolean(q: &[(u8, u32)], plan: &Plan, s: &mut Scratch, out: &mut String) {
-    let (chunks, rows) = (&plan.chunks, &plan.rows);
-    let words = s.bm.len();
-    let (mut is_bm, r, bm, tl) = (false, &mut s.list, &mut s.bm, &mut s.tmp);
+    let (chunks, rows, (r, tl, o, bm)) = (&plan.chunks, &plan.rows, s);
+    let (words, mut is_bm) = (bm.len(), false);
     r.clear();
     let get = |b: &[u64], d: u32| b[d as usize / 64] >> (d & 63) & 1 != 0;
     let set = |b: &mut [u64], d: u32| b[d as usize / 64] |= 1 << (d & 63);
@@ -423,7 +407,7 @@ fn boolean(q: &[(u8, u32)], plan: &Plan, s: &mut Scratch, out: &mut String) {
             }
             _ => {
                 // Merge the sorted lists r and tl.
-                let (mut i, mut j, o) = (0, 0, &mut s.out);
+                let (mut i, mut j) = (0, 0);
                 o.clear();
                 while i < r.len() && j < tl.len() {
                     let (a, b) = (r[i], tl[j]);
@@ -455,22 +439,15 @@ fn boolean(q: &[(u8, u32)], plan: &Plan, s: &mut Scratch, out: &mut String) {
     bm.fill(0);
 }
 
-/// Per-thread buffers for answering queries.
-#[derive(Default)]
-struct Scratch {
-    list: Vec<u32>,
-    tmp: Vec<u32>,
-    out: Vec<u32>,
-    bm: Vec<u64>,
-}
+/// Per-thread buffers for answering queries: the running list, the term's
+/// list, the merge output and the running bitmap.
+type Scratch = (Vec<u32>, Vec<u32>, Vec<u32>, Vec<u64>);
 
 /// The id of the line that starts at byte i.
 fn id_at(data: &[u8], i: usize) -> u32 {
-    if i >= data.len() {
-        return u32::MAX; // an empty last chunk
-    }
     let digits = data[i..].iter().take_while(|&&b| b != b'\t');
-    digits.fold(0, |n, &b| n * 10 + (b - b'0') as u32)
+    let id = digits.fold(0, |n, &b| n * 10 + (b - b'0') as u32);
+    (i < data.len()).then_some(id).unwrap_or(u32::MAX) // MAX: an empty last chunk
 }
 
 // std has no mmap; libc is always linked.
@@ -498,13 +475,21 @@ fn release(s: &[u8]) {
     unsafe { madvise(lo as *mut u8, hi.saturating_sub(lo), 4) }; // MADV_DONTNEED
 }
 
-/// Runs f(0), ..., f(n - 1) on n threads and returns the results in order.
-fn par<T: Send>(n: usize, f: impl Fn(usize) -> T + Sync) -> Vec<T> {
-    let f = &f;
-    thread::scope(|s| {
-        let hs: Vec<_> = (0..n).map(|k| s.spawn(move || f(k))).collect();
-        hs.into_iter().map(|h| h.join().unwrap()).collect()
-    })
+/// Returns f(s, 0), ..., f(s, m - 1), computed by n threads that claim the k in
+/// turn, each with its own state s.
+fn par<S: Default, T: Send>(n: usize, m: usize, f: impl Fn(&mut S, usize) -> T + Sync) -> Vec<T> {
+    let next = AtomicUsize::new(0);
+    let take = || Some(next.fetch_add(1, Relaxed)).filter(|&k| k < m);
+    let work = || -> Vec<_> {
+        let mut s = S::default();
+        iter::from_fn(take).map(|k| (k, f(&mut s, k))).collect()
+    };
+    let mut r: Vec<_> = thread::scope(|s| {
+        let hs: Vec<_> = (0..n).map(|_| s.spawn(&work)).collect();
+        hs.into_iter().flat_map(|h| h.join().unwrap()).collect()
+    });
+    r.sort_unstable_by_key(|x| x.0);
+    r.into_iter().map(|x| x.1).collect()
 }
 
 /// The start of the first line that begins at or after byte `i`.
@@ -518,11 +503,12 @@ fn main() {
     let data_dir = env::var("SD_DATA").unwrap_or_else(|_| "/data".into());
     let out_dir = env::var("SD_OUT").unwrap_or_else(|_| "/out".into());
     let nthreads = env::var("SD_THREADS").ok().and_then(|s| s.parse().ok());
-    let nthreads = nthreads.unwrap_or_else(|| thread::available_parallelism().map_or(4, |n| n.get()));
+    let nthreads = nthreads.unwrap_or_else(|| available_parallelism().map_or(4, |n| n.get()));
 
     let qtext = fs::read(format!("{data_dir}/queries.txt")).expect("read queries.txt");
     let mut plan = Plan::default();
-    plan.grow((qtext.len() / 16 | 64).next_power_of_two()); // rarely grows
+    // Rarely grows.
+    plan.grow((qtext.len() / 16 | 64).next_power_of_two());
     // Query words: BOOL and PHRASE start a query, AND, OR and NOT are
     // operators and terms are lowercase. Query i is (b'B' or b'P', its first
     // term), its terms terms[qs[i].1..qs[i + 1].1] as (first byte of the
@@ -565,21 +551,23 @@ fn main() {
     });
     // A BOOL term in more than 1 of 32 sample documents gets a bitmap,
     // and so do the most frequent others beyond 65,535.
-    let mut bools: Vec<usize> = (0..plan.role.len()).filter(|&t| plan.role[t] & IN_BOOL != 0).collect();
+    let in_bool = |&t: &usize| plan.role[t] & IN_BOOL != 0;
+    let mut bools: Vec<usize> = (0..plan.role.len()).filter(in_bool).collect();
     bools.sort_unstable_by_key(|&t| std::cmp::Reverse(freq[t].0));
     let common = bools.partition_point(|&t| freq[t].0 as usize * 32 > sdocs as usize);
     let nbm = common.max(bools.len().saturating_sub(65535));
-    bools[..nbm].iter().for_each(|&t| plan.role[t] ^= IN_BOOL | BITMAP);
+    let flip = |&t: &usize| plan.role[t] ^= IN_BOOL | BITMAP;
+    bools[..nbm].iter().for_each(flip);
     (plan.nlist, plan.nbm) = (bools.len() - nbm, nbm);
     // Renumber the terms: list terms first, then bitmap terms, then the rest.
     let rest = (0..plan.role.len()).filter(|&t| plan.role[t] & (IN_BOOL | BITMAP) == 0);
     let mut order = [&bools[nbm..], &bools[..nbm]].concat();
     order.extend(rest);
     let mut new = vec![0; order.len()];
-    for (i, &t) in order.iter().enumerate() {
-        new[t] = i as u32;
-    }
-    plan.keys.iter_mut().for_each(|e| e[2] = new[e[2] as usize] as u64);
+    (0..order.len()).for_each(|i| new[order[i]] = i as u32);
+    plan.keys
+        .iter_mut()
+        .for_each(|e| e[2] = new[e[2] as usize] as u64);
     plan.long.values_mut().for_each(|t| *t = new[*t as usize]);
     plan.role = order.iter().map(|&t| plan.role[t]).collect();
     let freq: Vec<u32> = order.iter().map(|&t| freq[t].0).collect();
@@ -609,9 +597,9 @@ fn main() {
     let ndocs = last.map_or(0, |l| id_at(l, 0) as usize + 1);
     let words = ndocs.div_ceil(64);
     // Zeroed pages straight from the OS, touched first by the scanning threads.
-    let mut rows = std::mem::ManuallyDrop::new(vec![0u64; plan.nbm * words]);
+    let mut bm = std::mem::ManuallyDrop::new(vec![0u64; plan.nbm * words]);
     // SAFETY: AtomicU64 has the size, alignment and bit validity of u64.
-    let rows: Vec<AtomicU64> = unsafe { Vec::from_raw_parts(rows.as_mut_ptr().cast(), rows.len(), rows.capacity()) };
+    let rows = unsafe { Vec::from_raw_parts(bm.as_mut_ptr().cast(), bm.len(), bm.capacity()) };
     let nchunks = nthreads * data.len().div_ceil(nthreads << 24).max(1);
     let cut = |k| {
         let mut i = line_start(data, k * data.len() / nchunks);
@@ -620,52 +608,30 @@ fn main() {
         }
         i
     };
-    let next = AtomicUsize::new(0);
-    let take = || next.fetch_add(1, Relaxed);
-    let claim = |n| (0..).map(|_| take()).take_while(move |&k| k < n);
-    let mut chunks: Vec<_> = par(nthreads, |_| {
-        claim(nchunks).map(|k| (k, scan_chunk(data, cut(k), cut(k + 1), &plan, &rows))).collect::<Vec<_>>()
-    })
-    .into_iter()
-    .flatten()
-    .collect();
-    chunks.sort_unstable_by_key(|c| c.0);
-    plan.chunks = chunks.into_iter().map(|c| c.1).collect();
+    let scan = |_: &mut (), k| scan_chunk(data, cut(k), cut(k + 1), &plan, &rows);
+    let (chunks, hits): (_, Vec<_>) = par(nthreads, nchunks, scan).into_iter().unzip();
+    plan.chunks = chunks;
     plan.rows = rows.into_iter().map(AtomicU64::into_inner).collect();
     // Phrase matches as sorted (query, id); a phrase can occur twice in a document.
-    let mut hits = Vec::new();
-    plan.chunks.iter().for_each(|c| hits.extend(&c.hits));
+    let mut hits = hits.concat();
     hits.sort_unstable();
     hits.dedup();
 
     // Answer blocks of queries, claimed by the threads in turn.
-    next.store(0, Relaxed);
     let block = 64;
-    let mut outs: Vec<(usize, String)> = par(nthreads, |_| {
-        let mut s = Scratch::default();
-        s.bm = vec![0; words];
-        claim(nq.div_ceil(block))
-            .map(|b| {
-                let mut out = String::new();
-                for qi in b * block..((b + 1) * block).min(nq) {
-                    match query(qi) {
-                        (b'B', q) => boolean(q, &plan, &mut s, &mut out),
-                        _ => {
-                            let q = |h: &(u32, u32)| h.0 as usize;
-                            let d = &hits[hits.partition_point(|h| q(h) < qi)..hits.partition_point(|h| q(h) <= qi)];
-                            sorted_line(&mut out, d.iter().map(|h| h.1));
-                        }
-                    }
-                }
-                (b, out)
-            })
-            .collect::<Vec<_>>()
-    })
-    .into_iter()
-    .flatten()
-    .collect();
-    outs.sort_unstable_by_key(|o| o.0);
-    let out: String = outs.into_iter().map(|o| o.1).collect();
+    let at = |qi: usize| hits.partition_point(|h| (h.0 as usize) < qi);
+    let outs = par(nthreads, nq.div_ceil(block), |s: &mut Scratch, b| {
+        let mut out = String::new();
+        s.3.resize(words, 0); // the bitmap
+        for qi in b * block..((b + 1) * block).min(nq) {
+            match query(qi) {
+                (b'B', q) => boolean(q, &plan, s, &mut out),
+                _ => sorted_line(&mut out, hits[at(qi)..at(qi + 1)].iter().map(|h| h.1)),
+            }
+        }
+        out
+    });
+    let out = outs.concat();
     fs::create_dir_all(&out_dir).ok();
     fs::write(format!("{out_dir}/results.txt"), out).expect("write results.txt");
     std::process::exit(0); // the OS frees everything faster than the destructors
