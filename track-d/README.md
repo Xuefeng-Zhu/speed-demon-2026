@@ -55,6 +55,5 @@ The best official practice result so far is T=160 ms and K=24.50, at `7b43b63`. 
 
 ## With more time
 
-- Reuse one set of worker threads across the phases instead of spawning about 96 threads per run.
 - Build the backward graph without atomics by bucketing edges by head block, as the forward build does.
 - A goal-directed search would expand fewer nodes, but the landmark and contraction trials found their preprocessing too expensive for 2,000 queries.

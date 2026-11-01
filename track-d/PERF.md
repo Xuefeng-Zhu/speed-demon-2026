@@ -207,3 +207,7 @@ The reverted three-stage BFS prefetch was re-screened stage by stage on `97df345
 
 Board run at `7b43b63` (run ID not recorded): T=160 ms, K=24.50, a new D best (previous best K=24.11 at T=163.10 ms, S=407). The K model predicts 24.11 × (163.10/160)^0.5 × (407/386)^0.15 ≈ 24.54 if S=386, as expected; board S was not recorded.
 
+## Round 3: persistent worker threads (2026-10-31, not kept)
+
+Spawning and joining the worker threads costs about 0.2 ms per `parallel` call in the sandbox. A persistent channel-fed pool measured 171.0 ms median against 169.5 ms over 31 alternating runs (no measurable gain) and adds 22 counted lines, about −0.8% K. Details: `experiments/track-d-thread-pool41/`.
+
