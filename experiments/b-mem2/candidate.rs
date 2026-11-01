@@ -263,8 +263,11 @@ fn scan_chunk(data: &[u8], lo: usize, hi: usize, plan: &Plan, rows: &[AtomicU64]
     let first = id_at(data, lo);
     let (nl, words) = (plan.nlist, rows.len() / plan.nbm.max(1));
     // The list-term ids of each document, each document ended by u16::MAX. 32 MiB
-    // is above glibc's largest mmap threshold: the buffer gets a mapping of its
-    // own, resident only where written and unmapped when freed.
+    // plus the chunk header is above glibc's DEFAULT_MMAP_THRESHOLD_MAX (32 MiB on
+    // 64-bit): the buffer gets a mapping of its own, resident only where written
+    // and unmapped when freed, and freeing it never raises the dynamic threshold.
+    // This depends on that glibc constant: a libc or base image with a higher
+    // maximum would bring back the arena retention (experiments/b-mem2/README.md).
     let mut stream = Vec::with_capacity(1 << 24);
     let (mut hits, mut doc, mut new, mut anch) = (Vec::new(), first, Vec::new(), Vec::new());
     // The bitmap words of the current 64 documents, stored when they are done.
