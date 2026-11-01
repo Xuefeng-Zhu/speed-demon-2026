@@ -227,3 +227,4 @@ The final head `6d785be`, with #28 kept, ran `run-a283f9503c48`: T=173.0 ms, M=6
 - Nov 1 2026: opt7 b-prefault run 2 fd1e2df run-64eea32f1163 T 203.3 ms M 47.2 MB S 669 K 26.62. LOST (early worker prefault likely contends with main-thread parse faults). Reverted to chunkwise << 24. b-prefault-36 not run (same change).
 - Nov 1 2026: opt7 b-lean-reuse a3589b2 run-3ae685d64d7d T 170.0 ms M 49.2 MB S 654 K 28.96 (run 1).
 - Nov 1 2026: opt7 b-lean-reuse run 2 a3f78a7 run-4f443b004c3d T 171.9 ms M 49.8 MB S 654 K 28.73. KEPT (mean 28.85 vs 28.45 for chunkwise << 24). Production B = opt7/b/cand/b-lean-reuse.
+- Nov 1 2026: b-lean-prefetch (list prefetch 8 queries ahead) e767d74 run-c90864ae586c T 183.5 ms M 49.5 MB S 662 K 27.80. LOST (A same run normal 26.9 ms); run 2 skipped.

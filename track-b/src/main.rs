@@ -371,9 +371,11 @@ fn scan_chunk(c: &mut Chunk, data: &[u8], lo: usize, hi: usize, n: usize, plan: 
     hits.dedup(); // a phrase can occur twice in a document
 }
 
-/// A query's answer so far: count << 44 | id sum (below 2^44 for up to
-/// 5.9 million documents), and the ten smallest ids, sorted and padded with
-/// u32::MAX, the last of them also in `max`.
+/// A query's answer: count << 44 | id sum, and ten sorted smallest ids,
+/// padded with u32::MAX. With at most 250,000 documents, count fits the
+/// high 20 bits and id sum fits the low 44 bits. Linux queries occupy
+/// separate cache lines; the last top-ten entry is also kept in `max`.
+#[cfg_attr(target_os = "linux", repr(align(64)))]
 struct Acc {
     ns: AtomicU64,
     max: AtomicU32,
@@ -389,10 +391,14 @@ impl Acc {
         self.ns.fetch_add(((n as u64) << 44) + sum + n as u64 * first as u64, Relaxed);
         if first < self.max.load(Relaxed) {
             let t = &mut *self.top.lock().unwrap();
-            for d in top.map(|d| first + d).take_while(|&d| d < self.max.load(Relaxed)) {
-                (t[9] = d, t.sort_unstable());
-                self.max.store(t[9], Relaxed);
+            for d in top.take(10).map(|d| first + d) {
+                let i = t.partition_point(|&x| x < d);
+                if i < 10 {
+                    t[i..].rotate_right(1);
+                    t[i] = d;
+                }
             }
+            self.max.store(t[9], Relaxed);
         }
     }
 
@@ -504,12 +510,6 @@ fn boolean(q: &[(u8, u32)], plan: &Plan, c: &Chunk, s: &mut Scratch, acc: &Acc) 
 /// it has, and the phrases it matches.
 fn answer(c: &Chunk, plan: &Plan, acc: &[Acc], s: &mut Scratch) {
     for qi in 0..acc.len() {
-        // Start loading the u16 lists of the query 8 ahead.
-        if let Some(w) = plan.qs.get(qi + 8..qi + 10) {
-            for &(_, t) in plan.terms[w[0].1 as usize..w[1].1 as usize].iter().filter(|t| (t.1 as usize) < plan.nlist) {
-                _ = c.docs.get(c.offs[t as usize] as usize).map(prefetch);
-            }
-        }
         let trig = &plan.trig[plan.toff[qi] as usize..plan.toff[qi + 1] as usize];
         let has = |&t: &u32| plan.role[t as usize] & BITMAP != 0 || !c.post(t as usize).is_empty();
         if trig.iter().any(has) {
@@ -645,8 +645,9 @@ fn main() {
     for (i, &t) in order.iter().enumerate() {
         new[t] = i as u32;
     }
-    plan.keys.iter_mut().for_each(|e| e[2] = new[e[2] as usize] as u64);
-    plan.long.values_mut().for_each(|t| *t = new[*t as usize] as u64);
+    let remap = |t: u64| new[t as usize] as u64;
+    plan.keys.iter_mut().for_each(|e| e[2] = remap(e[2]));
+    plan.long.values_mut().for_each(|t| *t = remap(*t));
     plan.role = order.iter().map(|&t| plan.role[t]).collect();
     let df: Vec<u32> = order.iter().map(|&t| freq[t].0).collect();
     terms.iter_mut().for_each(|e| e.1 = new[e.1 as usize]);
@@ -685,8 +686,9 @@ fn main() {
         }
         plan.phr.extend([u32::MAX; 3]);
     }
-    plan.keys.iter_mut().for_each(|e| e[2] |= start[e[2] as usize]);
-    plan.long.values_mut().for_each(|t| *t |= start[*t as usize]);
+    let anchor = |t: u64| start[t as usize];
+    plan.keys.iter_mut().for_each(|e| e[2] |= anchor(e[2]));
+    plan.long.values_mut().for_each(|t| *t |= anchor(*t));
 
     (plan.qs, plan.terms) = (qs, terms);
     // Equal byte ranges, each moved to the next line whose id is a multiple
@@ -707,7 +709,8 @@ fn main() {
     let next = AtomicUsize::new(0);
     par(nthreads, |_| {
         let (mut s, mut c) = (Scratch { bm: vec![0; 1024], ..Default::default() }, Chunk::default());
-        for k in (0..).map(|_| next.fetch_add(1, Relaxed)).take_while(|&k| k < nchunks) {
+        let chunks = (0..).map(|_| next.fetch_add(1, Relaxed));
+        for k in chunks.take_while(|&k| k < nchunks) {
             let (lo, hi) = (cut(k), cut(k + 1));
             let n = if hi < data.len() { id_at(data, hi) as usize } else { ndocs };
             if lo < hi {
