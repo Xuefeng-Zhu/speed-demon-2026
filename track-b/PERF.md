@@ -213,3 +213,9 @@ The final head `6d785be`, with #28 kept, ran `run-a283f9503c48`: T=173.0 ms, M=6
 - Nov 1 2026: PR #35+#37 (small last chunk round, drop plan.long) 065dc1b run-8cd9eb202bd0 T 259.2 ms M 56.0 MB K 23.23; d5efd3a run-18f6dd08becc T 227.8 ms M 58.4 MB K 24.56. Lower M but much slower; reverted.
 
 - Nov 1 2026: b-diag-probe block on production B, 574870e run-92ca52f14c05 M 466.07 MB vs 62.59 base: (403.5+1.5)/33.55 = 12.07, so available_parallelism = 12 and no CPU quota (affinity mask = 12). T 282.0 ms (+~111 ms for 384 MiB of 4 KiB first-touch faults over 12 threads). Probe reverted.
+
+## Drop plan.long after the scan, solo retry (branch `b-pure2`, 1 Nov 2026)
+
+Collateral revert from the PR #35 + #37 bundle above (#35's small last-chunk round dominated the T loss). Resubmitting the one-line change on its own. `plan.long` (a `HashMap<Vec<u8>, u32>` of query terms longer than 16 bytes) is only used during the query parse and the scan, so it goes next to the existing `plan.keys / filter / aoff / anchors / flat` Default::default(). The answer phase (`boolean`) only reads `plan.chunks`, `plan.rows`, `plan.role`, `plan.nlist` and `plan.nbm`.
+
+Expected board effect: small (0.1 to 0.5 MB on public seed 1, more if hidden seeds use many longer query terms). <3% change, so needs two board runs per the keep rule. Full phase breakdown and the attempted-and-rejected pure savings list are in `experiments/b-pure2/README.md`. Board run pending.

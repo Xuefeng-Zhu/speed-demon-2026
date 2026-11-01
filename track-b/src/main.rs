@@ -635,8 +635,10 @@ fn main() {
     chunks.sort_unstable_by_key(|c| c.0);
     plan.chunks = chunks.into_iter().map(|c| c.1).collect();
     plan.rows = rows.into_iter().map(AtomicU64::into_inner).collect();
-    // The scan's tables; the answers do not use them.
+    // The scan's tables; the answers do not use them (long terms do not need
+    // their long key either, so the HashMap goes as well).
     (plan.keys, plan.filter, plan.aoff, plan.anchors, plan.flat) = Default::default();
+    plan.long = Default::default();
     // Phrase matches as sorted (query, id); a phrase can occur twice in a document.
     let mut hits = Vec::new();
     plan.chunks.iter().for_each(|c| hits.extend(&c.hits));
