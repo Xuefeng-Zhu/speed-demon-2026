@@ -186,3 +186,20 @@ Correctness: `experiments/a-x86-speed/check.py` on the cargo build (full seed-1 
 A parse breakdown of the post-PR #4 source (8 threads) put about 10 ms of the 20 ms parse in walking the bytes, about 4 ms in the endpoint table and 4 to 5 ms in the record push; half of the push was indexing the 72 hour vectors. Consecutive lines almost always share an hour (on seed 1, 1,054 hour changes in 3.1 million lines), so the parser now keeps the current hour's records in a local, swaps them back only when the hour changes, and writes records through a raw pointer with the length held in a local. No ordering is assumed: every hour change takes the slow path.
 
 Local x86 VM paired medians against the prior source: 0.9673 / 0.9711 / 0.9741 at 8 / 12 / 20 threads (41 rounds, seed 801) and 0.9787 / 0.9820 / 0.9780 (61 rounds, seed 802). It passed `experiments/a-x86-speed/check.py` (14 of 14) and `adversarial.py`, and the scalar build passed `adversarial.py --quick`. In the same pass these were rejected: a three-word endpoint hash (1.003 to 1.019), two interleaved parse cursors (1.006 to 1.021), direct percentiles for groups of one or two (noise; see `experiments/a-x86-speed-2/`), and removing `MADV_DONTNEED` (1.026 to 1.050). The source grows from 496 to 519 lines. These are local measurements, not official scores. Details: `experiments/a-x86-speed-3/README.md`.
+
+## Rejected on the board: allocator settings (PR #19)
+
+A phase profile of `98c96ce` on the local x86 VM found parse threads waiting about 2 ms for page faults: every buffer of 128 KiB or more was its own mmap and munmap, and both take the memory-map lock for writing. Rebased onto the trimmed source `171ca6f`, the trial kept buffers in the malloc heap (`mallopt`: `M_MMAP_THRESHOLD` and `M_TOP_PAD` 32 MiB, `M_TRIM_THRESHOLD` `i32::MAX`) and gave pages back with `MADV_DONTNEED` before each free. Locally it measured paired medians 0.85 / 0.84 / 0.73 at 8 / 12 / 20 threads and only 1 to 2 MB more sampled peak `RssAnon`.
+
+Board run `run-c264b6df5fe3` (commit `e51faa2`) rejected it: M rose from about 22 MB to 65.6 MB, T did not improve, and K fell from 42.42 to 32.79. It was reverted in `e4308ed`. Two likely reasons, both unverified because the box's kernel version and huge-page setting are unknown:
+
+- Linux 6.4 and later serve most page faults under per-VMA locks, so the stalls seen on this VM's 6.1 kernel probably do not occur on the box.
+- The box's memory accounting counts heap memory that the local sampler did not see, for example because transparent huge pages are set to `always` there.
+
+From now on, local evidence counts only for CPU-level changes. Kernel- and allocator-dependent effects need a board run. Details: `experiments/a-profile-2/README.md`.
+
+## Newline-mask line stepping (local x86 VM, CPU-level, branch a-cpu-profile)
+
+A one-thread CPU attribution of `e4308ed` (no lock or page-fault contention, so it counts work, not waiting) put the parse at 93.7 ms and the summary at 23.7 ms. The parse costs did not add up when parts were switched off, because the loop ran as one dependency chain: each line's start was known only after its latency had been parsed. The parser now takes line ends from a 64-bit newline mask of the current 64-byte block (built with the existing AVX2 `eq_mask`), so the next line's start no longer waits for this line, and `parse_latency` gets the digit count from the known line end.
+
+Local paired medians against `e4308ed`: 0.8300 / 0.9524 / 0.9614 / 0.9442 at 1 / 8 / 12 / 20 threads (31 rounds, seed 1301) and 0.8293 / 0.9593 / 0.9509 / 0.9700 (61 rounds, seed 1302). On one thread the run drops from 118.7 to 98.2 ms. It passed `check.py` (14 of 14) and `adversarial.py --spec`. The source grows from 407 to 414 code lines by `experiments/a-trim/sloc.py`. Local measurements only, not official scores. Details: `experiments/a-cpu-profile/README.md`.
