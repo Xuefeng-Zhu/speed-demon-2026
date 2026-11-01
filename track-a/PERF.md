@@ -186,3 +186,33 @@ Correctness: `experiments/a-x86-speed/check.py` on the cargo build (full seed-1 
 A parse breakdown of the post-PR #4 source (8 threads) put about 10 ms of the 20 ms parse in walking the bytes, about 4 ms in the endpoint table and 4 to 5 ms in the record push; half of the push was indexing the 72 hour vectors. Consecutive lines almost always share an hour (on seed 1, 1,054 hour changes in 3.1 million lines), so the parser now keeps the current hour's records in a local, swaps them back only when the hour changes, and writes records through a raw pointer with the length held in a local. No ordering is assumed: every hour change takes the slow path.
 
 Local x86 VM paired medians against the prior source: 0.9673 / 0.9711 / 0.9741 at 8 / 12 / 20 threads (41 rounds, seed 801) and 0.9787 / 0.9820 / 0.9780 (61 rounds, seed 802). It passed `experiments/a-x86-speed/check.py` (14 of 14) and `adversarial.py`, and the scalar build passed `adversarial.py --quick`. In the same pass these were rejected: a three-word endpoint hash (1.003 to 1.019), two interleaved parse cursors (1.006 to 1.021), direct percentiles for groups of one or two (noise; see `experiments/a-x86-speed-2/`), and removing `MADV_DONTNEED` (1.026 to 1.050). The source grows from 496 to 519 lines. These are local measurements, not official scores. Details: `experiments/a-x86-speed-3/README.md`.
+
+## Board results for the x86 work (2026-10-31 to 11-01)
+
+These are the board's figures as reported by the team. Run IDs are listed where they were recorded in commit messages. The run IDs for the PR #4 and PR #10 runs were not recorded and should be added from the board.
+
+| Trial | Commit | Board run | T | M | S | K | Decision |
+|---|---|---|---:|---:|---:|---:|---|
+| PR #4 x86 speed pass, three runs | `128a825` | not recorded | 27.1 / 28.0 / 28.1 ms | 22.2 to 24.7 MB | | 39.20 / 39.35 / 39.31 (prior 38.21 at T 32.9 ms) | kept |
+| PR #10 line trim | `171ca6f` | not recorded | 24.75 ms | | 474 to 414 | 41.70 to 42.42 | kept |
+| PR #19 allocator settings | `e51faa2` | `run-c264b6df5fe3` | not faster | 65.6 MB (from about 22) | | 32.79 | reverted in `e4308ed` |
+| PR #21 newline-mask line stepping | `35b31fd` | `run-155bb12513d7` | 26.8 ms | | | 40.16 (same-code range 40.6 to 42.6) | reverted in `80882e1` |
+
+PR #4's speedup on the box (about 16% in T) fell short of the local 8-thread estimate (about 22%), and most of its K gain was taken by the added lines (S). PR #10 confirms that S is a large factor at this point: 60 fewer lines raised K by 1.7% at about the same T.
+
+### PR #19: allocator settings (rejected)
+
+A phase profile of `98c96ce` on the local VM found parse threads waiting about 2 ms for page faults: every buffer of 128 KiB or more was its own mmap and munmap, and both take the memory-map lock for writing. The trial kept buffers in the malloc heap (`mallopt`: `M_MMAP_THRESHOLD` and `M_TOP_PAD` 32 MiB, `M_TRIM_THRESHOLD` `i32::MAX`) and gave pages back with `MADV_DONTNEED` before each free. Locally it measured paired medians 0.85 / 0.84 / 0.73 at 8 / 12 / 20 threads, with only 1 to 2 MB more sampled peak `RssAnon`. On the board M rose to 65.6 MB and T did not improve. Two likely reasons, both unverified because the box's kernel version and huge-page setting are unknown:
+
+- Since Linux 6.4 most page faults take per-VMA locks, so the stalls seen on this VM's 6.1 kernel probably do not happen on the box.
+- The box's memory accounting counts heap memory that the local sampler did not see, for example because transparent huge pages are set to `always` there.
+
+Details: `experiments/a-profile-2/README.md`.
+
+### PR #21: newline-mask line stepping (rejected)
+
+A one-thread CPU attribution of `e4308ed` showed that the parse loop ran as one dependency chain: each line's start was known only after its latency had been parsed. Taking line ends from a 64-bit AVX2 newline mask broke that chain. Locally, one-thread CPU fell by 17% (118.7 to 98.2 ms) and wall time by 3 to 5% at 8 to 20 threads, with 7 more lines. On the board T was 26.8 ms and K 40.16, below the same-code range.
+
+### Lesson
+
+Two local gains in a row, one from removing kernel lock waits and one from cutting parse CPU, did not carry over. By a rough bound, the box's T of about 25 ms is well above its CPU-only floor, so local profiles no longer predict where the box spends its time. The next step is to measure on the box itself (`experiments/a-box-probes/`). Details: `experiments/a-cpu-profile/README.md`.

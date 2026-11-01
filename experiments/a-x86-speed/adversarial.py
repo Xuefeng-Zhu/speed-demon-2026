@@ -15,7 +15,10 @@ parse paths changed on branch a-x86-speed:
   or spread over 32 bits, in shuffled line order.
 
 Usage: adversarial.py --binary BIN [--quick] (--quick skips the 70,000-endpoint case, for a
-binary built with a forced constant hash where every probe collides).
+binary built with a forced constant hash where every probe collides). --spec keeps every input
+within the spec (endpoints of at most 125 bytes, at most 1,842 distinct endpoints), for a binary
+that rejects inputs beyond it: lengths 1..125 only, and 1,842 distinct endpoints instead of the
+5,000 and 70,000 cases.
 """
 import argparse
 import datetime
@@ -88,11 +91,15 @@ def group_sizes(rng):
     return out
 
 
-def cases(rng, quick):
-    lengths = [endpoint(rng, n) for n in range(1, 301)] + ["/"] + families(rng)
+def cases(rng, quick, spec):
+    lengths = [endpoint(rng, n) for n in range(1, 126 if spec else 301)] + ["/"] + families(rng)
     yield "lengths", lines(rng, lengths, 60000)
-    yield "distinct-5000", lines(rng, [f"/d/{k}" for k in range(5000)], 40000)
-    if not quick:
+    if spec:
+        many = [endpoint(rng, rng.randrange(2, 126)) for _ in range(1842 - len(set(lengths)))]
+        yield "distinct-1842", lines(rng, sorted(set(lengths)) + many, 60000)
+    else:
+        yield "distinct-5000", lines(rng, [f"/d/{k}" for k in range(5000)], 40000)
+    if not quick and not spec:
         many = [endpoint(rng, rng.randrange(2, 126)) for _ in range(70000)]
         yield "distinct-70000", lines(rng, many, 150000)
     yield "latency", lines(rng, ["/", "/a", "/v2/orders", "/v2/orders/{id}"], 30000)
@@ -103,6 +110,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--binary", required=True)
     p.add_argument("--quick", action="store_true")
+    p.add_argument("--spec", action="store_true")
     p.add_argument("--threads", default="1,2,3,7,12")
     a = p.parse_args()
     binary = str(pathlib.Path(a.binary).resolve())
@@ -113,7 +121,7 @@ def main():
         data, actual, expected = root / "data", root / "actual", root / "expected"
         for d in (data, actual, expected):
             d.mkdir()
-        for name, text in cases(rng, a.quick):
+        for name, text in cases(rng, a.quick, a.spec):
             (data / "requests.log").write_text("".join(text), encoding="ascii")
             subprocess.run(["python3", str(REF), "--data", str(data), "--out", str(expected)],
                            check=True, stdout=subprocess.DEVNULL)

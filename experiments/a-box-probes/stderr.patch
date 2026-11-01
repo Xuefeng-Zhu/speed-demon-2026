@@ -1,0 +1,74 @@
+--- a/track-a/src/main.rs
++++ b/track-a/src/main.rs
+@@ -405,12 +405,20 @@
+     (order, names, Mutex::new(jobs.into_iter().enumerate()))
+ }
+ 
++/// Probe: milliseconds since the start of `main`, for the phase line written to stderr.
++static T0: OnceLock<std::time::Instant> = OnceLock::new();
++fn ms() -> f64 {
++    T0.get().map_or(0.0, |t| t.elapsed().as_secs_f64() * 1e3)
++}
++
+ fn main() {
++    T0.set(std::time::Instant::now()).unwrap();
+     let data_dir = env::var("SD_DATA").unwrap_or_else(|_| "/data".into());
+     let out_dir = env::var("SD_OUT").unwrap_or_else(|_| "/out".into());
+     let file = fs::File::open(format!("{data_dir}/requests.log")).expect("open requests.log");
+     let len = file.metadata().unwrap().len() as usize;
+     let d = map_file(&file, len);
++    let t_mapped = ms();
+     let cpus = thread::available_parallelism().map_or(1, |n| n.get());
+     let threads = env::var("SD_THREADS").map_or(cpus, |t| t.parse().unwrap());
+ 
+@@ -432,15 +440,23 @@
+     let barrier = Barrier::new(threads);
+     let mut f = fs::File::create(format!("{out_dir}/summary.txt")).expect("create summary.txt");
+     let (tx, rx) = mpsc::channel();
++    let t_spawn = ms();
++    let marks: Vec<Mutex<[f64; 2]>> = (0..threads).map(|_| Mutex::new([0.0; 2])).collect();
++    let (t_barrier, t_plan) = (Mutex::new(0.0), Mutex::new(0.0));
++    let mut t_written = 0.0;
+     thread::scope(|s| {
+         for t in 0..threads {
+             let (tx, shared, next_id, parsed, plan, barrier) =
+                 (tx.clone(), &shared, &next_id, &parsed, &plan, &barrier);
++            let (marks, t_barrier, t_plan) = (&marks, &t_barrier, &t_plan);
+             let (start, end) = (cuts[t], cuts[t + 1]);
+             s.spawn(move || {
+                 *parsed[t].lock().unwrap() = parse(d, start, end, shared, next_id);
++                marks[t].lock().unwrap()[0] = ms();
+                 if barrier.wait().is_leader() {
++                    *t_barrier.lock().unwrap() = ms();
+                     let _ = plan.set(make_plan(shared, parsed));
++                    *t_plan.lock().unwrap() = ms();
+                 }
+                 barrier.wait();
+                 // Workers take whole hours, in order, from a queue; the main thread writes them
+@@ -450,6 +466,7 @@
+                 while let Some((h, records)) = { let job = jobs.lock().unwrap().next(); job } {
+                     tx.send((h, summarize(h, records, order, names, &mut scratch))).unwrap();
+                 }
++                marks[t].lock().unwrap()[1] = ms();
+             });
+         }
+         drop(tx);
+@@ -461,5 +478,18 @@
+                 written += 1;
+             }
+         }
++        t_written = ms();
+     });
++    // One line on stderr; summary.txt is unchanged. Times are ms since the start of main.
++    let mut m: Vec<[f64; 2]> = marks.iter().map(|m| *m.lock().unwrap()).collect();
++    m.sort_by(|a, b| a[0].total_cmp(&b[0]));
++    let (p0, pm, p1) = (m[0][0], m[m.len() / 2][0], m[m.len() - 1][0]);
++    m.sort_by(|a, b| a[1].total_cmp(&b[1]));
++    let (w0, w1) = (m[0][1], m[m.len() - 1][1]);
++    let (b, p) = (*t_barrier.lock().unwrap(), *t_plan.lock().unwrap());
++    eprintln!(
++        "sd_phases threads={threads} mapped={t_mapped:.3} spawn={t_spawn:.3} parse_first={p0:.3} parse_median={pm:.3} \
++         parse_last={p1:.3} barrier={b:.3} plan={p:.3} summary_first={w0:.3} summary_last={w1:.3} written={t_written:.3} end={:.3}",
++        ms()
++    );
+ }
