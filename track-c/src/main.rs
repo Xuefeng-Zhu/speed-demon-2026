@@ -22,21 +22,9 @@ fn zeroed<T>(n: usize, advice: i32) -> &'static [T] {
     unsafe { std::slice::from_raw_parts(p as _, n) }
 }
 
-/// Runs `f(0)..f(n - 1)` on n scoped threads and returns the results in order.
-fn par<T: Send>(n: usize, f: impl Fn(usize) -> T + Sync) -> Vec<T> {
-    let f = &f;
-    thread::scope(|s| {
-        let handles: Vec<_> = (0..n).map(|t| s.spawn(move || f(t))).collect();
-        handles.into_iter().map(|h| h.join().unwrap()).collect()
-    })
-}
-
 /// Asks the CPU to start loading the cache line at `p` without waiting.
 fn prefetch<T>(p: &T) {
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        std::arch::asm!("prefetcht0 [{}]", in(reg) p, options(nomem, nostack))
-    };
+    unsafe { std::arch::asm!("prefetcht0 [{}]", in(reg) p, options(nomem, nostack)) };
 }
 
 /// Bytes `p..p + 8` of `b` as a little-endian word. Callers only read where eight bytes
@@ -82,8 +70,8 @@ struct Pad<T>(T);
 const RING: usize = 16;
 const BLOCK: usize = 1024;
 
-/// Bit i of each mask is set where byte i of the block is a quote, a comma or an LF.
-#[cfg(target_feature = "avx2")]
+/// Bit i of each mask is set where byte i of the block is a quote, a comma or an LF. The
+/// build targets x86-64-v3 (.cargo/config.toml), so AVX2 is always there.
 fn masks(p: &[u8; 64]) -> [u64; 3] {
     use std::arch::x86_64::*;
     unsafe {
@@ -92,13 +80,11 @@ fn masks(p: &[u8; 64]) -> [u64; 3] {
         [b'"', b',', b'\n'].map(|c| m(v[0], c as i8) as u64 | (m(v[1], c as i8) as u64) << 32)
     }
 }
-#[cfg(not(target_feature = "avx2"))] // portable, slow; the scoring box has AVX2
-fn masks(p: &[u8; 64]) -> [u64; 3] {
-    [b'"', b',', b'\n'].map(|c| (0..64).fold(0, |m, i| m | ((p[i] == c) as u64) << i))
-}
 
 /// One output line: count id_sum amount_sum amount_min amount_max names_distinct name_bytes note_bytes.
 type Agg = [i64; 8];
+/// A parsed record waiting in the ring: name hash, region id, [id, cents, name bytes, note bytes].
+type Rec = (u64, usize, [i64; 4]);
 const EMPTY: Agg = [0, 0, 0, i64::MAX, i64::MIN, 0, 0, 0];
 
 fn merge(a: &mut Agg, b: Agg) {
@@ -120,9 +106,9 @@ fn column(i: usize, v: i64) -> String {
     }
 }
 
-/// A country code as a number from 1 to 26^3; 0 means no country.
+/// The country code at the start of c as a number from 1 to 26^3; 0 means no country.
 fn code(c: &[u8]) -> usize {
-    1 + c.iter().fold(0, |a, &c| a * 26 + (c - b'A') as usize)
+    1 + c[..3].iter().fold(0, |a, &c| a * 26 + (c - b'A') as usize)
 }
 
 fn main() {
@@ -133,11 +119,8 @@ fn main() {
     let regs = map(format!("{data}/regions.csv"));
     let n = thread::available_parallelism().map_or(1, |n| n.get());
     // regions.csv is sorted, so its last line holds the largest region id.
-    let last = regs[..regs.len() - 1]
-        .iter()
-        .rposition(|&c| c == b'\n')
-        .unwrap()
-        + 1;
+    let lf = |&c: &u8| c == b'\n';
+    let last = 1 + regs[..regs.len() - 1].iter().rposition(lf).unwrap();
     let comma = |p: usize| p + regs[p..].iter().position(|&c| c == b',').unwrap();
     let max = num(ld(regs, comma(last) - 8), comma(last) - last) as usize;
     let region: &[AtomicU8] = zeroed(max + 1, 14);
@@ -154,19 +137,18 @@ fn main() {
             None => p += got,
         }
     };
-    let start = cr(0) + 2; // the header ends with CRLF (spec 2.2)
-    let chunks = 16 * n;
+    let (start, chunks) = (cr(0) + 2, 16 * n); // the header ends with CRLF (spec 2.2)
     let bound = |c: usize| match c {
         0 => start,
-        _ if c == chunks => size,
-        _ => (cr(start + (size - start) * c / chunks) + 2).min(size),
+        _ => (cr(start + (size - start) * c / chunks) + 2).min(size), // cr(size) is size
     };
-    let rstart = regs.iter().position(|&c| c == b'\n').unwrap() + 1;
-    let rcut = |t: usize| match t {
-        0 => rstart,
-        _ => (rstart + (regs.len() - rstart) * t / n..regs.len())
-            .find(|&i| regs[i - 1] == b'\n')
-            .unwrap_or(regs.len()),
+    // Thread t reads the region lines rcut(t)..rcut(t + 1): rcut(t) is the start of the first
+    // line that begins at or after t/n of the way; rcut(n) is the end (the last line ends
+    // with LF, spec 2.3).
+    let rstart = 1 + regs.iter().position(lf).unwrap();
+    let rcut = |t: usize| {
+        let i = rstart - 1 + (regs.len() - rstart) * t / n;
+        i + 1 + regs[i..].iter().position(lf).unwrap()
     };
     let mut bits = 17; // 2^17 slots in all; twice as many whenever one owner's fill 7/8
     let aggs = loop {
@@ -179,33 +161,29 @@ fn main() {
         let full = &zeroed::<AtomicBool>(1, 0)[0];
         let inbox: Vec<Pad<Mutex<Vec<Vec<u64>>>>> = (0..n).map(|_| Default::default()).collect();
         let (next, barrier) = (&zeroed::<AtomicUsize>(1, 0)[0], Barrier::new(n));
-        let aggs = par(n, |t| {
+        // The worker of thread t, run on n scoped threads below.
+        let work = |t: usize| {
             // Copies of what the hot loops read, so no worker reads a line another one writes.
             let (region, inbox, n, m) = (region, &inbox[..], n, m);
-            let mine = &table[5 * m * t..5 * m * (t + 1)];
+            let (mine, mut used) = (&table[5 * m * t..5 * m * (t + 1)], 0);
             // Fault this owner's pages in now, before other threads start sending it events.
             mine.iter().step_by(512).for_each(|w| w.store(0, Relaxed));
-            let mut used = 0;
             // Every thread reads its share of the regions twice: first to note which countries
             // occur, then to map each region id to its country's group. Groups are numbered in
             // key order, so the output needs no sort; group 0 (no country) is _UNMATCHED.
             let mut group = [0u8; 17577];
             for pass in 0..2 {
-                let (mut p, end) = (rcut(t), if t + 1 == n { regs.len() } else { rcut(t + 1) });
+                let (mut p, end) = (rcut(t), rcut(t + 1));
                 while p < end {
                     let e = comma(p);
-                    let (id, c) = (
-                        num(ld(regs, e - 8), e - p) as usize,
-                        code(&regs[e + 1..e + 4]),
-                    );
-                    p = e;
+                    let (id, c) = (num(ld(regs, e - 8), e - p) as usize, code(&regs[e + 1..]));
                     match pass {
                         // Load first: once a country is set, no thread writes its line again.
                         0 if seen[c].load(Relaxed) == 0 => seen[c].store(1, Relaxed),
                         0 => {}
                         _ => region[id].store(group[c], Relaxed),
                     }
-                    p += 5;
+                    p = e + 5;
                 }
                 barrier.wait();
                 let mut g = 0;
@@ -217,8 +195,7 @@ fn main() {
             }
             // A record is finished (its group and name looked up) 16 records after it is
             // parsed, so that the cache lines it needs have time to arrive.
-            let mut agg = vec![EMPTY; 256];
-            let mut out: Vec<Vec<u64>> = vec![Vec::with_capacity(BLOCK); n];
+            let (mut agg, mut out) = (vec![EMPTY; 256], vec![Vec::with_capacity(BLOCK); n]);
             // An event is the name's hash with its low byte replaced by the group.
             let owner = |x: u64| ((x >> 32) * n as u64 >> 32) as usize;
             let home = |x: u64| ((x >> 8 & 0xFF_FFFF) * m as u64 >> 24) as usize;
@@ -226,9 +203,7 @@ fn main() {
                 let blocks = std::mem::take(&mut *inbox[t].0.lock().unwrap()); // unlock before the loop
                 for v in blocks {
                     for (j, &x) in v.iter().enumerate() {
-                        if let Some(&y) = v.get(j + 8) {
-                            prefetch(&mine[5 * home(y)]);
-                        }
+                        v.get(j + 8).map(|&y| prefetch(&mine[5 * home(y)]));
                         if used + 1 >= m {
                             continue; // the table is full: this run's result is discarded
                         }
@@ -254,22 +229,20 @@ fn main() {
                     }
                 }
             };
-            let mut ring = [(0, 0, [0; 4]); RING];
-            let finish = |(h, rid, [n_id, c, nl, tl]): (u64, usize, [i64; 4]),
-                          agg: &mut Vec<Agg>,
-                          out: &mut Vec<Vec<u64>>| {
-                if n_id > 0 {
-                    let g = region.get(rid).map_or(0, |r| r.load(Relaxed)) as usize;
-                    merge(&mut agg[g], [1, n_id, c, c, c, 0, nl, tl]);
-                    let o = &mut out[owner(h)];
-                    o.push(h & !0xFF | g as u64);
-                    if o.len() == BLOCK {
-                        let full = std::mem::replace(o, Vec::with_capacity(BLOCK));
-                        inbox[owner(h)].0.lock().unwrap().push(full);
+            let (mut ring, mut r): ([Rec; RING], _) = ([(0, 0, [0; 4]); RING], 0);
+            let finish =
+                |(h, rid, [id, c, nl, tl]): Rec, agg: &mut Vec<Agg>, out: &mut Vec<Vec<u64>>| {
+                    if id > 0 {
+                        let g = region.get(rid).map_or(0, |r| r.load(Relaxed)) as usize;
+                        merge(&mut agg[g], [1, id, c, c, c, 0, nl, tl]);
+                        let o = &mut out[owner(h)];
+                        o.push(h & !0xFF | g as u64);
+                        if o.len() == BLOCK {
+                            let full = std::mem::replace(o, Vec::with_capacity(BLOCK));
+                            inbox[owner(h)].0.lock().unwrap().push(full);
+                        }
                     }
-                }
-            };
-            let mut r = 0;
+                };
             let claim = || Some(next.fetch_add(1, Relaxed)).filter(|&c| c < chunks);
             // The chunk is read through buf, which holds the file from offset `off`: when the
             // parse reaches its end, the unfinished record and the eight bytes before it (read
@@ -297,23 +270,18 @@ fn main() {
                     let b = &buf[..];
                     while base < limit {
                         let [quote, comma, lf] = masks(b[base..base + 64].try_into().unwrap());
-                        let mut inside =
-                            [1, 2, 4, 8, 16, 32].iter().fold(quote, |x, s| x ^ x << s) ^ carry;
+                        let mut inside = (0..6).fold(quote, |x, s| x ^ x << (1 << s)) ^ carry;
                         carry = 0u64.wrapping_sub(inside >> 63);
-                        inside |= u64::MAX
-                            .checked_shl((end - off + last - base) as u32)
-                            .unwrap_or(0);
+                        let tail = (end - off + last - base) as u32; // bits from here on are past the chunk
+                        inside |= u64::MAX.checked_shl(tail).unwrap_or(0);
                         let mut ends = (comma | lf) & !inside;
                         while ends != 0 {
                             let (t, p) =
                                 (ends.trailing_zeros(), base + ends.trailing_zeros() as usize);
                             ends &= ends - 1;
                             if k < 4 {
-                                (f[k], q[k], k) = (
-                                    p,
-                                    qs + (quote & ((1 << t) - 1)).count_ones() as usize,
-                                    k + 1,
-                                );
+                                let before = (quote & ((1 << t) - 1)).count_ones() as usize;
+                                (f[k], q[k], k) = (p, qs + before, k + 1);
                                 continue;
                             }
                             // A record: [BOM] id , name , note , region , amount [CR] LF
@@ -369,6 +337,10 @@ fn main() {
             barrier.wait();
             mark(&mut agg);
             agg
+        };
+        let aggs: Vec<_> = thread::scope(|s| {
+            let handles: Vec<_> = (0..n).map(|t| s.spawn(move || work(t))).collect();
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
         });
         if !full.load(Relaxed) {
             break aggs;

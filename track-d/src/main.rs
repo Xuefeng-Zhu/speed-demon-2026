@@ -1,14 +1,16 @@
 //! Speed Demon 2026, Track D (Traverse): exact shortest paths on a 5M-edge graph.
 //!
 //! 1. `graph.txt` is mapped into memory; every thread parses its own slice
-//!    and buckets each edge by the block of node ids its tail falls in.
-//!    Thread j then turns block j into its slice of a CSR graph. An edge is
+//!    twice, first counting each node's edges, then placing every edge in
+//!    its row of a CSR graph, so no edge list is held in between. An edge is
 //!    one u32: the head in the low bits, the weight in the rest, or an escape
 //!    code for the rare weight that does not fit (looked up in a sorted list).
+//!    Row starts are packed into a byte per node plus a u32 per block.
 //! 2. The file's ids carry no locality, so nodes are renumbered: threads
 //!    grow breadth-first clusters of nearby nodes and number each cluster
 //!    contiguously. The forward graph's rows are moved to the new ids, and
-//!    the backward graph is built from it.
+//!    the backward graph is built from it. Each graph is freed as soon as
+//!    the next one no longer needs it.
 //! 3. Threads pull queries from a shared counter and answer each with a
 //!    bidirectional Dijkstra search that expands the side with the smaller
 //!    heap. It keeps u32 distances in blocks handed out on demand, so twelve
@@ -86,16 +88,39 @@ fn prefetch<T>(x: &[T], i: usize) {
     }
 }
 
-/// Compressed sparse rows: the edges out of `u` are `adj[first[u]..first[u + 1]]`,
+/// Compressed sparse rows: the edges out of `u` are `adj[at(u)..at(u + 1)]`,
 /// each packed as `head | code << bits`, where `code` is the weight, or `wide`
 /// (all ones) for a weight that does not fit, found in `Net::wide` instead.
+/// A row starts at `base[u >> k] + off[u]`: a u32 per block of `1 << k` rows
+/// plus a byte per row, with blocks as long as a byte can span (64 rows on
+/// road graphs, 1 at worst), so the row index is 1.1 bytes per node, not 4.
 struct Csr {
-    first: Vec<u32>,
+    base: Vec<u32>,
+    off: Vec<u8>,
+    k: u32,
     adj: Vec<u32>,
 }
 
+fn at(g: &Csr, u: usize) -> usize {
+    g.base[u >> g.k] as usize + g.off[u] as usize
+}
+
 fn edges(g: &Csr, u: usize) -> &[u32] {
-    &g.adj[g.first[u] as usize..g.first[u + 1] as usize]
+    &g.adj[at(g, u)..at(g, u + 1)]
+}
+
+/// Packs row starts `first` (with `first[n] = m`) into a `Csr`.
+fn csr(first: Vec<u32>, adj: Vec<u32>) -> Csr {
+    let fits = |k: u32| first.chunks(1 << k).all(|c| c[c.len() - 1] - c[0] < 256);
+    let k = (0..7).rev().find(|&k| fits(k)).unwrap();
+    let mut off = vec![0; first.len()];
+    for (o, c) in off.chunks_mut(1 << k).zip(first.chunks(1 << k)) {
+        for (o, &f) in o.iter_mut().zip(c) {
+            *o = (f - c[0]) as u8;
+        }
+    }
+    let base = first.chunks(1 << k).map(|c| c[0]).collect();
+    Csr { base, off, k, adj }
 }
 
 /// The two graphs (forward, backward), in the new ids, plus the encoding.
@@ -122,13 +147,53 @@ fn ends(first: &[AtomicU32], threads: usize) {
     });
 }
 
+/// Steps `*p` past the next newline (the first byte with bit 5 clear) and
+/// returns 0.
+fn skip(text: &[u8], p: &mut usize) -> u32 {
+    while let Some(b) = text.get(*p..*p + 8) {
+        let x = !u64::from_le_bytes(b.try_into().unwrap()) & 0x2020_2020_2020_2020;
+        let k = x.trailing_zeros() as usize / 8;
+        *p += k + (k < 8) as usize;
+        if k < 8 {
+            return 0;
+        }
+    }
+    *p += text[*p..].iter().position(|&c| c == b'\n').unwrap() + 1;
+    0
+}
+
+/// Calls `f((tail, head, weight))` for each edge line of `text`, 16 lines
+/// after parsing it: meanwhile `first[tail]`, then the slot of `adj` it points
+/// to, are loaded into cache. With `adj` empty (the counting pass) only the
+/// tail is parsed. The last lines go in any order.
+fn scan(text: &[u8], first: &[AtomicU32], adj: &[AtomicU32], mut f: impl FnMut((u32, u32, u32))) {
+    let (mut ring, mut k, mut p) = ([(0, 0, 0); 16], 0, 0);
+    while p < text.len() {
+        let u = num(text, &mut p);
+        let e = match adj {
+            [] => (u, skip(text, &mut p), 0),
+            _ => (u, num(text, &mut p), num(text, &mut p)),
+        };
+        prefetch(first, u as usize);
+        if !adj.is_empty() {
+            let slot = first[ring[(k + 8) % 16].0 as usize].load(Relaxed);
+            prefetch(adj, slot as usize);
+        }
+        let old = std::mem::replace(&mut ring[k % 16], e);
+        if k >= 16 {
+            f(old);
+        }
+        k += 1;
+    }
+    ring[..k.min(16)].iter().for_each(|&e| f(e));
+}
+
 /// The forward graph in the file's ids, plus the edges with wide weights as
 /// (tail, head, weight). The file is mapped, not read: its pages are already
-/// cached and are not charged to this process. Thread i parses the lines that
-/// start in its share of the bytes and buckets each edge, packed into a u64,
-/// by the block of ids its tail falls in; thread j then turns block j into
-/// its slice of the arrays with a counting sort, so no atomics are needed and
-/// each thread writes a small window of memory.
+/// cached and are not charged to this process. Each thread parses the lines
+/// that start in its share of the bytes twice: first to count every tail's
+/// edges, then, after a prefix sum, to place each edge in its row, so no
+/// edge list is kept in between.
 fn load_graph(path: &str, threads: usize) -> (Csr, u32, Vec<(u32, u32, u32)>) {
     let file = File::open(path).unwrap();
     let len = file.metadata().unwrap().len() as usize;
@@ -140,51 +205,24 @@ fn load_graph(path: &str, threads: usize) -> (Csr, u32, Vec<(u32, u32, u32)>) {
     let bits = 32 - (n as u32).leading_zeros();
     let wide = u32::MAX >> bits;
     let cut = |i: usize| line_end((i * len / threads).max(1) - 1);
-    let block_len = n.div_ceil(threads);
-    let parts = parallel(threads, &|i| {
-        // Sized for an even spread, so the lists rarely have to grow.
-        let cap = m / threads / threads * 9 / 8 + 64;
-        let mut lists: Vec<Vec<u64>> = (0..threads).map(|_| Vec::with_capacity(cap)).collect();
+    let part = |i: usize| &text[cut(i)..cut(i + 1)];
+    let (mut first, mut adj) = (zeros(n + 1), zeros(m));
+    let (f, a) = (atomic(&mut first), atomic(&mut adj));
+    let count = |e: (u32, u32, u32)| _ = f[e.0 as usize].fetch_add(1, Relaxed);
+    parallel(threads, &|i| scan(part(i), f, &[], count));
+    ends(f, threads);
+    let big = parallel(threads, &|i| {
         let mut big = Vec::new();
-        let (mut p, end) = (cut(i), cut(i + 1));
-        while p < end {
-            let (u, v, w) = (num(text, &mut p), num(text, &mut p), num(text, &mut p));
-            lists[u as usize / block_len].push((u as u64) << 32 | (v | w.min(wide) << bits) as u64);
+        scan(part(i), f, a, |(u, v, w)| {
+            let p = f[u as usize].fetch_sub(1, Relaxed) - 1;
+            a[p as usize].store(v | w.min(wide) << bits, Relaxed);
             if w >= wide {
                 big.push((u, v, w));
             }
-        }
-        (lists, big)
+        });
+        big
     });
-    let (mut buckets, big): (Vec<_>, Vec<_>) = parts.into_iter().unzip();
-    let (mut first, mut adj) = (zeros(n + 1), zeros(m));
-    let (mut adj_rest, mut start) = (&mut adj[..], 0);
-    thread::scope(|sc| {
-        for (j, first) in first[..n].chunks_mut(block_len).enumerate() {
-            let col: Vec<_> = buckets.iter_mut().map(|b| take(&mut b[j])).collect();
-            let size: usize = col.iter().map(Vec::len).sum();
-            let (adj, rest) = take(&mut adj_rest).split_at_mut(size);
-            let at = move |e: u64| (e >> 32) as usize - j * block_len;
-            adj_rest = rest;
-            sc.spawn(move || {
-                col.iter().flatten().for_each(|&e| first[at(e)] += 1);
-                first.iter_mut().fold(start, |sum, c| {
-                    *c += sum;
-                    *c
-                });
-                for list in col {
-                    for e in list {
-                        let c = &mut first[at(e)];
-                        *c -= 1;
-                        adj[(*c - start) as usize] = e as u32;
-                    }
-                }
-            });
-            start += size as u32;
-        }
-    });
-    first[n] = m as u32;
-    (Csr { first, adj }, bits, big.concat())
+    (csr(first, adj), bits, big.concat())
 }
 
 /// Nodes per cluster: a ball of this many nodes fills a few pages of the
@@ -207,11 +245,12 @@ const SHIFT: u32 = 6;
 /// cluster takes the next free run of ids and of edge slots (one atomic add
 /// for both, so the two runs line up) and copies its rows there while they
 /// are still in cache. Nodes are claimed atomically; which thread wins a
-/// node changes the numbering but never an answer.
-fn renumber(g: &Csr, bits: u32, threads: usize) -> (Vec<u32>, Csr) {
-    let (n, m) = (g.first.len() - 1, g.adj.len());
-    let (mut rank, mut first, mut adj) = (vec![0; n], zeros(n + 1), zeros(m));
-    let (r, f, a) = (atomic(&mut rank), atomic(&mut first), atomic(&mut adj));
+/// node changes the numbering but never an answer. The old rows are freed
+/// before the new row starts are summed from the old degrees.
+fn renumber(mut g: Csr, bits: u32, threads: usize) -> (Vec<u32>, Csr) {
+    let (n, m, g) = (g.off.len() - 1, g.adj.len(), &mut g);
+    let (mut rank, mut adj) = (vec![0; n], zeros(m));
+    let (r, a) = (atomic(&mut rank), atomic(&mut adj));
     // Unclaimed is 0; a claimed node holds 1 or its complemented id, never 0,
     // so raising a slot to at least 1 claims it only if it was free.
     let claim = |&v: &usize| r[v].load(Relaxed) == 0 && r[v].fetch_max(1, Relaxed) == 0;
@@ -225,7 +264,7 @@ fn renumber(g: &Csr, bits: u32, threads: usize) -> (Vec<u32>, Csr) {
             'grow: while k < mine.len() {
                 // A node queued ahead: start loading its row.
                 if let Some(&v) = mine.get(k + 8) {
-                    prefetch(&g.adj, g.first[v as usize] as usize);
+                    prefetch(&g.adj, at(g, v as usize));
                 }
                 for &e in edges(g, mine[k] as usize) {
                     let v = (e & ((1 << bits) - 1)) as usize;
@@ -245,7 +284,6 @@ fn renumber(g: &Csr, bits: u32, threads: usize) -> (Vec<u32>, Csr) {
             let (id, mut p) = ((base >> 32) as usize, base as u32);
             for (k, v) in mine.drain(..).enumerate() {
                 r[v as usize].store(!((id + k) as u32), Relaxed);
-                f[id + k].store(p, Relaxed);
                 for &e in edges(g, v as usize) {
                     a[p as usize].store(e, Relaxed);
                     p += 1;
@@ -253,8 +291,16 @@ fn renumber(g: &Csr, bits: u32, threads: usize) -> (Vec<u32>, Csr) {
             }
         }
     });
-    first[n] = m as u32;
-    (rank, Csr { first, adj })
+    drop(take(&mut g.adj));
+    let mut first = zeros(n + 1);
+    let f = atomic(&mut first);
+    parallel(threads, &|i| {
+        for u in i * n / threads..(i + 1) * n / threads {
+            f[!rank[u] as usize + 1].store((at(g, u + 1) - at(g, u)) as u32, Relaxed);
+        }
+    });
+    ends(f, threads);
+    (rank, csr(first, adj))
 }
 
 /// The forward and backward graphs in the new ids: the forward rows' heads
@@ -283,7 +329,7 @@ fn relabel(mut fwd: Csr, rank: Vec<u32>, bits: u32, threads: usize) -> [Csr; 2] 
             a[p as usize].store(u | e & !mask, Relaxed);
         }
     });
-    [fwd, Csr { first, adj }]
+    [fwd, csr(first, adj)]
 }
 
 /// A tentative distance as stored: the bitwise complement, so that zero
@@ -417,11 +463,11 @@ fn distance<D: Dist>(sides: &mut [Side<D>; 2], net: &Net, s: u32, t: u32) -> (u6
         // The next two nodes this side pops: start loading their rows.
         let q = &me.heap.buckets[0];
         if let Some(&(_, next)) = q.len().checked_sub(2).map(|i| &q[i]) {
-            prefetch(&net.graphs[side].first, next as usize);
+            prefetch(&net.graphs[side].off, next as usize);
         }
         if let Some(&(_, next)) = q.last() {
             let g = &net.graphs[side];
-            prefetch(&g.adj, g.first[next as usize] as usize);
+            prefetch(&g.adj, at(g, next as usize));
         }
         let d = me.get(u);
         if d >> SHIFT < key {
@@ -463,7 +509,7 @@ impl RadixHeap {
     fn top(&mut self) -> Option<u64> {
         if self.buckets[0].is_empty() {
             let i = self.buckets.iter().position(|b| !b.is_empty())?;
-            let (mut b, old) = (std::mem::take(&mut self.buckets[i]), self.last);
+            let (mut b, old) = (take(&mut self.buckets[i]), self.last);
             let key = |k: u32| old + k.wrapping_sub(old as u32) as u64;
             self.last = b.iter().map(|e| key(e.0)).min().unwrap();
             b.drain(..).for_each(|(k, v)| self.push(key(k), v));
@@ -476,13 +522,13 @@ impl RadixHeap {
 fn main() {
     let dir = |key, default: &str| std::env::var(key).unwrap_or(default.into());
     let (data, out) = (dir("SD_DATA", "/data"), dir("SD_OUT", "/out"));
-    // M_MMAP_THRESHOLD: big blocks (the edge buckets) go straight back to
-    // the kernel when freed, instead of lingering in per-thread arenas.
+    // M_MMAP_THRESHOLD: big blocks (the graphs and row starts freed while
+    // the next graph is built) go straight back to the kernel, instead of
+    // lingering in the heap (without it the peak is about 15 MB higher).
     unsafe { mallopt(-3, 1 << 17) };
     let threads = thread::available_parallelism().map_or(1, |n| n.get());
     let (g, bits, big) = load_graph(&format!("{data}/graph.txt"), threads);
-    let (rank, fwd) = renumber(&g, bits, threads);
-    drop(g);
+    let (rank, fwd) = renumber(g, bits, threads);
     let r = |v: u32| !rank[v as usize];
     let (text, mut p, mut ids) = (fs::read(format!("{data}/queries.txt")).unwrap(), 0, vec![]);
     while p < text.len() {
