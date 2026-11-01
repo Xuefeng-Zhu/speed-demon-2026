@@ -236,3 +236,30 @@ Board trials, 1 Nov 2026, none kept (best stays `run-38899e5ae2f9`, K 30.78):
 - PR #31 (`c-mem`, BLOCK 256 and a 32 KiB pread buffer, on top of #33): `run-ec81e3741bf0` measured T=39.2 ms, M=17.3 MB, K=30.28. M fell 0.8 MB but T rose, so it was reverted.
 
 Unchanged production C at `6d785be` ran `run-0d1302f06ed0`: T=36.5 ms, M=16.0 MB, S=338, K=31.38. This is the new best run for this src.
+
+## Board result for PR #34 (2026-11-01)
+
+As reported by the team: one first writer per huge page in `zeroed()` and no huge pages for the region table, `run-dafb62d922f7`: T=36.45 ms, M=13.2 MB, S=341, K=32.61. Kept; this is the baseline for the trial below.
+
+## Trial: quote-parity record ends, SIMD numbers, AES name hash, bucketed owner tables (2026-11-01)
+
+A rewrite of the parse and of the owner tables, then of the start and end of the run. Each step was measured in the sandbox at 8 threads in interleaved runs against the previous one; the sandbox is now an Intel Xeon 8488C VM (4 cores × 2 threads, kernel 6.1, no hardware counters). An ablation of the earlier `n5` candidate (−18% against production) split its 36.2 ms into about 9 ms of name events and owner marking, 10 ms of record parsing, 5 ms of block scanning, 5 ms of `pread`, 2.6 ms of aggregation and 4.3 ms of start, regions, exit and process overhead.
+
+1. **Owner tables of 8-key buckets.** At 76% load, linear probing found an event's name in its first slot only 62% of the time (simulated), and every miss is a mispredicted branch. A bucket holds eight keys, compared with two AVX2 compares; the four words of the eight group sets follow, each word for all eight names, so the line an event changes is known from its group and is prefetched with the key line. 35.7 → 33.3 ms; single thread 172.6 → 142.5 ms.
+2. **Numbers at once.** The 16 bytes that end with the amount hold the region's and the amount's digits (§2.2 bounds them at 7 digits and 8 bytes); one `pshufb` from a 72-entry table right-aligns both and the id's 16 bytes fill the other lane, and `maddubs`/`madd`/`packus`/`madd` give the three values. 33.3 → 31.6 ms.
+3. **One pass over regions** with groups numbered in first-seen order (sorted by code only when writing), an **AES-round name hash** over 32-byte masked loads, and no bounds checks in the record's tail: 31.6 → 30.8 ms.
+4. **Record ends as LFs outside quotes.** A prefix XOR of each block's quote mask, carried across blocks, replaces the digit-or-CR mask (chunks start after a CRLF, so outside quotes). The parse no longer relies on names and notes holding no digits. 30.5 → 29.9 ms. A last chunk of an unterminated file now adds its LF only if the file does not end with one.
+5. **Start and end.** Phase timestamps showed parsing starting 1.8 ms after `main` and 1.3 ms from the end of the parse to the written output. Owner tables without huge pages (the main thread no longer zeroes 2 MiB pages before starting the workers: −0.36 ms), a barrier before the workers touch memory (their page faults slowed the creation of later threads), regions found by LF masks with the comma 4 bytes before each LF, chunks that shrink quadratically towards the end (the threads finished 0.8–0.95 ms apart, now 0.2 ms), and the main thread as worker 0, writing the output and ending the process while the others wait instead of every thread exiting and being joined. Parsing now starts at 1.3 ms and the output is written 0.7 ms after the parse; −0.6 ms in 40 paired end-to-end runs (within noise on its own).
+6. **Hash quality.** On 10^7 synthetic names in the generator's style, AES with two rounds after the data folded to 64 bits gave 2,119 equal top-36-bit values against 728 expected (names of equal length collided in the folded high word); three rounds give 749, and 43 against 45.5 at 40 bits. No 56-bit key collided. The trial uses three rounds; the speed is the same.
+
+Sandbox totals on seed 1 `full`, production (`87e58e1`) against this trial:
+
+| | production | trial |
+|---|---:|---:|
+| 8 threads, median of 40 interleaved runs | 44.3 ms | 29.1 ms |
+| 1 thread, median of 5 | 208.8 ms | 128.2 ms |
+| CPU per run at 8 threads | 310 ms | 206 ms |
+| max RSS, median of 9 | 12.1 MB | 12.1 MB |
+| formatted lines, local count | 334 | 428 |
+
+The extra 94 lines cost about 3.6% of K. If the board's T falls as much as the sandbox's (−34%), K rises about 19%. `.cargo/config.toml` adds `+pclmulqdq,+aes` (not in x86-64-v3; the i5-13500 has both). The source builds without warnings with Rust 1.83 to 1.92, and the committed source builds a binary whose code (`.text`) is identical to the one measured; only panic line numbers differ. The checks listed in README.md pass, including a fresh seed 3 `full` against the official reference, builds forcing 2, 6, 12 and 16 workers, a 128-byte starting buffer, and tables starting at 2^6 slots. Board run pending; revert if K is not above 32.61.
