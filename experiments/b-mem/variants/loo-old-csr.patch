@@ -1,0 +1,50 @@
+--- a/candidate.rs
++++ b/old-csr.rs
+@@ -316,33 +316,31 @@
+         flush(&mut group, doc - 1);
+     }
+     assert!(doc - first <= 1 << 16, "chunk too large");
+-    // Counting sort of the stream. offs[l + 2] counts list l, then offs[l + 1] is
+-    // where its next id goes, and after the fill offs[l] is where list l starts.
+-    let mut offs = vec![0u32; nl + 2];
++    // Counting sort of the stream, dropping a term's repeats within a document.
++    let mut offs = vec![0u32; nl + 1];
+     for &l in stream.iter().filter(|&&l| l != u16::MAX) {
+-        offs[l as usize + 2] += 1;
++        offs[l as usize + 1] += 1;
+     }
+-    (2..offs.len()).for_each(|l| offs[l] += offs[l - 1]);
+-    let (mut docs, mut d) = (vec![0u16; offs[nl + 1] as usize], 0u16);
++    (1..=nl).for_each(|l| offs[l] += offs[l - 1]);
++    let (mut end, mut docs, mut d) = (offs.clone(), vec![0u16; offs[nl] as usize], 0u16);
+     for l in stream {
+         if l == u16::MAX {
+             d = d.wrapping_add(1);
+         } else {
+-            let e = &mut offs[l as usize + 1];
+-            docs[*e as usize] = d;
+-            *e += 1;
++            let e = &mut end[l as usize];
++            if *e == offs[l as usize] || docs[*e as usize - 1] != d {
++                docs[*e as usize] = d;
++                *e += 1;
++            }
+         }
+     }
+-    // Drop a term's repeats within a document: equal neighbours in its list.
++    // Close the gaps the repeats left.
+     let mut w = 0;
+     for l in 0..nl {
+-        let (a, b) = (offs[l] as usize, offs[l + 1] as usize);
++        let (a, b) = (offs[l] as usize, end[l] as usize);
++        docs.copy_within(a..b, w);
+         offs[l] = w as u32;
+-        for i in a..b {
+-            let keep = i == a || docs[i] != docs[i - 1];
+-            docs[w] = docs[i];
+-            w += keep as usize;
+-        }
++        w += b - a;
+     }
+     offs[nl] = w as u32;
+     Chunk { first, offs, docs, hits }

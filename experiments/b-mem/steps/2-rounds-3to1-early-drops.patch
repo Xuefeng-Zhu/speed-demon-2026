@@ -1,0 +1,105 @@
+--- a/step1.rs
++++ b/step2.rs
+@@ -542,6 +542,7 @@
+             }
+         });
+     }
++    drop(qtext);
+     let nq = qs.len();
+     qs.push((0, terms.len()));
+     let data = map_file(&format!("{data_dir}/docs.txt"));
+@@ -557,36 +558,39 @@
+         e[2] = if e[0] == 0 { none as u64 } else { e[2] };
+     }
+     plan.role.push(0);
+-    // freq[t]: (sample documents with the term t, the last of them).
+-    let (mut freq, mut sdocs) = (vec![(0u32, 0u32); plan.role.len()], 0);
+-    for_each_doc(data, 0, line_start(data, SAMPLE), &plan, |tokens| {
+-        sdocs += 1;
+-        for &t in tokens {
+-            let f = &mut freq[t as usize];
+-            *f = (f.0 + (f.1 != sdocs) as u32, sdocs);
++    // The sample frequency of each term, by its new id.
++    let freq: Vec<u32> = {
++        // freq[t]: (sample documents with the term t, the last of them).
++        let (mut freq, mut sdocs) = (vec![(0u32, 0u32); plan.role.len()], 0);
++        for_each_doc(data, 0, line_start(data, SAMPLE), &plan, |tokens| {
++            sdocs += 1;
++            for &t in tokens {
++                let f = &mut freq[t as usize];
++                *f = (f.0 + (f.1 != sdocs) as u32, sdocs);
++            }
++        });
++        // A BOOL term in more than 1 of 32 sample documents gets a bitmap,
++        // and so do the most frequent others beyond 65,535.
++        let mut bools: Vec<usize> = (0..plan.role.len()).filter(|&t| plan.role[t] & IN_BOOL != 0).collect();
++        bools.sort_unstable_by_key(|&t| std::cmp::Reverse(freq[t].0));
++        let common = bools.partition_point(|&t| freq[t].0 as usize * 32 > sdocs as usize);
++        let nbm = common.max(bools.len().saturating_sub(65535));
++        bools[..nbm].iter().for_each(|&t| plan.role[t] ^= IN_BOOL | BITMAP);
++        (plan.nlist, plan.nbm) = (bools.len() - nbm, nbm);
++        // Renumber the terms: list terms first, then bitmap terms, then the rest.
++        let rest = (0..plan.role.len()).filter(|&t| plan.role[t] & (IN_BOOL | BITMAP) == 0);
++        let mut order = [&bools[nbm..], &bools[..nbm]].concat();
++        order.extend(rest);
++        let mut new = vec![0; order.len()];
++        for (i, &t) in order.iter().enumerate() {
++            new[t] = i as u32;
+         }
+-    });
+-    // A BOOL term in more than 1 of 32 sample documents gets a bitmap,
+-    // and so do the most frequent others beyond 65,535.
+-    let mut bools: Vec<usize> = (0..plan.role.len()).filter(|&t| plan.role[t] & IN_BOOL != 0).collect();
+-    bools.sort_unstable_by_key(|&t| std::cmp::Reverse(freq[t].0));
+-    let common = bools.partition_point(|&t| freq[t].0 as usize * 32 > sdocs as usize);
+-    let nbm = common.max(bools.len().saturating_sub(65535));
+-    bools[..nbm].iter().for_each(|&t| plan.role[t] ^= IN_BOOL | BITMAP);
+-    (plan.nlist, plan.nbm) = (bools.len() - nbm, nbm);
+-    // Renumber the terms: list terms first, then bitmap terms, then the rest.
+-    let rest = (0..plan.role.len()).filter(|&t| plan.role[t] & (IN_BOOL | BITMAP) == 0);
+-    let mut order = [&bools[nbm..], &bools[..nbm]].concat();
+-    order.extend(rest);
+-    let mut new = vec![0; order.len()];
+-    for (i, &t) in order.iter().enumerate() {
+-        new[t] = i as u32;
+-    }
+-    plan.keys.iter_mut().for_each(|e| e[2] = new[e[2] as usize] as u64);
+-    plan.long.values_mut().for_each(|t| *t = new[*t as usize]);
+-    plan.role = order.iter().map(|&t| plan.role[t]).collect();
+-    let freq: Vec<u32> = order.iter().map(|&t| freq[t].0).collect();
+-    terms.iter_mut().for_each(|e| e.1 = new[e.1 as usize]);
++        plan.keys.iter_mut().for_each(|e| e[2] = new[e[2] as usize] as u64);
++        plan.long.values_mut().for_each(|t| *t = new[*t as usize]);
++        plan.role = order.iter().map(|&t| plan.role[t]).collect();
++        terms.iter_mut().for_each(|e| e.1 = new[e.1 as usize]);
++        order.iter().map(|&t| freq[t].0).collect()
++    };
+     let query = |i: usize| (qs[i].0, &terms[qs[i].1..qs[i + 1].1]);
+     let mut list = Vec::new();
+     for qi in (0..nq).filter(|&i| qs[i].0 == b'P') {
+@@ -595,6 +599,7 @@
+         plan.role[p[j].1 as usize] |= ANCHOR;
+         list.push((p[j].1, qi, p, j));
+     }
++    drop(freq);
+     // One flat list of anchors, grouped by term, with copies of the phrases.
+     list.sort_unstable_by_key(|a| a.0);
+     plan.aoff = vec![0; plan.role.len() + 1];
+@@ -615,9 +620,14 @@
+     let mut rows = std::mem::ManuallyDrop::new(vec![0u64; plan.nbm * words]);
+     // SAFETY: AtomicU64 has the size, alignment and bit validity of u64.
+     let rows: Vec<AtomicU64> = unsafe { Vec::from_raw_parts(rows.as_mut_ptr().cast(), rows.len(), rows.capacity()) };
+-    let nchunks = nthreads * data.len().div_ceil(nthreads << 24).max(1);
+-    let cut = |k| {
+-        let mut i = line_start(data, k * data.len() / nchunks);
++    // m rounds of nthreads equal chunks; round r has 2(m - r) - 1 of m * m parts
++    // of the bytes, so the last rounds, when most lists exist, have small streams.
++    let m = data.len().div_ceil(nthreads << 24).max(1);
++    let nchunks = nthreads * m;
++    let cut = |k: usize| {
++        let (r, j) = (k / nthreads, k % nthreads);
++        let w = nthreads * r * (2 * m - r) + 2 * j * (m - r) - j;
++        let mut i = line_start(data, data.len() * w / (nthreads * m * m));
+         while i < data.len() && id_at(data, i) % 64 != 0 {
+             i = line_start(data, i + 1);
+         }

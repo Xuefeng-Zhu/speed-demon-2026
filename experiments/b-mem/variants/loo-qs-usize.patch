@@ -1,0 +1,29 @@
+--- a/candidate.rs
++++ b/qs-usize.rs
+@@ -539,7 +539,7 @@
+     let (mut qs, mut terms, mut i, mut op) = (Vec::new(), Vec::new(), 0, 0);
+     while i < qtext.len() {
+         i = each_token(&qtext, i, |s, e| match qtext[s] {
+-            b'B' | b'P' => qs.push((qtext[s], terms.len() as u32)),
++            b'B' | b'P' => qs.push((qtext[s], terms.len())),
+             b'A' | b'O' | b'N' => op = qtext[s],
+             _ => {
+                 let role = IN_BOOL * (qs[qs.len() - 1].0 == b'B') as u8;
+@@ -548,7 +548,7 @@
+         });
+     }
+     let nq = qs.len();
+-    qs.push((0, terms.len() as u32));
++    qs.push((0, terms.len()));
+     let data = map_file(&format!("{data_dir}/docs.txt"));
+ 
+     // Anchor each phrase on its rarest term in a sample of the corpus.
+@@ -592,7 +592,7 @@
+     plan.role = order.iter().map(|&t| plan.role[t]).collect();
+     let df: Vec<u32> = order.iter().map(|&t| freq[t].0).collect();
+     terms.iter_mut().for_each(|e| e.1 = new[e.1 as usize]);
+-    let query = |i: usize| (qs[i].0, &terms[qs[i].1 as usize..qs[i + 1].1 as usize]);
++    let query = |i: usize| (qs[i].0, &terms[qs[i].1..qs[i + 1].1]);
+     let mut list = Vec::new();
+     for qi in (0..nq).filter(|&i| qs[i].0 == b'P') {
+         let p = query(qi).1;

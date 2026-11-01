@@ -1,0 +1,30 @@
+--- a/candidate.rs
++++ b/trim-after-index.rs
+@@ -480,7 +480,7 @@
+ extern "C" {
+     fn mmap(addr: *mut u8, len: usize, prot: i32, flags: i32, fd: i32, off: i64) -> *mut u8;
+     fn madvise(addr: *mut u8, len: usize, advice: i32) -> i32;
+-    fn mallopt(param: i32, value: i32) -> i32;
++    fn malloc_trim(pad: usize) -> i32;
+ }
+ 
+ /// Maps a read-only file into memory.
+@@ -519,10 +519,6 @@
+ }
+ 
+ fn main() {
+-    // Blocks of 128 KiB or more get their own mapping, unmapped when freed. A fixed
+-    // M_MMAP_THRESHOLD (-3) keeps glibc from raising it at the first such free, after
+-    // which freed stream buffers would stay resident in the threads' arenas.
+-    unsafe { mallopt(-3, 1 << 17) };
+     let data_dir = env::var("SD_DATA").unwrap_or_else(|_| "/data".into());
+     let out_dir = env::var("SD_OUT").unwrap_or_else(|_| "/out".into());
+     let nthreads = env::var("SD_THREADS").ok().and_then(|s| s.parse().ok());
+@@ -645,6 +641,7 @@
+     chunks.sort_unstable_by_key(|c| c.0);
+     plan.chunks = chunks.into_iter().map(|c| c.1).collect();
+     plan.rows = rows.into_iter().map(AtomicU64::into_inner).collect();
++    unsafe { malloc_trim(0) }; // experiment: return freed arena memory once, after the index
+     // The scan's tables; the answers do not use them.
+     (plan.keys, plan.filter, plan.aoff, plan.anchors, plan.flat) = Default::default();
+     // Phrase matches as sorted (query, id); a phrase can occur twice in a document.

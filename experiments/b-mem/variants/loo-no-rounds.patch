@@ -1,0 +1,13 @@
+--- a/candidate.rs
++++ b/no-rounds.rs
+@@ -625,9 +625,7 @@
+     // multiple of 64; at most 65,536 lines per chunk.
+     let m = data.len().div_ceil(nthreads << 24).max(1);
+     let cut = |k: usize| {
+-        let (r, j) = (k / nthreads, k % nthreads);
+-        let w = nthreads * r * (4 * m - 2 * r + 1) + 4 * j * (m - r) - j;
+-        let mut i = line_start(data, data.len() * w / (nthreads * m * (2 * m + 1)));
++        let mut i = line_start(data, k * data.len() / (nthreads * m));
+         while i < data.len() && id_at(data, i) % 64 != 0 {
+             i = line_start(data, i + 1);
+         }

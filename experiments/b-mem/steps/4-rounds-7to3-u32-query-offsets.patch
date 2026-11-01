@@ -1,0 +1,48 @@
+--- a/step3.rs
++++ b/step4.rs
+@@ -536,7 +536,7 @@
+     let (mut qs, mut terms, mut i, mut op) = (Vec::new(), Vec::new(), 0, 0);
+     while i < qtext.len() {
+         i = each_token(&qtext, i, |s, e| match qtext[s] {
+-            b'B' | b'P' => qs.push((qtext[s], terms.len())),
++            b'B' | b'P' => qs.push((qtext[s], terms.len() as u32)),
+             b'A' | b'O' | b'N' => op = qtext[s],
+             _ => {
+                 let role = IN_BOOL * (qs[qs.len() - 1].0 == b'B') as u8;
+@@ -546,7 +546,7 @@
+     }
+     drop(qtext);
+     let nq = qs.len();
+-    qs.push((0, terms.len()));
++    qs.push((0, terms.len() as u32));
+     let data = map_file(&format!("{data_dir}/docs.txt"));
+ 
+     // Anchor each phrase on its rarest term in a sample of the corpus.
+@@ -593,7 +593,7 @@
+         terms.iter_mut().for_each(|e| e.1 = new[e.1 as usize]);
+         order.iter().map(|&t| freq[t].0).collect()
+     };
+-    let query = |i: usize| (qs[i].0, &terms[qs[i].1..qs[i + 1].1]);
++    let query = |i: usize| (qs[i].0, &terms[qs[i].1 as usize..qs[i + 1].1 as usize]);
+     let mut list = Vec::new();
+     for qi in (0..nq).filter(|&i| qs[i].0 == b'P') {
+         let p = query(qi).1;
+@@ -622,14 +622,14 @@
+     let mut rows = std::mem::ManuallyDrop::new(vec![0u64; plan.nbm * words]);
+     // SAFETY: AtomicU64 has the size, alignment and bit validity of u64.
+     let rows: Vec<AtomicU64> = unsafe { Vec::from_raw_parts(rows.as_mut_ptr().cast(), rows.len(), rows.capacity()) };
+-    // m rounds of nthreads equal chunks; round r has 2(m - r) - 1 of m * m parts
+-    // of the bytes, so the last rounds, when most lists exist, have small streams.
++    // m rounds of nthreads equal chunks; round r has 4(m - r) - 1 of m(2m + 1)
++    // parts of the bytes, so the last rounds, when most lists exist, have small streams.
+     let m = data.len().div_ceil(nthreads << 24).max(1);
+     let nchunks = nthreads * m;
+     let cut = |k: usize| {
+         let (r, j) = (k / nthreads, k % nthreads);
+-        let w = nthreads * r * (2 * m - r) + 2 * j * (m - r) - j;
+-        let mut i = line_start(data, data.len() * w / (nthreads * m * m));
++        let w = nthreads * r * (4 * m - 2 * r + 1) + 4 * j * (m - r) - j;
++        let mut i = line_start(data, data.len() * w / (nthreads * m * (2 * m + 1)));
+         while i < data.len() && id_at(data, i) % 64 != 0 {
+             i = line_start(data, i + 1);
+         }

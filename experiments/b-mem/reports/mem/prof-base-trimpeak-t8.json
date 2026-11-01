@@ -1,0 +1,1213 @@
+{
+ "note": "local sandbox measurements, not official scores",
+ "threads": 8,
+ "env": {
+  "SD_PROF_TRIM": "outs_sort_concat"
+ },
+ "runs_per_binary": 5,
+ "binaries": {
+  "mem-prof-base": "6a9fb0253eb32045f046165e9ceba528e4055027f880892b257f1093e8cef043"
+ },
+ "summary": {
+  "mem-prof-base": {
+   "maxrss_kib_median": 62740,
+   "maxrss_kib_min": 62648,
+   "maxrss_kib_max": 63200,
+   "wall_s_median": 0.18410170300012396,
+   "phase_mem_kb_median": {
+    "read_queries": {
+     "VmHWM": 3804,
+     "VmRSS": 3804,
+     "RssAnon": 1764,
+     "RssFile": 2044
+    },
+    "parse_intern": {
+     "VmHWM": 8972,
+     "VmRSS": 8972,
+     "RssAnon": 6928,
+     "RssFile": 2044
+    },
+    "mmap": {
+     "VmHWM": 8972,
+     "VmRSS": 8972,
+     "RssAnon": 6928,
+     "RssFile": 2044
+    },
+    "sample_scan": {
+     "VmHWM": 9968,
+     "VmRSS": 9924,
+     "RssAnon": 7816,
+     "RssFile": 2108
+    },
+    "plan_build": {
+     "VmHWM": 13212,
+     "VmRSS": 12540,
+     "RssAnon": 10432,
+     "RssFile": 2108
+    },
+    "rows_alloc": {
+     "VmHWM": 13212,
+     "VmRSS": 12540,
+     "RssAnon": 10432,
+     "RssFile": 2108
+    },
+    "index": {
+     "VmHWM": 61616,
+     "VmRSS": 61024,
+     "RssAnon": 57696,
+     "RssFile": 3328
+    },
+    "chunk_sort": {
+     "VmHWM": 61616,
+     "VmRSS": 61024,
+     "RssAnon": 57696,
+     "RssFile": 3328
+    },
+    "hits_collect": {
+     "VmHWM": 61616,
+     "VmRSS": 61024,
+     "RssAnon": 57696,
+     "RssFile": 3328
+    },
+    "answer": {
+     "VmHWM": 61616,
+     "VmRSS": 61340,
+     "RssAnon": 58032,
+     "RssFile": 3328
+    },
+    "outs_sort_concat": {
+     "VmHWM": 62660,
+     "VmRSS": 62660,
+     "RssAnon": 59344,
+     "RssFile": 3336
+    },
+    "outs_sort_concat_trim": {
+     "VmHWM": 62740,
+     "VmRSS": 51988,
+     "RssAnon": 48680,
+     "RssFile": 3336
+    },
+    "write": {
+     "VmHWM": 62740,
+     "VmRSS": 50560,
+     "RssAnon": 47252,
+     "RssFile": 3336
+    }
+   }
+  }
+ },
+ "runs": {
+  "mem-prof-base": [
+   {
+    "wall_s": 0.1809050779993413,
+    "maxrss_kib": 63052,
+    "cpu_s": 1.2374610000000001,
+    "minflt": 23766,
+    "mem": {
+     "read_queries": {
+      "VmHWM": 3768,
+      "VmRSS": 3768,
+      "RssAnon": 1764,
+      "RssFile": 2004
+     },
+     "parse_intern": {
+      "VmHWM": 8932,
+      "VmRSS": 8932,
+      "RssAnon": 6928,
+      "RssFile": 2004
+     },
+     "mmap": {
+      "VmHWM": 8932,
+      "VmRSS": 8932,
+      "RssAnon": 6928,
+      "RssFile": 2004
+     },
+     "sample_scan": {
+      "VmHWM": 9928,
+      "VmRSS": 9884,
+      "RssAnon": 7816,
+      "RssFile": 2068
+     },
+     "plan_build": {
+      "VmHWM": 13176,
+      "VmRSS": 12504,
+      "RssAnon": 10432,
+      "RssFile": 2072
+     },
+     "rows_alloc": {
+      "VmHWM": 13176,
+      "VmRSS": 12504,
+      "RssAnon": 10432,
+      "RssFile": 2072
+     },
+     "index": {
+      "VmHWM": 62280,
+      "VmRSS": 61332,
+      "RssAnon": 58004,
+      "RssFile": 3328
+     },
+     "chunk_sort": {
+      "VmHWM": 62280,
+      "VmRSS": 61332,
+      "RssAnon": 58004,
+      "RssFile": 3328
+     },
+     "hits_collect": {
+      "VmHWM": 62280,
+      "VmRSS": 61332,
+      "RssAnon": 58004,
+      "RssFile": 3328
+     },
+     "answer": {
+      "VmHWM": 62280,
+      "VmRSS": 61676,
+      "RssAnon": 58348,
+      "RssFile": 3328
+     },
+     "outs_sort_concat": {
+      "VmHWM": 62996,
+      "VmRSS": 62996,
+      "RssAnon": 59660,
+      "RssFile": 3336
+     },
+     "outs_sort_concat_trim": {
+      "VmHWM": 63052,
+      "VmRSS": 52016,
+      "RssAnon": 48680,
+      "RssFile": 3336
+     },
+     "write": {
+      "VmHWM": 63052,
+      "VmRSS": 50652,
+      "RssAnon": 47252,
+      "RssFile": 3400
+     }
+    },
+    "mall": {
+     "read_queries": {
+      "arena": 132,
+      "hblks": 1,
+      "hblkhd": 1724,
+      "uordblks": 3,
+      "fordblks": 128
+     },
+     "parse_intern": {
+      "arena": 188,
+      "hblks": 4,
+      "hblkhd": 7880,
+      "uordblks": 138,
+      "fordblks": 49
+     },
+     "mmap": {
+      "arena": 188,
+      "hblks": 4,
+      "hblkhd": 7880,
+      "uordblks": 138,
+      "fordblks": 49
+     },
+     "sample_scan": {
+      "arena": 188,
+      "hblks": 6,
+      "hblkhd": 8604,
+      "uordblks": 138,
+      "fordblks": 49
+     },
+     "plan_build": {
+      "arena": 360,
+      "hblks": 13,
+      "hblkhd": 11620,
+      "uordblks": 88,
+      "fordblks": 271
+     },
+     "rows_alloc": {
+      "arena": 360,
+      "hblks": 14,
+      "hblkhd": 22212,
+      "uordblks": 89,
+      "fordblks": 270
+     },
+     "index": {
+      "arena": 33512,
+      "hblks": 19,
+      "hblkhd": 29172,
+      "uordblks": 18952,
+      "fordblks": 14559
+     },
+     "chunk_sort": {
+      "arena": 33512,
+      "hblks": 19,
+      "hblkhd": 29172,
+      "uordblks": 18954,
+      "fordblks": 14557
+     },
+     "hits_collect": {
+      "arena": 33664,
+      "hblks": 19,
+      "hblkhd": 29172,
+      "uordblks": 19108,
+      "fordblks": 14555
+     },
+     "answer": {
+      "arena": 33996,
+      "hblks": 19,
+      "hblkhd": 29172,
+      "uordblks": 21013,
+      "fordblks": 12982
+     },
+     "outs_sort_concat": {
+      "arena": 33996,
+      "hblks": 20,
+      "hblkhd": 31224,
+      "uordblks": 19109,
+      "fordblks": 14886
+     },
+     "write": {
+      "arena": 33868,
+      "hblks": 19,
+      "hblkhd": 29172,
+      "uordblks": 19109,
+      "fordblks": 14758
+     }
+    },
+    "info": {
+     "qtext_bytes": 1763534,
+     "keys_bytes": 3145728,
+     "qs_cap_bytes": 1048576,
+     "terms_cap_bytes": 2097152,
+     "nterms": 75747,
+     "nchunks": 16,
+     "nthreads": 8,
+     "nlist": 53097,
+     "nbm": 347,
+     "rows_bytes": 10845832,
+     "docs_bytes": 22742408,
+     "offs_bytes": 3398272,
+     "outs_len": 1459301,
+     "outs_cap": 1888256,
+     "out_cap": 2097152
+    },
+    "midx": [
+     "MIDX ThreadId(6) 62592 15616 726883 991087 711267 53098 1261 15341574 72566550 79277604",
+     "MIDX ThreadId(7) 47040 15552 727028 990537 711476 53098 1189 15678501 73070751 79501315",
+     "MIDX ThreadId(4) 109312 15616 725865 989975 710249 53098 1192 15847877 73872540 80211915",
+     "MIDX ThreadId(9) 31424 15616 727591 993138 711975 53098 1203 15479336 74593706 80676507",
+     "MIDX ThreadId(2) 15872 15552 728254 992912 712702 53098 1241 14890445 75608563 82016276",
+     "MIDX ThreadId(8) 78208 15552 726155 992282 710603 53098 1240 15793925 77474433 83630246",
+     "MIDX ThreadId(3) 93760 15552 725344 991590 709792 53098 1194 15815572 79610143 85995111",
+     "MIDX ThreadId(5) 0 15872 727048 991990 711176 53098 1225 14799414 80396249 86565660",
+     "MIDX ThreadId(6) 124928 15616 725006 990750 709390 53098 1259 79316175 134784158 142505901",
+     "MIDX ThreadId(7) 140544 15616 726997 993928 711381 53098 1202 79557905 136006817 142888908",
+     "MIDX ThreadId(4) 156160 15424 723644 989579 708220 53098 1174 80276101 136350635 143426564",
+     "MIDX ThreadId(2) 187264 15872 725836 990124 709964 53098 1218 82098332 138104433 145003728",
+     "MIDX ThreadId(8) 203136 15552 726700 992298 711148 53098 1192 83706864 142969536 146464963",
+     "MIDX ThreadId(9) 171584 15680 728923 994108 713243 53098 1212 80752314 139119504 146681064",
+     "MIDX ThreadId(3) 218688 15552 724122 988909 708570 53098 1179 86046039 142795219 146691331",
+     "MIDX ThreadId(5) 234240 15760 725808 991009 710048 53098 1246 86575842 144504064 148175661"
+    ],
+    "samples_max_anon_kb": null,
+    "phase_ns": {
+     "read_queries": 821546,
+     "parse_intern": 8955669,
+     "mmap": 9010126,
+     "sample_scan": 11035724,
+     "plan_build": 14548186,
+     "rows_alloc": 14583215,
+     "index": 148678626,
+     "chunk_sort": 148730847,
+     "hits_collect": 149150680,
+     "answer": 175724435,
+     "outs_sort_concat": 176533738,
+     "write": 177821863
+    }
+   },
+   {
+    "wall_s": 0.18410170300012396,
+    "maxrss_kib": 62720,
+    "cpu_s": 1.249104,
+    "minflt": 23595,
+    "mem": {
+     "read_queries": {
+      "VmHWM": 3832,
+      "VmRSS": 3832,
+      "RssAnon": 1764,
+      "RssFile": 2068
+     },
+     "parse_intern": {
+      "VmHWM": 8996,
+      "VmRSS": 8996,
+      "RssAnon": 6928,
+      "RssFile": 2068
+     },
+     "mmap": {
+      "VmHWM": 8996,
+      "VmRSS": 8996,
+      "RssAnon": 6928,
+      "RssFile": 2068
+     },
+     "sample_scan": {
+      "VmHWM": 9992,
+      "VmRSS": 9948,
+      "RssAnon": 7816,
+      "RssFile": 2132
+     },
+     "plan_build": {
+      "VmHWM": 13236,
+      "VmRSS": 12564,
+      "RssAnon": 10432,
+      "RssFile": 2132
+     },
+     "rows_alloc": {
+      "VmHWM": 13236,
+      "VmRSS": 12564,
+      "RssAnon": 10432,
+      "RssFile": 2132
+     },
+     "index": {
+      "VmHWM": 61176,
+      "VmRSS": 60964,
+      "RssAnon": 57636,
+      "RssFile": 3328
+     },
+     "chunk_sort": {
+      "VmHWM": 61176,
+      "VmRSS": 60964,
+      "RssAnon": 57636,
+      "RssFile": 3328
+     },
+     "hits_collect": {
+      "VmHWM": 61176,
+      "VmRSS": 60964,
+      "RssAnon": 57636,
+      "RssFile": 3328
+     },
+     "answer": {
+      "VmHWM": 61340,
+      "VmRSS": 61340,
+      "RssAnon": 58012,
+      "RssFile": 3328
+     },
+     "outs_sort_concat": {
+      "VmHWM": 62660,
+      "VmRSS": 62660,
+      "RssAnon": 59324,
+      "RssFile": 3336
+     },
+     "outs_sort_concat_trim": {
+      "VmHWM": 62720,
+      "VmRSS": 51880,
+      "RssAnon": 48544,
+      "RssFile": 3336
+     },
+     "write": {
+      "VmHWM": 62720,
+      "VmRSS": 50452,
+      "RssAnon": 47116,
+      "RssFile": 3336
+     }
+    },
+    "mall": {
+     "read_queries": {
+      "arena": 132,
+      "hblks": 1,
+      "hblkhd": 1724,
+      "uordblks": 3,
+      "fordblks": 128
+     },
+     "parse_intern": {
+      "arena": 188,
+      "hblks": 4,
+      "hblkhd": 7880,
+      "uordblks": 138,
+      "fordblks": 49
+     },
+     "mmap": {
+      "arena": 188,
+      "hblks": 4,
+      "hblkhd": 7880,
+      "uordblks": 138,
+      "fordblks": 49
+     },
+     "sample_scan": {
+      "arena": 188,
+      "hblks": 6,
+      "hblkhd": 8604,
+      "uordblks": 138,
+      "fordblks": 49
+     },
+     "plan_build": {
+      "arena": 360,
+      "hblks": 13,
+      "hblkhd": 11620,
+      "uordblks": 88,
+      "fordblks": 271
+     },
+     "rows_alloc": {
+      "arena": 360,
+      "hblks": 14,
+      "hblkhd": 22212,
+      "uordblks": 89,
+      "fordblks": 270
+     },
+     "index": {
+      "arena": 30376,
+      "hblks": 21,
+      "hblkhd": 31948,
+      "uordblks": 16178,
+      "fordblks": 14197
+     },
+     "chunk_sort": {
+      "arena": 30376,
+      "hblks": 21,
+      "hblkhd": 31948,
+      "uordblks": 16180,
+      "fordblks": 14195
+     },
+     "hits_collect": {
+      "arena": 30528,
+      "hblks": 21,
+      "hblkhd": 31948,
+      "uordblks": 16334,
+      "fordblks": 14193
+     },
+     "answer": {
+      "arena": 30888,
+      "hblks": 21,
+      "hblkhd": 31948,
+      "uordblks": 18215,
+      "fordblks": 12672
+     },
+     "outs_sort_concat": {
+      "arena": 30888,
+      "hblks": 22,
+      "hblkhd": 34000,
+      "uordblks": 16335,
+      "fordblks": 14552
+     },
+     "write": {
+      "arena": 30760,
+      "hblks": 21,
+      "hblkhd": 31948,
+      "uordblks": 16335,
+      "fordblks": 14424
+     }
+    },
+    "info": {
+     "qtext_bytes": 1763534,
+     "keys_bytes": 3145728,
+     "qs_cap_bytes": 1048576,
+     "terms_cap_bytes": 2097152,
+     "nterms": 75747,
+     "nchunks": 16,
+     "nthreads": 8,
+     "nlist": 53097,
+     "nbm": 347,
+     "rows_bytes": 10845832,
+     "docs_bytes": 22742408,
+     "offs_bytes": 3398272,
+     "outs_len": 1459301,
+     "outs_cap": 1888256,
+     "out_cap": 2097152
+    },
+    "midx": [
+     "MIDX ThreadId(2) 0 15872 727048 991990 711176 53098 1225 14215198 72828352 80025226",
+     "MIDX ThreadId(6) 31424 15616 727591 993138 711975 53098 1203 15151358 73578272 80757676",
+     "MIDX ThreadId(5) 15872 15552 728254 992912 712702 53098 1241 14511325 74649706 80762901",
+     "MIDX ThreadId(9) 109312 15616 725865 989975 710249 53098 1192 16614216 73690438 80903717",
+     "MIDX ThreadId(4) 47040 15552 727028 990537 711476 53098 1189 15488920 73245391 81120569",
+     "MIDX ThreadId(7) 78208 15552 726155 992282 710603 53098 1240 16321963 74039471 82264281",
+     "MIDX ThreadId(8) 93760 15552 725344 991590 709792 53098 1194 16529362 76381819 82928892",
+     "MIDX ThreadId(3) 62592 15616 726883 991087 711267 53098 1261 15886674 83452917 89804257",
+     "MIDX ThreadId(2) 124928 15616 725006 990750 709390 53098 1259 80063030 136080872 142916029",
+     "MIDX ThreadId(6) 140544 15616 726997 993928 711381 53098 1202 80812745 137748057 144754755",
+     "MIDX ThreadId(4) 187264 15872 725836 990124 709964 53098 1218 81204982 138154400 145154473",
+     "MIDX ThreadId(9) 171584 15680 728923 994108 713243 53098 1212 80977935 138445399 145502982",
+     "MIDX ThreadId(5) 156160 15424 723644 989579 708220 53098 1174 80831362 139839607 145771428",
+     "MIDX ThreadId(7) 203136 15552 726700 992298 711148 53098 1192 82334236 139136083 145896616",
+     "MIDX ThreadId(8) 218688 15552 724122 988909 708570 53098 1179 82978693 141115976 146503656",
+     "MIDX ThreadId(3) 234240 15760 725808 991009 710048 53098 1246 89813950 147383718 150857001"
+    ],
+    "samples_max_anon_kb": null,
+    "phase_ns": {
+     "read_queries": 782719,
+     "parse_intern": 8608332,
+     "mmap": 8657720,
+     "sample_scan": 10682493,
+     "plan_build": 14030421,
+     "rows_alloc": 14064817,
+     "index": 151046112,
+     "chunk_sort": 151098439,
+     "hits_collect": 151499921,
+     "answer": 178766648,
+     "outs_sort_concat": 179561456,
+     "write": 180692989
+    }
+   },
+   {
+    "wall_s": 0.1862387109995325,
+    "maxrss_kib": 62648,
+    "cpu_s": 1.293906,
+    "minflt": 23723,
+    "mem": {
+     "read_queries": {
+      "VmHWM": 3804,
+      "VmRSS": 3804,
+      "RssAnon": 1760,
+      "RssFile": 2044
+     },
+     "parse_intern": {
+      "VmHWM": 8972,
+      "VmRSS": 8972,
+      "RssAnon": 6928,
+      "RssFile": 2044
+     },
+     "mmap": {
+      "VmHWM": 8972,
+      "VmRSS": 8972,
+      "RssAnon": 6928,
+      "RssFile": 2044
+     },
+     "sample_scan": {
+      "VmHWM": 9968,
+      "VmRSS": 9924,
+      "RssAnon": 7816,
+      "RssFile": 2108
+     },
+     "plan_build": {
+      "VmHWM": 13212,
+      "VmRSS": 12540,
+      "RssAnon": 10432,
+      "RssFile": 2108
+     },
+     "rows_alloc": {
+      "VmHWM": 13212,
+      "VmRSS": 12540,
+      "RssAnon": 10432,
+      "RssFile": 2108
+     },
+     "index": {
+      "VmHWM": 61616,
+      "VmRSS": 60872,
+      "RssAnon": 57632,
+      "RssFile": 3240
+     },
+     "chunk_sort": {
+      "VmHWM": 61616,
+      "VmRSS": 60872,
+      "RssAnon": 57632,
+      "RssFile": 3240
+     },
+     "hits_collect": {
+      "VmHWM": 61616,
+      "VmRSS": 60872,
+      "RssAnon": 57632,
+      "RssFile": 3240
+     },
+     "answer": {
+      "VmHWM": 61616,
+      "VmRSS": 61272,
+      "RssAnon": 58032,
+      "RssFile": 3240
+     },
+     "outs_sort_concat": {
+      "VmHWM": 62592,
+      "VmRSS": 62592,
+      "RssAnon": 59344,
+      "RssFile": 3248
+     },
+     "outs_sort_concat_trim": {
+      "VmHWM": 62648,
+      "VmRSS": 52008,
+      "RssAnon": 48760,
+      "RssFile": 3248
+     },
+     "write": {
+      "VmHWM": 62648,
+      "VmRSS": 50580,
+      "RssAnon": 47332,
+      "RssFile": 3248
+     }
+    },
+    "mall": {
+     "read_queries": {
+      "arena": 132,
+      "hblks": 1,
+      "hblkhd": 1724,
+      "uordblks": 3,
+      "fordblks": 128
+     },
+     "parse_intern": {
+      "arena": 188,
+      "hblks": 4,
+      "hblkhd": 7880,
+      "uordblks": 138,
+      "fordblks": 49
+     },
+     "mmap": {
+      "arena": 188,
+      "hblks": 4,
+      "hblkhd": 7880,
+      "uordblks": 138,
+      "fordblks": 49
+     },
+     "sample_scan": {
+      "arena": 188,
+      "hblks": 6,
+      "hblkhd": 8604,
+      "uordblks": 138,
+      "fordblks": 49
+     },
+     "plan_build": {
+      "arena": 360,
+      "hblks": 13,
+      "hblkhd": 11620,
+      "uordblks": 88,
+      "fordblks": 271
+     },
+     "rows_alloc": {
+      "arena": 360,
+      "hblks": 14,
+      "hblkhd": 22212,
+      "uordblks": 89,
+      "fordblks": 270
+     },
+     "index": {
+      "arena": 28972,
+      "hblks": 22,
+      "hblkhd": 33340,
+      "uordblks": 14788,
+      "fordblks": 14183
+     },
+     "chunk_sort": {
+      "arena": 28972,
+      "hblks": 22,
+      "hblkhd": 33340,
+      "uordblks": 14791,
+      "fordblks": 14180
+     },
+     "hits_collect": {
+      "arena": 29124,
+      "hblks": 22,
+      "hblkhd": 33340,
+      "uordblks": 14945,
+      "fordblks": 14178
+     },
+     "answer": {
+      "arena": 29532,
+      "hblks": 22,
+      "hblkhd": 33340,
+      "uordblks": 16826,
+      "fordblks": 12705
+     },
+     "outs_sort_concat": {
+      "arena": 29532,
+      "hblks": 23,
+      "hblkhd": 35392,
+      "uordblks": 14946,
+      "fordblks": 14585
+     },
+     "write": {
+      "arena": 29404,
+      "hblks": 22,
+      "hblkhd": 33340,
+      "uordblks": 14946,
+      "fordblks": 14457
+     }
+    },
+    "info": {
+     "qtext_bytes": 1763534,
+     "keys_bytes": 3145728,
+     "qs_cap_bytes": 1048576,
+     "terms_cap_bytes": 2097152,
+     "nterms": 75747,
+     "nchunks": 16,
+     "nthreads": 8,
+     "nlist": 53097,
+     "nbm": 347,
+     "rows_bytes": 10845832,
+     "docs_bytes": 22742408,
+     "offs_bytes": 3398272,
+     "outs_len": 1459301,
+     "outs_cap": 1888256,
+     "out_cap": 2097152
+    },
+    "midx": [
+     "MIDX ThreadId(2) 31424 15616 727591 993138 711975 53098 1203 14877523 71701932 79453432",
+     "MIDX ThreadId(6) 15872 15552 728254 992912 712702 53098 1241 14798736 73312974 80262965",
+     "MIDX ThreadId(8) 109312 15616 725865 989975 710249 53098 1192 14983844 74110368 80946708",
+     "MIDX ThreadId(5) 93760 15552 725344 991590 709792 53098 1194 14951306 72074305 81429041",
+     "MIDX ThreadId(9) 62592 15616 726883 991087 711267 53098 1261 14892076 72039768 81681240",
+     "MIDX ThreadId(7) 78208 15552 726155 992282 710603 53098 1240 14946389 73963813 82074181",
+     "MIDX ThreadId(3) 0 15872 727048 991990 711176 53098 1225 14513146 75914243 82738783",
+     "MIDX ThreadId(4) 47040 15552 727028 990537 711476 53098 1189 14899305 75972222 82906485",
+     "MIDX ThreadId(2) 124928 15616 725006 990750 709390 53098 1259 79490066 137920495 144895157",
+     "MIDX ThreadId(6) 140544 15616 726997 993928 711381 53098 1202 80320286 139195531 145696602",
+     "MIDX ThreadId(8) 156160 15424 723644 989579 708220 53098 1174 81008860 139888015 146368425",
+     "MIDX ThreadId(5) 171584 15680 728923 994108 713243 53098 1212 81503792 140852243 147906748",
+     "MIDX ThreadId(4) 234240 15760 725808 991009 710048 53098 1246 82917802 142667897 148034910",
+     "MIDX ThreadId(7) 203136 15552 726700 992298 711148 53098 1192 82219202 141610207 148544713",
+     "MIDX ThreadId(9) 187264 15872 725836 990124 709964 53098 1218 81768925 142818061 149831624",
+     "MIDX ThreadId(3) 218688 15552 724122 988909 708570 53098 1179 82793727 143766656 150414869"
+    ],
+    "samples_max_anon_kb": null,
+    "phase_ns": {
+     "read_queries": 742161,
+     "parse_intern": 8927136,
+     "mmap": 8974571,
+     "sample_scan": 10983260,
+     "plan_build": 14317028,
+     "rows_alloc": 14350194,
+     "index": 150481270,
+     "chunk_sort": 150543223,
+     "hits_collect": 150958778,
+     "answer": 180523370,
+     "outs_sort_concat": 181364262,
+     "write": 182565805
+    }
+   },
+   {
+    "wall_s": 0.19137000699993223,
+    "maxrss_kib": 62740,
+    "cpu_s": 1.293579,
+    "minflt": 24207,
+    "mem": {
+     "read_queries": {
+      "VmHWM": 3828,
+      "VmRSS": 3828,
+      "RssAnon": 1760,
+      "RssFile": 2068
+     },
+     "parse_intern": {
+      "VmHWM": 8996,
+      "VmRSS": 8996,
+      "RssAnon": 6928,
+      "RssFile": 2068
+     },
+     "mmap": {
+      "VmHWM": 8996,
+      "VmRSS": 8996,
+      "RssAnon": 6928,
+      "RssFile": 2068
+     },
+     "sample_scan": {
+      "VmHWM": 9992,
+      "VmRSS": 9948,
+      "RssAnon": 7816,
+      "RssFile": 2132
+     },
+     "plan_build": {
+      "VmHWM": 13236,
+      "VmRSS": 12564,
+      "RssAnon": 10432,
+      "RssFile": 2132
+     },
+     "rows_alloc": {
+      "VmHWM": 13236,
+      "VmRSS": 12564,
+      "RssAnon": 10432,
+      "RssFile": 2132
+     },
+     "index": {
+      "VmHWM": 61024,
+      "VmRSS": 61024,
+      "RssAnon": 57696,
+      "RssFile": 3328
+     },
+     "chunk_sort": {
+      "VmHWM": 61024,
+      "VmRSS": 61024,
+      "RssAnon": 57696,
+      "RssFile": 3328
+     },
+     "hits_collect": {
+      "VmHWM": 61024,
+      "VmRSS": 61024,
+      "RssAnon": 57696,
+      "RssFile": 3328
+     },
+     "answer": {
+      "VmHWM": 61332,
+      "VmRSS": 61332,
+      "RssAnon": 58004,
+      "RssFile": 3328
+     },
+     "outs_sort_concat": {
+      "VmHWM": 62652,
+      "VmRSS": 62652,
+      "RssAnon": 59316,
+      "RssFile": 3336
+     },
+     "outs_sort_concat_trim": {
+      "VmHWM": 62740,
+      "VmRSS": 51988,
+      "RssAnon": 48652,
+      "RssFile": 3336
+     },
+     "write": {
+      "VmHWM": 62740,
+      "VmRSS": 50560,
+      "RssAnon": 47224,
+      "RssFile": 3336
+     }
+    },
+    "mall": {
+     "read_queries": {
+      "arena": 132,
+      "hblks": 1,
+      "hblkhd": 1724,
+      "uordblks": 3,
+      "fordblks": 128
+     },
+     "parse_intern": {
+      "arena": 188,
+      "hblks": 4,
+      "hblkhd": 7880,
+      "uordblks": 138,
+      "fordblks": 49
+     },
+     "mmap": {
+      "arena": 188,
+      "hblks": 4,
+      "hblkhd": 7880,
+      "uordblks": 138,
+      "fordblks": 49
+     },
+     "sample_scan": {
+      "arena": 188,
+      "hblks": 6,
+      "hblkhd": 8604,
+      "uordblks": 138,
+      "fordblks": 49
+     },
+     "plan_build": {
+      "arena": 360,
+      "hblks": 13,
+      "hblkhd": 11620,
+      "uordblks": 88,
+      "fordblks": 271
+     },
+     "rows_alloc": {
+      "arena": 360,
+      "hblks": 14,
+      "hblkhd": 22212,
+      "uordblks": 89,
+      "fordblks": 270
+     },
+     "index": {
+      "arena": 30440,
+      "hblks": 21,
+      "hblkhd": 31948,
+      "uordblks": 16179,
+      "fordblks": 14260
+     },
+     "chunk_sort": {
+      "arena": 30440,
+      "hblks": 21,
+      "hblkhd": 31948,
+      "uordblks": 16181,
+      "fordblks": 14258
+     },
+     "hits_collect": {
+      "arena": 30592,
+      "hblks": 21,
+      "hblkhd": 31948,
+      "uordblks": 16335,
+      "fordblks": 14256
+     },
+     "answer": {
+      "arena": 30924,
+      "hblks": 21,
+      "hblkhd": 31948,
+      "uordblks": 18219,
+      "fordblks": 12704
+     },
+     "outs_sort_concat": {
+      "arena": 30924,
+      "hblks": 22,
+      "hblkhd": 34000,
+      "uordblks": 16336,
+      "fordblks": 14587
+     },
+     "write": {
+      "arena": 30796,
+      "hblks": 21,
+      "hblkhd": 31948,
+      "uordblks": 16336,
+      "fordblks": 14459
+     }
+    },
+    "info": {
+     "qtext_bytes": 1763534,
+     "keys_bytes": 3145728,
+     "qs_cap_bytes": 1048576,
+     "terms_cap_bytes": 2097152,
+     "nterms": 75747,
+     "nchunks": 16,
+     "nthreads": 8,
+     "nlist": 53097,
+     "nbm": 347,
+     "rows_bytes": 10845832,
+     "docs_bytes": 22742408,
+     "offs_bytes": 3398272,
+     "outs_len": 1459301,
+     "outs_cap": 1888256,
+     "out_cap": 2097152
+    },
+    "midx": [
+     "MIDX ThreadId(6) 62592 15616 726883 991087 711267 53098 1261 15243274 74065468 81512923",
+     "MIDX ThreadId(4) 93760 15552 725344 991590 709792 53098 1194 15306764 74451726 82790222",
+     "MIDX ThreadId(5) 15872 15552 728254 992912 712702 53098 1241 14993666 74210415 83085468",
+     "MIDX ThreadId(7) 78208 15552 726155 992282 710603 53098 1240 15294593 76425943 83853085",
+     "MIDX ThreadId(9) 109312 15616 725865 989975 710249 53098 1192 15326974 75966788 84011604",
+     "MIDX ThreadId(2) 47040 15552 727028 990537 711476 53098 1189 15246524 76048818 84502201",
+     "MIDX ThreadId(3) 0 15872 727048 991990 711176 53098 1225 14914327 76770139 85023803",
+     "MIDX ThreadId(8) 31424 15616 727591 993138 711975 53098 1203 15170293 79852060 86767903",
+     "MIDX ThreadId(6) 124928 15616 725006 990750 709390 53098 1259 81553575 140430697 146690795",
+     "MIDX ThreadId(4) 140544 15616 726997 993928 711381 53098 1202 82857258 141721354 148703256",
+     "MIDX ThreadId(7) 171584 15680 728923 994108 713243 53098 1212 83926050 142672850 149749274",
+     "MIDX ThreadId(2) 203136 15552 726700 992298 711148 53098 1192 84582613 145003132 151397570",
+     "MIDX ThreadId(3) 218688 15552 724122 988909 708570 53098 1179 85078822 144542742 151970201",
+     "MIDX ThreadId(5) 156160 15424 723644 989579 708220 53098 1174 83154912 147958610 151980694",
+     "MIDX ThreadId(8) 234240 15760 725808 991009 710048 53098 1246 86778185 146109339 152788028",
+     "MIDX ThreadId(9) 187264 15872 725836 990124 709964 53098 1218 84105414 151397586 156386872"
+    ],
+    "samples_max_anon_kb": null,
+    "phase_ns": {
+     "read_queries": 802930,
+     "parse_intern": 9141400,
+     "mmap": 9192503,
+     "sample_scan": 11275173,
+     "plan_build": 14662679,
+     "rows_alloc": 14692653,
+     "index": 156436848,
+     "chunk_sort": 156480568,
+     "hits_collect": 156885950,
+     "answer": 185680499,
+     "outs_sort_concat": 186479599,
+     "write": 187635361
+    }
+   },
+   {
+    "wall_s": 0.18203933399854577,
+    "maxrss_kib": 63200,
+    "cpu_s": 1.2628979999999999,
+    "minflt": 23688,
+    "mem": {
+     "read_queries": {
+      "VmHWM": 3720,
+      "VmRSS": 3720,
+      "RssAnon": 1768,
+      "RssFile": 1952
+     },
+     "parse_intern": {
+      "VmHWM": 8888,
+      "VmRSS": 8888,
+      "RssAnon": 6928,
+      "RssFile": 1960
+     },
+     "mmap": {
+      "VmHWM": 8888,
+      "VmRSS": 8888,
+      "RssAnon": 6928,
+      "RssFile": 1960
+     },
+     "sample_scan": {
+      "VmHWM": 9884,
+      "VmRSS": 9840,
+      "RssAnon": 7816,
+      "RssFile": 2024
+     },
+     "plan_build": {
+      "VmHWM": 13128,
+      "VmRSS": 12456,
+      "RssAnon": 10432,
+      "RssFile": 2024
+     },
+     "rows_alloc": {
+      "VmHWM": 13128,
+      "VmRSS": 12456,
+      "RssAnon": 10432,
+      "RssFile": 2024
+     },
+     "index": {
+      "VmHWM": 63200,
+      "VmRSS": 61036,
+      "RssAnon": 57880,
+      "RssFile": 3156
+     },
+     "chunk_sort": {
+      "VmHWM": 63200,
+      "VmRSS": 61036,
+      "RssAnon": 57880,
+      "RssFile": 3156
+     },
+     "hits_collect": {
+      "VmHWM": 63200,
+      "VmRSS": 61036,
+      "RssAnon": 57880,
+      "RssFile": 3156
+     },
+     "answer": {
+      "VmHWM": 63200,
+      "VmRSS": 61416,
+      "RssAnon": 58260,
+      "RssFile": 3156
+     },
+     "outs_sort_concat": {
+      "VmHWM": 63200,
+      "VmRSS": 62736,
+      "RssAnon": 59572,
+      "RssFile": 3164
+     },
+     "outs_sort_concat_trim": {
+      "VmHWM": 63200,
+      "VmRSS": 51876,
+      "RssAnon": 48712,
+      "RssFile": 3164
+     },
+     "write": {
+      "VmHWM": 63200,
+      "VmRSS": 50448,
+      "RssAnon": 47284,
+      "RssFile": 3164
+     }
+    },
+    "mall": {
+     "read_queries": {
+      "arena": 132,
+      "hblks": 1,
+      "hblkhd": 1724,
+      "uordblks": 3,
+      "fordblks": 128
+     },
+     "parse_intern": {
+      "arena": 188,
+      "hblks": 4,
+      "hblkhd": 7880,
+      "uordblks": 138,
+      "fordblks": 49
+     },
+     "mmap": {
+      "arena": 188,
+      "hblks": 4,
+      "hblkhd": 7880,
+      "uordblks": 138,
+      "fordblks": 49
+     },
+     "sample_scan": {
+      "arena": 188,
+      "hblks": 6,
+      "hblkhd": 8604,
+      "uordblks": 138,
+      "fordblks": 49
+     },
+     "plan_build": {
+      "arena": 360,
+      "hblks": 13,
+      "hblkhd": 11620,
+      "uordblks": 88,
+      "fordblks": 271
+     },
+     "rows_alloc": {
+      "arena": 360,
+      "hblks": 14,
+      "hblkhd": 22212,
+      "uordblks": 89,
+      "fordblks": 270
+     },
+     "index": {
+      "arena": 30652,
+      "hblks": 21,
+      "hblkhd": 31948,
+      "uordblks": 16178,
+      "fordblks": 14473
+     },
+     "chunk_sort": {
+      "arena": 30652,
+      "hblks": 21,
+      "hblkhd": 31948,
+      "uordblks": 16180,
+      "fordblks": 14471
+     },
+     "hits_collect": {
+      "arena": 30804,
+      "hblks": 21,
+      "hblkhd": 31948,
+      "uordblks": 16334,
+      "fordblks": 14469
+     },
+     "answer": {
+      "arena": 31156,
+      "hblks": 21,
+      "hblkhd": 31948,
+      "uordblks": 18216,
+      "fordblks": 12939
+     },
+     "outs_sort_concat": {
+      "arena": 31156,
+      "hblks": 22,
+      "hblkhd": 34000,
+      "uordblks": 16335,
+      "fordblks": 14820
+     },
+     "write": {
+      "arena": 31028,
+      "hblks": 21,
+      "hblkhd": 31948,
+      "uordblks": 16335,
+      "fordblks": 14692
+     }
+    },
+    "info": {
+     "qtext_bytes": 1763534,
+     "keys_bytes": 3145728,
+     "qs_cap_bytes": 1048576,
+     "terms_cap_bytes": 2097152,
+     "nterms": 75747,
+     "nchunks": 16,
+     "nthreads": 8,
+     "nlist": 53097,
+     "nbm": 347,
+     "rows_bytes": 10845832,
+     "docs_bytes": 22742408,
+     "offs_bytes": 3398272,
+     "outs_len": 1459301,
+     "outs_cap": 1888256,
+     "out_cap": 2097152
+    },
+    "midx": [
+     "MIDX ThreadId(5) 15872 15552 728254 992912 712702 53098 1241 14939568 72973025 80001338",
+     "MIDX ThreadId(9) 62592 15616 726883 991087 711267 53098 1261 15337226 72937600 80306804",
+     "MIDX ThreadId(7) 31424 15616 727591 993138 711975 53098 1203 15567666 73685159 80759126",
+     "MIDX ThreadId(3) 0 15872 727048 991990 711176 53098 1225 14821074 73652372 82102421",
+     "MIDX ThreadId(2) 109312 15616 725865 989975 710249 53098 1192 16024400 76068100 82762414",
+     "MIDX ThreadId(8) 93760 15552 725344 991590 709792 53098 1194 16034653 75104326 82942326",
+     "MIDX ThreadId(6) 47040 15552 727028 990537 711476 53098 1189 15383360 77529576 85590266",
+     "MIDX ThreadId(4) 78208 15552 726155 992282 710603 53098 1240 15635250 75200701 86060418",
+     "MIDX ThreadId(5) 124928 15616 725006 990750 709390 53098 1259 80054890 137370430 143783692",
+     "MIDX ThreadId(2) 187264 15872 725836 990124 709964 53098 1218 82845235 140074767 145269248",
+     "MIDX ThreadId(7) 156160 15424 723644 989579 708220 53098 1174 80818229 140319032 147549171",
+     "MIDX ThreadId(8) 203136 15552 726700 992298 711148 53098 1192 83033205 140891486 147988333",
+     "MIDX ThreadId(9) 140544 15616 726997 993928 711381 53098 1202 80354222 141060604 148309902",
+     "MIDX ThreadId(3) 171584 15680 728923 994108 713243 53098 1212 82173101 141858016 148745623",
+     "MIDX ThreadId(6) 218688 15552 724122 988909 708570 53098 1179 85651277 142785666 149540030",
+     "MIDX ThreadId(4) 234240 15760 725808 991009 710048 53098 1246 86070353 143002091 149793141"
+    ],
+    "samples_max_anon_kb": null,
+    "phase_ns": {
+     "read_queries": 731181,
+     "parse_intern": 8985496,
+     "mmap": 9032879,
+     "sample_scan": 11065377,
+     "plan_build": 14600072,
+     "rows_alloc": 14633657,
+     "index": 149842396,
+     "chunk_sort": 149923322,
+     "hits_collect": 150371473,
+     "answer": 176868501,
+     "outs_sort_concat": 177635317,
+     "write": 178832262
+    }
+   }
+  ]
+ }
+}

@@ -1,0 +1,16 @@
+--- a/step3.rs
++++ b/step3-s52.rs
+@@ -627,9 +627,10 @@
+     let m = data.len().div_ceil(nthreads << 24).max(1);
+     let nchunks = nthreads * m;
+     let cut = |k: usize| {
+-        let (r, j) = (k / nthreads, k % nthreads);
+-        let w = nthreads * r * (2 * m - r) + 2 * j * (m - r) - j;
+-        let mut i = line_start(data, data.len() * w / (nthreads * m * m));
++        // experiment, m == 2 only: rounds of 5:2
++        assert!(m == 2);
++        let w = if k < nthreads { k * 5 } else { nthreads * 5 + (k - nthreads) * 2 };
++        let mut i = line_start(data, data.len() * w / (nthreads * 7));
+         while i < data.len() && id_at(data, i) % 64 != 0 {
+             i = line_start(data, i + 1);
+         }

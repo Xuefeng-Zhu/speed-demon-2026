@@ -1,0 +1,19 @@
+--- a/baseline.rs
++++ b/step1.rs
+@@ -477,6 +477,7 @@
+ extern "C" {
+     fn mmap(addr: *mut u8, len: usize, prot: i32, flags: i32, fd: i32, off: i64) -> *mut u8;
+     fn madvise(addr: *mut u8, len: usize, advice: i32) -> i32;
++    fn mallopt(param: i32, value: i32) -> i32;
+ }
+ 
+ /// Maps a read-only file into memory.
+@@ -515,6 +516,8 @@
+ }
+ 
+ fn main() {
++    // A fixed mmap threshold (M_MMAP_THRESHOLD = -3): large blocks are unmapped when freed.
++    unsafe { mallopt(-3, 1 << 17) };
+     let data_dir = env::var("SD_DATA").unwrap_or_else(|_| "/data".into());
+     let out_dir = env::var("SD_OUT").unwrap_or_else(|_| "/out".into());
+     let nthreads = env::var("SD_THREADS").ok().and_then(|s| s.parse().ok());

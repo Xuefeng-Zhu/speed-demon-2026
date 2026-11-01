@@ -1,0 +1,58 @@
+--- a/step2.rs
++++ b/step3.rs
+@@ -315,31 +315,33 @@
+         flush(&mut group, doc - 1);
+     }
+     assert!(doc - first <= 1 << 16, "chunk too large");
+-    // Counting sort of the stream, dropping a term's repeats within a document.
+-    let mut offs = vec![0u32; nl + 1];
++    // Counting sort of the stream. offs[l + 1] counts list l, then is where its
++    // next id goes, so it ends as the start of list l + 1.
++    let mut offs = vec![0u32; nl + 2];
+     for &l in stream.iter().filter(|&&l| l != u16::MAX) {
+-        offs[l as usize + 1] += 1;
++        offs[l as usize + 2] += 1;
+     }
+-    (1..=nl).for_each(|l| offs[l] += offs[l - 1]);
+-    let (mut end, mut docs, mut d) = (offs.clone(), vec![0u16; offs[nl] as usize], 0u16);
++    (2..offs.len()).for_each(|l| offs[l] += offs[l - 1]);
++    let (mut docs, mut d) = (vec![0u16; offs[nl + 1] as usize], 0u16);
+     for l in stream {
+         if l == u16::MAX {
+             d = d.wrapping_add(1);
+         } else {
+-            let e = &mut end[l as usize];
+-            if *e == offs[l as usize] || docs[*e as usize - 1] != d {
+-                docs[*e as usize] = d;
+-                *e += 1;
+-            }
++            let e = &mut offs[l as usize + 1];
++            docs[*e as usize] = d;
++            *e += 1;
+         }
+     }
+-    // Close the gaps the repeats left.
++    // Drop a term's repeats within a document: equal neighbours in its list.
+     let mut w = 0;
+     for l in 0..nl {
+-        let (a, b) = (offs[l] as usize, end[l] as usize);
+-        docs.copy_within(a..b, w);
++        let (a, b) = (offs[l] as usize, offs[l + 1] as usize);
+         offs[l] = w as u32;
+-        w += b - a;
++        for i in a..b {
++            let keep = i == a || docs[i] != docs[i - 1];
++            docs[w] = docs[i];
++            w += keep as usize;
++        }
+     }
+     offs[nl] = w as u32;
+     Chunk { first, offs, docs, hits }
+@@ -645,6 +647,7 @@
+     chunks.sort_unstable_by_key(|c| c.0);
+     plan.chunks = chunks.into_iter().map(|c| c.1).collect();
+     plan.rows = rows.into_iter().map(AtomicU64::into_inner).collect();
++    (plan.keys, plan.filter, plan.aoff, plan.anchors, plan.flat) = Default::default();
+     // Phrase matches as sorted (query, id); a phrase can occur twice in a document.
+     let mut hits = Vec::new();
+     plan.chunks.iter().for_each(|c| hits.extend(&c.hits));

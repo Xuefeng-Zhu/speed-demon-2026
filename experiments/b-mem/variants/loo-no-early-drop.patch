@@ -1,0 +1,10 @@
+--- a/candidate.rs
++++ b/no-early-drop.rs
+@@ -600,7 +600,6 @@
+         plan.role[p[j].1 as usize] |= ANCHOR;
+         list.push((p[j].1, qi, p, j));
+     }
+-    drop((qtext, freq, bools, order, new, df)); // the scan uses none of these
+     // One flat list of anchors, grouped by term, with copies of the phrases.
+     list.sort_unstable_by_key(|a| a.0);
+     plan.aoff = vec![0; plan.role.len() + 1];

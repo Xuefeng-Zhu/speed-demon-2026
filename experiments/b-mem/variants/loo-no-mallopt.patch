@@ -1,0 +1,21 @@
+--- a/candidate.rs
++++ b/no-mallopt.rs
+@@ -480,7 +480,6 @@
+ extern "C" {
+     fn mmap(addr: *mut u8, len: usize, prot: i32, flags: i32, fd: i32, off: i64) -> *mut u8;
+     fn madvise(addr: *mut u8, len: usize, advice: i32) -> i32;
+-    fn mallopt(param: i32, value: i32) -> i32;
+ }
+ 
+ /// Maps a read-only file into memory.
+@@ -519,10 +518,6 @@
+ }
+ 
+ fn main() {
+-    // Blocks of 128 KiB or more get their own mapping, unmapped when freed. A fixed
+-    // M_MMAP_THRESHOLD (-3) keeps glibc from raising it at the first such free, after
+-    // which freed stream buffers would stay resident in the threads' arenas.
+-    unsafe { mallopt(-3, 1 << 17) };
+     let data_dir = env::var("SD_DATA").unwrap_or_else(|_| "/data".into());
+     let out_dir = env::var("SD_OUT").unwrap_or_else(|_| "/out".into());
+     let nthreads = env::var("SD_THREADS").ok().and_then(|s| s.parse().ok());

@@ -1,0 +1,18 @@
+--- a/candidate.rs
++++ b/writev.rs
+@@ -680,8 +680,13 @@
+     .flatten()
+     .collect();
+     outs.sort_unstable_by_key(|o| o.0);
+-    let out: String = outs.into_iter().map(|o| o.1).collect();
+     fs::create_dir_all(&out_dir).ok();
+-    fs::write(format!("{out_dir}/results.txt"), out).expect("write results.txt");
++    let mut f = fs::File::create(format!("{out_dir}/results.txt")).expect("create results.txt");
++    let mut bufs: Vec<_> = outs.iter().map(|o| std::io::IoSlice::new(o.1.as_bytes())).collect();
++    let mut bufs = &mut bufs[..];
++    while !bufs.is_empty() {
++        let n = std::io::Write::write_vectored(&mut f, bufs).expect("write results.txt");
++        std::io::IoSlice::advance_slices(&mut bufs, n);
++    }
+     std::process::exit(0); // the OS frees everything faster than the destructors
+ }
