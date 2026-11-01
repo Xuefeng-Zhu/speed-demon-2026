@@ -235,7 +235,8 @@ fn main() {
             let mut agg = vec![EMPTY; 256];
             let mut out: Vec<Vec<u32>> = vec![Vec::with_capacity(BLOCK); n];
             let mark = |agg: &mut Vec<Agg>| {
-                for v in std::mem::take(&mut *inbox[t].lock().unwrap()) {
+                let blocks = std::mem::take(&mut *inbox[t].lock().unwrap()); // unlock before the loop
+                for v in blocks {
                     for x in v {
                         let (g, id) = ((x & 255) as usize, (x >> 8) as usize);
                         let (word, bit) = (&seen_in[g * stride + id / 64], 1 << (id % 64));
