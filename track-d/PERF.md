@@ -216,3 +216,4 @@ Board trial, 1 Nov 2026: PR #27 (`d-mem`, two-pass CSR from mmap, S 416) ran `ru
 
 - Nov 1 2026: PR #36 half-side CSR on THP-fixed D, d5efd3a run-245c4954b6f9 T 154.2 ms M 74.7 MB S 406 K 25.46 < 26.53 (M rose on board). Reverted.
 - Nov 1 2026: PR #42 d-reuse-spare cb9c687 run-012cda1c4d0c T 142.2 ms M 87.1 MB S 389 K 25.88 (run 1; M spike like production noise 69-87 MB).
+- Nov 1 2026: PR #42 run 2 7af73b3 run-3761681eb879 T 150.2 ms M 71.0 MB S 389 K 26.23. Mean 26.06 vs same-code production ~25.6 (range 25.0-26.7). Kept (structural: fewer serial huge-page faults, S unchanged).

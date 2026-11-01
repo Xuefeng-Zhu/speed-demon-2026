@@ -504,6 +504,12 @@ fn boolean(q: &[(u8, u32)], plan: &Plan, c: &Chunk, s: &mut Scratch, acc: &Acc) 
 /// it has, and the phrases it matches.
 fn answer(c: &Chunk, plan: &Plan, acc: &[Acc], s: &mut Scratch) {
     for qi in 0..acc.len() {
+        // Start loading the u16 lists of the query 8 ahead.
+        if let Some(w) = plan.qs.get(qi + 8..qi + 10) {
+            for &(_, t) in plan.terms[w[0].1 as usize..w[1].1 as usize].iter().filter(|t| (t.1 as usize) < plan.nlist) {
+                _ = c.docs.get(c.offs[t as usize] as usize).map(prefetch);
+            }
+        }
         let trig = &plan.trig[plan.toff[qi] as usize..plan.toff[qi + 1] as usize];
         let has = |&t: &u32| plan.role[t as usize] & BITMAP != 0 || !c.post(t as usize).is_empty();
         if trig.iter().any(has) {
