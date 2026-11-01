@@ -50,3 +50,9 @@ python3 experiments/c-trim/sloc.py c
 SD_DATA=<c-full> SD_OUT=/tmp/o track-c/target/release/solution && sha256sum /tmp/o/aggregates.txt
 taskset -c 0 python3 experiments/c-trim/fixtures.py track-c/target/release/solution --threads 1
 ```
+
+## Overlap with other branches
+
+`c-mem` edits the same worker code of `track-c/src/main.rs` (the inbox `mark` calls, `BLOCK`, the `pread` buffer). The branches are separate board trials off `f828bd8` and are not rebased onto each other here. Whichever lands after the other must be rebased, rebuilt, re-hashed (full seed 1, `smallcheck`, `fixtures.py`) and re-counted: S 302 here and S 337 there are both relative to the untrimmed base.
+
+The AVX2 intrinsics no longer carry a per-function `target_feature`; they stay inlined only because `.cargo/config.toml` sets `x86-64-v3` and the Dockerfile's plain `cargo build` honours it. A `RUSTFLAGS` added to the Dockerfile later would override the config and must then include `-Ctarget-cpu=x86-64-v3` (or higher).
