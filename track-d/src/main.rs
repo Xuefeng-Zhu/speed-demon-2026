@@ -49,6 +49,10 @@ fn zeros(len: usize) -> Vec<u32> {
     let (a, b) = (huge((1 << 21) - 1), huge(len * 4));
     if a < b {
         unsafe { madvise(a as *mut u8, b - a, 14) }; // MADV_HUGEPAGE
+                                                     // One first writer per huge page: racing faults each charge a 2 MiB page.
+        (a..b)
+            .step_by(1 << 21)
+            .for_each(|p| unsafe { (p as *mut u8).write_volatile(0) });
     }
     v
 }
