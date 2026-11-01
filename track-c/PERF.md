@@ -234,3 +234,5 @@ Sandbox, 8 threads, 30-round interleaved batches in both orders: 43.7 / 43.7 ms 
 Board trials, 1 Nov 2026, none kept (best stays `run-38899e5ae2f9`, K 30.78):
 - PR #33 (`c-trim`, rebased onto #26, S 338 to 306): three same-code runs, `run-8cb26078a553` (T=37.9 ms, K=30.48), `run-01cccbf64a42` (T=37.8 ms, K=30.54) and `run-43699a55f4c6` (T=38.4 ms, K=30.38). The paired production run `run-949821fd83fb` at `e1d468c` measured T=36.7 ms, K=30.56. The trim cost about 3% T, which cancels its 1.5% S gain, so it was reverted.
 - PR #31 (`c-mem`, BLOCK 256 and a 32 KiB pread buffer, on top of #33): `run-ec81e3741bf0` measured T=39.2 ms, M=17.3 MB, K=30.28. M fell 0.8 MB but T rose, so it was reverted.
+
+Unchanged production C at `6d785be` ran `run-0d1302f06ed0`: T=36.5 ms, M=16.0 MB, S=338, K=31.38. This is the new best run for this src.

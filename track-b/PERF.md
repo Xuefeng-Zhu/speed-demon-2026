@@ -205,3 +205,5 @@ Kept: PR #28 (`b-pure`, PR #20's memory savings without `mallopt`), with src ide
 Not kept:
 - PR #32 (`b-trim`, 583 to 519 lines): `run-600bd5a9d2e8` at `aa5ab52` (T=177.9 ms, M=73.3 MB, K=27.07) and `run-09e06735921b` at `1a0618b` (T=182.1 ms, K=26.77). T came in 3 to 5% slower than production, so the trim gave no K gain.
 - PR #29 (`b-mem2`, #28 plus a 32 MiB stream capacity): `run-546089dda643` at `e1d468c` (T=178.5 ms, M=74.8 MB, S=586, K=26.42). M went back up, so it was reverted to #28.
+
+The final head `6d785be`, with #28 kept, ran `run-a283f9503c48`: T=173.0 ms, M=62.1 MB, S=586, K=27.86. That makes three same-code runs at K 27.67 to 27.86; this one is the new B best.
