@@ -121,6 +121,19 @@ Expected on the board (not measured): if board M (11.4 MB) falls by the 8- to 12
 (-16.5% to -30%), M becomes about 8.0-9.5 MB, which is +3.6% to +7.3% K at equal T (M^0.2) minus 0.05%
 for S. C board time varies about +-5% per run, so two board runs are advisable before deciding.
 
+Board plan. The board runs 12 threads (the harness pins timed runs to `--cpuset-cpus=0-11`), so the
+12-thread row is the one to compare with. The known unknown is synchronisation, not memory: with
+256-event blocks a producer takes another owner's inbox lock 4 times as often as with 1024 (one locked
+push per 256 events), and each worker now takes its own inbox lock at every 32 KiB refill (about twice
+per 64 KiB of input instead of once per chunk). Locally that measured 0.97 to 1.02 paired at 8 threads,
+but PR #8 showed the board charging cross-core traffic far more than the sandbox. So:
+
+1. Run the board twice on this branch. Keep it if both runs' K beat the baseline's range, using the
+   12-thread break-even T1/T0 of about 1.15 (about 1.07 with the 8-thread M ratio) as the T limit.
+2. If T regresses past that, try BLOCK 512 with the same 32 KiB buffer and mark at every refill (half
+   the pushes; screened at 7.82 / 9.68 MB est. M and 1.002 / 1.005 paired T at 8 / 12 threads, second
+   batch above), before dropping the change.
+
 ## Correctness
 
 * Full seed 1: `d8088b1c...` for the committed build and for the override copy at 1, 2, 3, 5, 8, 12, 17
