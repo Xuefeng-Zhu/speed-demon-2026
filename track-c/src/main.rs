@@ -61,41 +61,15 @@ fn num(x: u64, n: usize) -> u64 {
     (v * 10000 + (v >> 32)) & 0xFFFFFFFF
 }
 
-/// The shared name dictionary: an open-addressing table of 64-bit name hashes; a name's id
-/// is its slot. Names are not compared byte for byte: two of the ~10^5 names share a hash
-/// with probability ~3e-10. The hash folds the name's bytes eight at a time, zero padded
-/// (names never contain a zero byte).
-#[derive(Clone, Copy)]
-struct Names {
-    slots: &'static [AtomicU64],
-    full: &'static AtomicBool, // on its own page: set once a probe runs past PROBES slots
-}
-impl Names {
-    /// The hash of the name `b[s..e]` and its first slot, whose cache line starts loading now.
-    fn key(&self, b: &[u8], s: usize, e: usize) -> (u64, usize) {
-        let h = (s..e.max(s + 1)).step_by(8).fold(K, |h, o| {
-            (h ^ word(b, o, e)).wrapping_mul(K).rotate_left(31)
-        });
-        let h = ((h ^ h >> 33).wrapping_mul(0xff51afd7ed558ccd) ^ h >> 29).max(1);
-        let i = (h >> (64 - self.slots.len().trailing_zeros())) as usize;
-        prefetch(&self.slots[i]);
-        (h, i)
-    }
-    /// The id of the name with this hash, inserting it if new. A probe longer than PROBES
-    /// slots means the table is too full: it returns the table size and the run starts over
-    /// with a larger table. No shared counter is written.
-    fn id(&self, (h, mut i): (u64, usize)) -> usize {
-        for _ in 0..PROBES {
-            let e = self.slots[i].load(Relaxed);
-            if e == h || e == 0 && self.slots[i].compare_exchange(0, h, Relaxed, Relaxed).is_ok() {
-                return i;
-            } else if e != 0 {
-                i = (i + 1) & (self.slots.len() - 1);
-            }
-        }
-        self.full.store(true, Relaxed);
-        self.slots.len()
-    }
+/// The 64-bit hash of the name `b[s..e]`. Names are identified by 56 bits of it, not
+/// compared byte for byte: two of the ~10^5 names in one owner's table share them with
+/// probability ~7e-8. The hash folds the name's bytes eight at a time, zero padded (names
+/// never contain a zero byte).
+fn name_hash(b: &[u8], s: usize, e: usize) -> u64 {
+    let h = (s..e.max(s + 1)).step_by(8).fold(K, |h, o| {
+        (h ^ word(b, o, e)).wrapping_mul(K).rotate_left(31)
+    });
+    (h ^ h >> 33).wrapping_mul(0xff51afd7ed558ccd) ^ h >> 29
 }
 const K: u64 = 0x517cc1b727220a95; // FxHash's multiplier
 
@@ -104,7 +78,6 @@ const K: u64 = 0x517cc1b727220a95; // FxHash's multiplier
 #[repr(align(128))]
 struct Pad<T>(T);
 const RING: usize = 16;
-const PROBES: usize = 1024;
 const BLOCK: usize = 1024;
 
 /// Bit i of each mask is set where byte i of the block is a quote, a comma or an LF.
@@ -193,23 +166,22 @@ fn main() {
             .find(|&i| regs[i - 1] == b'\n')
             .unwrap_or(regs.len()),
     };
-    let mut bits = 17; // 2^17 slots; four times as many whenever a probe runs too long
+    let mut bits = 17; // 2^17 slots in all; twice as many whenever one owner's fill 7/8
     let aggs = loop {
-        let slots = zeroed(1 << bits, 14);
-        let names = Names {
-            slots,
-            full: &zeroed::<AtomicBool>(1, 0)[0],
-        };
-        // seen_in[g * stride + id / 64] bit id % 64: name id occurs in group g. Group g is
-        // owned by thread g % n, which alone reads and writes its bits; the others hand it
-        // the (id, g) pairs they find in blocks of BLOCK, through its inbox.
-        let stride = slots.len() / 64 + 1;
-        let seen_in: &[AtomicU64] = zeroed(256 * stride, 0);
-        let inbox: Vec<Pad<Mutex<Vec<Vec<u32>>>>> = (0..n).map(|_| Default::default()).collect();
+        // Names are split between the threads by hash. Thread o owns slots o * m.. (o + 1) * m
+        // of `table`, five words each: the name's key, then a 256-bit set of the groups it
+        // occurs in. Other threads hand it (name, group) events in blocks of BLOCK through its
+        // inbox, so only the owner reads or writes its slots.
+        let m = (1 << bits) / n + 1;
+        let table: &[AtomicU64] = zeroed(5 * m * n, 14);
+        let full = &zeroed::<AtomicBool>(1, 0)[0];
+        let inbox: Vec<Pad<Mutex<Vec<Vec<u64>>>>> = (0..n).map(|_| Default::default()).collect();
         let (next, barrier) = (&zeroed::<AtomicUsize>(1, 0)[0], Barrier::new(n));
         let aggs = par(n, |t| {
             // Copies of what the hot loops read, so no worker reads a line another one writes.
-            let (names, region, seen_in, inbox, n, stride) = (names, region, seen_in, &inbox[..], n, stride);
+            let (region, inbox, n, m) = (region, &inbox[..], n, m);
+            let mine = &table[5 * m * t..5 * m * (t + 1)];
+            let mut used = 0;
             // Every thread reads its share of the regions twice: first to note which countries
             // occur, then to map each region id to its country's group. Groups are numbered in
             // key order, so the output needs no sort; group 0 (no country) is _UNMATCHED.
@@ -240,34 +212,54 @@ fn main() {
             // A record is finished (its group and name looked up) 16 records after it is
             // parsed, so that the cache lines it needs have time to arrive.
             let mut agg = vec![EMPTY; 256];
-            let mut out: Vec<Vec<u32>> = vec![Vec::with_capacity(BLOCK); n];
-            let mark = |agg: &mut Vec<Agg>| {
+            let mut out: Vec<Vec<u64>> = vec![Vec::with_capacity(BLOCK); n];
+            // An event is the name's hash with its low byte replaced by the group.
+            let owner = |x: u64| ((x >> 32) * n as u64 >> 32) as usize;
+            let home = |x: u64| ((x >> 8 & 0xFF_FFFF) * m as u64 >> 24) as usize;
+            let mut mark = |agg: &mut Vec<Agg>| {
                 let blocks = std::mem::take(&mut *inbox[t].0.lock().unwrap()); // unlock before the loop
                 for v in blocks {
-                    for x in v {
-                        let (g, id) = ((x & 255) as usize, (x >> 8) as usize);
-                        let (word, bit) = (&seen_in[g * stride + id / 64], 1 << (id % 64));
+                    for (j, &x) in v.iter().enumerate() {
+                        if let Some(&y) = v.get(j + 8) {
+                            prefetch(&mine[5 * home(y)]);
+                        }
+                        if used + 1 >= m {
+                            continue; // the table is full: this run's result is discarded
+                        }
+                        let (key, g, mut i) = (x | 0xFF, (x & 255) as usize, home(x));
+                        loop {
+                            let e = mine[5 * i].load(Relaxed);
+                            if e == key {
+                                break;
+                            } else if e == 0 {
+                                mine[5 * i].store(key, Relaxed);
+                                used += 1;
+                                if used > m / 8 * 7 {
+                                    full.store(true, Relaxed);
+                                }
+                                break;
+                            }
+                            i = if i + 1 == m { 0 } else { i + 1 };
+                        }
+                        let (word, bit) = (&mine[5 * i + 1 + g / 64], 1 << (g % 64));
                         let old = word.load(Relaxed);
                         word.store(old | bit, Relaxed);
                         agg[g][5] += (old & bit == 0) as i64;
                     }
                 }
             };
-            let mut ring = [((0, 0), 0, [0; 4]); RING];
-            let finish = |(key, rid, [n_id, c, nl, tl]): (_, usize, [i64; 4]),
+            let mut ring = [(0, 0, [0; 4]); RING];
+            let finish = |(h, rid, [n_id, c, nl, tl]): (u64, usize, [i64; 4]),
                           agg: &mut Vec<Agg>,
-                          out: &mut Vec<Vec<u32>>| {
+                          out: &mut Vec<Vec<u64>>| {
                 if n_id > 0 {
-                    let (id, g) = (
-                        names.id(key),
-                        region.get(rid).map_or(0, |r| r.load(Relaxed)) as usize,
-                    );
+                    let g = region.get(rid).map_or(0, |r| r.load(Relaxed)) as usize;
                     merge(&mut agg[g], [1, n_id, c, c, c, 0, nl, tl]);
-                    let o = &mut out[g % n];
-                    o.push((id as u32) << 8 | g as u32);
+                    let o = &mut out[owner(h)];
+                    o.push(h & !0xFF | g as u64);
                     if o.len() == BLOCK {
                         let full = std::mem::replace(o, Vec::with_capacity(BLOCK));
-                        inbox[g % n].0.lock().unwrap().push(full);
+                        inbox[owner(h)].0.lock().unwrap().push(full);
                     }
                 }
             };
@@ -340,7 +332,7 @@ fn main() {
                             let cents = [cents, -cents][neg as usize];
                             let rec = [id, cents, len(0) as i64, len(1) as i64];
                             finish(ring[r], &mut agg, &mut out);
-                            (ring[r], r) = ((names.key(b, s, e), rid, rec), (r + 1) % RING);
+                            (ring[r], r) = ((name_hash(b, s, e), rid, rec), (r + 1) % RING);
                             (rs, k) = (p + 1, 0);
                         }
                         qs += quote.count_ones() as usize;
@@ -372,10 +364,10 @@ fn main() {
             mark(&mut agg);
             agg
         });
-        if !names.full.load(Relaxed) {
+        if !full.load(Relaxed) {
             break aggs;
         }
-        bits += 2;
+        bits += 1;
     };
     let mut keys: Vec<String> = (1..17577)
         .filter(|&c| seen[c].load(Relaxed) == 1)
