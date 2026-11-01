@@ -613,6 +613,13 @@ fn main() {
     let words = ndocs.div_ceil(64);
     // Zeroed pages straight from the OS, touched first by the scanning threads.
     let mut rows = std::mem::ManuallyDrop::new(vec![0u64; plan.nbm * words]);
+    // Huge pages, each first written here: racing first faults each charge 2 MiB.
+    let huge = |p: usize| (rows.as_ptr() as usize + p) & !((1 << 21) - 1);
+    let (a, b) = (huge((1 << 21) - 1), huge(rows.len() * 8));
+    if a < b {
+        unsafe { madvise(a as *mut u8, b - a, 14) };
+        (a..b).step_by(1 << 21).for_each(|p| unsafe { (p as *mut u8).write_volatile(0) });
+    }
     // SAFETY: AtomicU64 has the size, alignment and bit validity of u64.
     let rows: Vec<AtomicU64> = unsafe { Vec::from_raw_parts(rows.as_mut_ptr().cast(), rows.len(), rows.capacity()) };
     let nchunks = nthreads * data.len().div_ceil(nthreads << 24).max(1);
