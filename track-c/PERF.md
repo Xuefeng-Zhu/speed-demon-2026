@@ -236,3 +236,13 @@ Board trials, 1 Nov 2026, none kept (best stays `run-38899e5ae2f9`, K 30.78):
 - PR #31 (`c-mem`, BLOCK 256 and a 32 KiB pread buffer, on top of #33): `run-ec81e3741bf0` measured T=39.2 ms, M=17.3 MB, K=30.28. M fell 0.8 MB but T rose, so it was reverted.
 
 Unchanged production C at `6d785be` ran `run-0d1302f06ed0`: T=36.5 ms, M=16.0 MB, S=338, K=31.38. This is the new best run for this src.
+
+## One first writer per huge page (2026-11-01)
+
+#26 raised M from 13.8 MB (`run-603a0d204651`) to 16.0–18.1 MB (`run-0d1302f06ed0`, `run-38899e5ae2f9`, and about 18.0 MB implied by K for `run-949821fd83fb`). Process max RSS on the sandbox did not change, because the extra memory is never mapped. When several threads fault the same empty, huge-page-eligible 2 MiB range at once, each allocates a 2 MiB folio, charges it to the cgroup and zeroes it before the kernel checks the page table; all but one folio are then freed. The #26 prefault does exactly that: about five owners share each huge page and all write their slots as soon as they start. Details, a reproducer and measurements are in `experiments/c-thp-race/`.
+
+The fix has two parts:
+- `zeroed` now writes one byte per 2 MiB on the main thread right after mapping, so each huge page of the name table has a single first writer. The owners' prefault stays and only faults 4 KiB pages at the table's edges.
+- The region table, which all threads fill at once, is mapped MADV_NOHUGEPAGE.
+
+On the sandbox (8 threads), builds that stop after the regions passes discarded at least one huge page in 19/150 and 24/150 runs before the change (worst about 8 MiB) and in 3–4/150 after, the same as a build with no huge pages (2/150, background noise). Run time is +0.4% to +0.9% in interleaved batches, against +1.0% to +1.5% for no huge pages at all. Formatted lines 331 → 334 by the local count. Reference checks pass under 1, 3, 5 and 8 threads, including forced restarts. Board run pending; the expectation is M back near 13–14 MB with T within about 1%.
