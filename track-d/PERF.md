@@ -213,3 +213,30 @@ Spawning and joining the worker threads costs about 0.2 ms per `parallel` call i
 
 
 Board trial, 1 Nov 2026: PR #27 (`d-mem`, two-pass CSR from mmap, S 416) ran `run-a9c0c5ffe415` at `aa5ab52` (T=175.3 ms, M=74.8 MB, K=23.79). It is inside production's same-code range (23.6 to 24.3) and below the 24.50 best, so it was not kept. Production D in the same window: K 23.77, 24.05, 24.21, 23.73.
+
+
+## Byte row index only (branch `d-half-csr`, 2 Nov 2026)
+
+Trial branch for the round-5 half-split of PR #27. The forward build keeps
+its baseline bucketing (single-pass dynamic growth); the two-pass count-then-
+place over `graph.txt` is dropped. The byte row index from `d-mem` is kept
+on every `Csr` and the three `csr(first, adj)` packs free the u32 row-start
+arrays before anything else allocates. Sandbox 8-vCPU paired runs at 8
+threads (the non-oversubscribed count) read T 178.7 ms vs 169.3 ms (+5.6%),
+est. M 61.02 vs 62.64 MB (-1.62 MB), peak anon 61.01 vs 62.63 MB. At 12
+threads (oversubscribed on 8 vCPUs) T 315.1 vs 303.2 ms (+3.9%), est. M
+59.54 vs 62.62 MB (-3.07 MB). The 12-thread local peak sits on the query
+phase, where both final graphs account for most of the saving.
+
+Full seed 1 SHA-256 `a23dbdf0…277e` matched on every run at 1, 4, 8 and 12
+threads. `smallcheck.py d` passed tiny and sample seeds 2 and 7 at 4, 8 and
+12 threads. S = 396 + 7 = 403 (+17 lines).
+
+Keep-rule arithmetic for the 8-thread local figures: `(M0/M1)^0.4 ×
+(S0/S1)^0.3 = (62.64/61.02)^0.4 × (386/403)^0.3 ≈ 0.994`. T 1.056 fails
+locally. On the board the trial pays only if the row-index saving is larger
+than 1.6 MB; the round-4 breakdown put the twelve-thread peak at the query
+phase, so an 8 to 10 MB board saving is still consistent with those measured
+peaks. The gain, if any, is under 3%: record two board runs and keep only
+if both beat the baseline same-code K range. Full breakdown and keep-rule
+scenarios: `experiments/d-half-csr/README.md`. Board run pending.
