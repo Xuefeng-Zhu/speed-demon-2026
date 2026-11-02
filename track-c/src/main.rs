@@ -6,7 +6,6 @@ use std::{env, fs, os::fd::AsRawFd, os::unix::fs::FileExt, sync::Barrier, sync::
 extern "C" {
     fn mmap(addr: *mut u8, len: usize, prot: i32, flags: i32, fd: i32, off: i64) -> *mut u8;
     fn madvise(addr: *mut u8, len: usize, advice: i32) -> i32;
-    fn mallopt(param: i32, value: i32) -> i32;
 }
 
 /// Maps a file read-only (PROT_READ, MAP_PRIVATE): its pages stay in the shared page cache.
@@ -41,6 +40,7 @@ fn prefetch<T>(p: &T) {
 /// Bytes `p..p + 8` of `b` as a little-endian word. Callers only read where eight bytes
 /// exist: each number ends at least eight bytes into its buffer.
 fn ld(b: &[u8], p: usize) -> u64 {
+    debug_assert!(p + 8 <= b.len());
     unsafe { (b.as_ptr().add(p) as *const u64).read_unaligned() }
 }
 
@@ -49,13 +49,18 @@ fn low(x: u64, n: u32) -> u64 {
     unsafe { _bzhi_u64(x, n) }
 }
 
-/// Bit i is set where b[p + i] == c, for 64 bytes. Callers only read where 64 bytes exist.
-fn eq64(b: &[u8], p: usize, c: u8) -> u64 {
+/// Bit i is set where b[p + i] == c, for 32 bytes. Callers only read where 32 bytes exist.
+fn eq32(b: &[u8], p: usize, c: u8) -> u32 {
+    debug_assert!(p + 32 <= b.len());
     unsafe {
-        let (p, c) = (b.as_ptr().add(p) as *const _, _mm256_set1_epi8(c as i8));
-        let eq = |p| _mm256_movemask_epi8(_mm256_cmpeq_epi8(_mm256_loadu_si256(p), c));
-        eq(p) as u32 as u64 | (eq(p.add(1)) as u32 as u64) << 32
+        let v = _mm256_loadu_si256(b.as_ptr().add(p) as _);
+        _mm256_movemask_epi8(_mm256_cmpeq_epi8(v, _mm256_set1_epi8(c as i8))) as u32
     }
+}
+
+/// The same for 64 bytes.
+fn eq64(b: &[u8], p: usize, c: u8) -> u64 {
+    eq32(b, p, c) as u64 | (eq32(b, p + 32, c) as u64) << 32
 }
 
 /// Bits 8k..8k + 8 are set where the k-th of the eight words from w is y.
@@ -285,7 +290,6 @@ fn report(aggs: &[Agg; 256], group: &[AtomicU8], out: &str) {
 }
 
 fn main() {
-    unsafe { mallopt(-8, 1) }; // one malloc arena (M_ARENA_MAX): blocks freed by owners are reused by all
     let dir = |k, d: &str| env::var(k).unwrap_or(d.into());
     let (data, out) = (dir("SD_DATA", "/data"), dir("SD_OUT", "/out"));
     let file = fs::File::open(format!("{data}/records.csv")).expect("records.csv");
@@ -329,15 +333,13 @@ fn main() {
             .find(|&i| regs[i - 1] == b'\n')
             .unwrap_or(regs.len()),
     };
-    // 15 * 2^13 slots in all (~100,000 names fill ~81%, spec 2.2); twice as many whenever
-    // one owner's fill 7/8, which at 12 threads is ~7 standard deviations above the mean.
-    let mut slots = 15 << 13;
+    let mut bits = 17; // 2^17 slots in all; twice as many whenever one owner's fill 7/8
     loop {
         // Names are split between the threads by hash. Thread o owns buckets o * m..(o + 1) * m
         // of `table`, 40 words each: eight names' keys, then for w = 0..4 word w of their
         // 256-bit sets of the groups they occur in. Other threads hand it (name, group) events
         // in blocks of BLOCK through its inbox, so only the owner reads or writes its buckets.
-        let m = slots / (8 * n) + 1;
+        let m = (1 << bits) / (8 * n) + 1;
         let table: &[AtomicU64] = zeroed(40 * m * n);
         let (full, next) = (&zeroed::<AtomicBool>(1)[0], &zeroed::<AtomicUsize>(1)[0]);
         let inbox: Vec<Pad<Mutex<Vec<Vec<u64>>>>> = (0..n).map(|_| Default::default()).collect();
@@ -525,6 +527,6 @@ fn main() {
                 std::process::exit(0);
             }
         });
-        slots *= 2;
+        bits += 1;
     }
 }
