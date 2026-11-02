@@ -40,7 +40,6 @@ fn prefetch<T>(p: &T) {
 /// Bytes `p..p + 8` of `b` as a little-endian word. Callers only read where eight bytes
 /// exist: each number ends at least eight bytes into its buffer.
 fn ld(b: &[u8], p: usize) -> u64 {
-    debug_assert!(p + 8 <= b.len());
     unsafe { (b.as_ptr().add(p) as *const u64).read_unaligned() }
 }
 
@@ -51,7 +50,6 @@ fn low(x: u64, n: u32) -> u64 {
 
 /// Bit i is set where b[p + i] == c, for 32 bytes. Callers only read where 32 bytes exist.
 fn eq32(b: &[u8], p: usize, c: u8) -> u32 {
-    debug_assert!(p + 32 <= b.len());
     unsafe {
         let v = _mm256_loadu_si256(b.as_ptr().add(p) as _);
         _mm256_movemask_epi8(_mm256_cmpeq_epi8(v, _mm256_set1_epi8(c as i8))) as u32
@@ -134,16 +132,15 @@ const BLOCK: usize = 512;
 
 /// The ends of the id and the name, the first two commas outside quotes from the record's
 /// start at b[s..], and the quotes in the name.
-fn fields(b: &[u8], s: usize) -> (usize, usize, usize) {
+fn fields(b: &[u8], s: usize) -> (usize, (usize, usize)) {
     let q = eq64(b, s, b'"');
     let e = eq64(b, s, b',') & !prefix_xor(q);
     let (f0, e1) = (s + e.trailing_zeros() as usize, e & (e - 1));
     if e1 == 0 {
-        let (f1, nq) = field_end(b, f0 + 1); // a name past the 64 bytes: rare
-        return (f0, f1, nq);
+        return (f0, field_end(b, f0 + 1)); // a name past the 64 bytes: rare
     }
     let t = e1.trailing_zeros();
-    (f0, s + t as usize, low(q, t).count_ones() as usize)
+    (f0, (s + t as usize, low(q, t).count_ones() as usize))
 }
 
 /// Where the field at b[s..] ends (the first comma outside quotes) and the quotes before it.
@@ -197,7 +194,7 @@ const SPLIT: [[u8; 16]; 72] = {
 /// second last comma, or the byte before it (spec 2.2).
 fn record(b: &[u8], rs: usize, p: usize, quotes: usize) -> Rec {
     let i = rs + 3 * (ld(b, rs) as u8 == 0xEF) as usize; // a byte order mark
-    let (f0, f1, nq) = fields(b, rs);
+    let (f0, (f1, nq)) = fields(b, rs);
     let ae = p - (ld(b, p - 8) >> 56 == b'\r' as u64) as usize;
     let at = |p: usize| unsafe { _mm_loadu_si128(b.as_ptr().add(p) as _) };
     let tail = at(ae - 16);
@@ -254,12 +251,8 @@ type Agg = [i64; 8];
 const EMPTY: Agg = [0, 0, 0, i64::MAX, i64::MIN, 0, 0, 0];
 
 fn merge(a: &mut Agg, b: Agg) {
-    for i in 0..8 {
-        a[i] = match i {
-            3 => a[i].min(b[i]),
-            4 => a[i].max(b[i]),
-            _ => a[i] + b[i],
-        };
+    for (i, (x, y)) in a.iter_mut().zip(b).enumerate() {
+        *x = [*x + y, y.min(*x), y.max(*x)][(i == 3) as usize + 2 * (i == 4) as usize];
     }
 }
 
@@ -322,16 +315,13 @@ fn main() {
     let chunks = 16 * n;
     let bound = |c: usize| match c {
         0 => start,
-        _ if c == chunks => size,
         _ => (cr(size - (size - start) * (chunks - c).pow(2) / chunks.pow(2)) + 2).min(size),
     };
     let rstart = regs.iter().position(|&c| c == b'\n').unwrap() + 1;
-    let rcut = |t: usize| match t {
-        0 => rstart,
-        _ if t == n => regs.len(),
-        _ => (rstart + (regs.len() - rstart) * t / n..regs.len())
+    let rcut = |t: usize| {
+        (rstart + (regs.len() - rstart) * t / n..regs.len())
             .find(|&i| regs[i - 1] == b'\n')
-            .unwrap_or(regs.len()),
+            .unwrap_or(regs.len())
     };
     let mut bits = 17; // 2^17 slots in all; twice as many whenever one owner's fill 7/8
     loop {
@@ -379,8 +369,8 @@ fn main() {
             let mut mark = move |agg: &mut [Agg; 256]| {
                 let blocks = std::mem::take(&mut *inbox[t].0.lock().unwrap()); // unlock before the loop
                 for v in blocks {
-                    if used + v.len() >= 8 * m {
-                        full.store(true, Relaxed); // the table might fill: start over, larger
+                    if used + v.len() > 7 * m {
+                        full.store(true, Relaxed); // the table might fill 7/8: start over, larger
                         continue;
                     }
                     for (j, &x) in v.iter().enumerate() {
@@ -400,9 +390,6 @@ fn main() {
                                 let k = free.trailing_zeros() as usize / 8;
                                 word(40 * b + k).store(key, Relaxed);
                                 used += 1;
-                                if used > 7 * m {
-                                    full.store(true, Relaxed);
-                                }
                                 break k;
                             }
                             b = if b + 1 == m { 0 } else { b + 1 };
@@ -432,12 +419,11 @@ fn main() {
                     }
                 }
             };
-            let claim = || Some(next.fetch_add(1, Relaxed)).filter(|&c| c < chunks);
             // The chunk is read through buf, which holds the file from offset `off`: when the
             // parse reaches its end, the unfinished record and the 32 bytes before it (read by
             // the record's windows) move to the front and the rest is refilled.
             let mut buf = vec![0u8; (1 << 15) + 64];
-            while let Some(c) = claim() {
+            while let Some(c) = Some(next.fetch_add(1, Relaxed)).filter(|&c| c < chunks) {
                 let (begin, end) = (bound(c), bound(c + 1));
                 if begin == end {
                     continue; // the last chunks can be empty
@@ -448,10 +434,9 @@ fn main() {
                 let (mut base, mut rs, mut qs, mut qr, mut open) = (32, 32, 0, 0, 0);
                 loop {
                     let want = (end - off).min(buf.len() - 64);
-                    while filled < want {
-                        let got = file.read_at(&mut buf[filled..want], (off + filled) as u64);
-                        filled += got.ok().filter(|&g| g > 0).expect("records.csv shrank");
-                    }
+                    file.read_exact_at(&mut buf[filled..want], (off + filled) as u64)
+                        .expect("records.csv shrank");
+                    filled = want;
                     let done = off + filled == end;
                     // A file whose last record lacks its LF gets one (there are 32 bytes before).
                     let ce = end - off + (done && end == size && buf[filled - 1] != b'\n') as usize;
@@ -503,9 +488,7 @@ fn main() {
             }
             barrier.wait();
             mark(&mut agg);
-            let mut sum = total.lock().unwrap();
-            (0..256).for_each(|g| merge(&mut sum[g], agg[g]));
-            drop(sum);
+            std::iter::zip(&mut *total.lock().unwrap(), &agg).for_each(|(s, a)| merge(s, *a));
             barrier.wait();
             full.load(Relaxed)
         };
@@ -514,13 +497,7 @@ fn main() {
         let work = &work;
         thread::scope(|s| {
             for t in 1..n {
-                s.spawn(move || {
-                    if !work(t) {
-                        loop {
-                            thread::park();
-                        }
-                    }
-                });
+                s.spawn(move || work(t) || std::iter::repeat_with(thread::park).all(|_| true));
             }
             if !work(0) {
                 report(&total.lock().unwrap(), &group, &out);
