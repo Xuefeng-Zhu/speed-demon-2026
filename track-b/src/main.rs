@@ -26,8 +26,6 @@ use std::{collections::HashMap, env, fs, thread};
 const SAMPLE: usize = 1 << 19;
 /// Bytes of corpus a thread scans between releasing what it has read.
 const SLICE: usize = 1 << 20;
-/// Bits in the filter of the short query terms' hashes.
-const FILTER: usize = 1 << 20;
 /// Term roles: used by a BOOL query and gets a posting list; anchors a
 /// phrase; used by a BOOL query and common, so it gets a bitmap instead.
 const IN_BOOL: u8 = 1;
@@ -56,12 +54,12 @@ fn key(data: &[u8], s: usize, n: usize) -> [u64; 2] {
 /// anchors[aoff[t]..aoff[t + 1]] for term t, as (query, start of the phrase
 /// in `flat`, its length, position of the term in it). The list terms
 /// (IN_BOOL) are 0..nlist, nlist <= 65,535, so their ids fit a u16; the
-/// BITMAP terms follow, term nlist + i with bitmap i of nbm. Bit h % FILTER
-/// of `filter` is set for each hash h of a short term in the table.
+/// BITMAP terms follow, term nlist + i with bitmap i of nbm. For the scan, the
+/// table is rebuilt without collisions: bucket displacements `disp` (see `at`).
 #[derive(Default)]
 struct Plan {
     keys: &'static mut [[u64; 4]],
-    filter: Vec<u64>,
+    disp: Vec<u16>,
     empty: usize,
     long: HashMap<Vec<u8>, u64>,
     role: Vec<u8>,
@@ -84,6 +82,66 @@ impl Plan {
         ((k[0] ^ k[1].rotate_left(29)).wrapping_mul(0x9e37_79b9_7f4a_7c15) >> 40) as usize
     }
 
+    /// The 64-bit mix of the key k, distinct for distinct keys (in practice).
+    fn mix(k: [u64; 2]) -> u64 {
+        // Not k[0] ^ f(k[1]): xor folds two keys onto one too easily.
+        k[1].wrapping_mul(0xff51_afd7_ed55_8ccd).wrapping_add(k[0]).wrapping_mul(0x9e37_79b9_7f4a_7c15)
+    }
+
+    /// The slot of the key with mix x in the collision-free table: its bucket's
+    /// displacement d picks the hash ((x ^ d) * odd) of x.
+    fn at(x: u64, disp: &[u16], n: usize) -> usize {
+        let d = disp[(x >> (64 - disp.len().trailing_zeros())) as usize];
+        ((x ^ d as u64).wrapping_mul(0xd6e8_feb8_6659_fd93) >> (64 - n.trailing_zeros())) as usize
+    }
+
+    /// Moves every key to its own slot (hash and displace): buckets of about two
+    /// keys, the largest first, each with the first d whose slots are all free.
+    fn perfect(&mut self) {
+        let (n, nb) = (self.keys.len(), (self.keys.len() / 4).max(2));
+        let b = |e: &[u64; 4]| (e[3] >> (64 - nb.trailing_zeros())) as usize;
+        let mut off = vec![0u32; nb + 1];
+        for e in self.keys.iter_mut().filter(|e| e[0] != 0) {
+            e[3] = Self::mix([e[0], e[1]]); // kept in the spare word
+            off[b(e) + 1] += 1;
+        }
+        let max = *off.iter().max().unwrap() as usize;
+        (1..=nb).for_each(|i| off[i] += off[i - 1]);
+        let (mut by, mut fill) = (vec![0u32; off[nb] as usize], off.clone());
+        for (j, e) in self.keys.iter().enumerate().filter(|e| e.1[0] != 0) {
+            (by[fill[b(e)] as usize] = j as u32, fill[b(e)] += 1);
+        }
+        let old = std::mem::take(&mut self.keys);
+        self.grow(n); // an empty table: old is unmapped after the moves
+        let (slots, mut used) = (&mut Vec::new(), vec![0u64; n.div_ceil(64)]);
+        self.disp = vec![0; nb];
+        for size in (1..=max).rev() {
+            for i in (0..nb).filter(|&i| (off[i + 1] - off[i]) as usize == size) {
+                let g = &by[off[i] as usize..off[i + 1] as usize];
+                for d in 0..=u16::MAX {
+                    self.disp[i] = d;
+                    slots.clear();
+                    for &j in g {
+                        let s = Self::at(old[j as usize][3], &self.disp, n);
+                        if used[s / 64] >> (s % 64) & 1 != 0 || slots.contains(&s) {
+                            break;
+                        }
+                        slots.push(s);
+                    }
+                    if slots.len() == size {
+                        break;
+                    }
+                    assert!(d < u16::MAX, "no displacement");
+                }
+                for (&j, &s) in g.iter().zip(&*slots) {
+                    (self.keys[s], used[s / 64]) = (old[j as usize], used[s / 64] | 1 << (s % 64));
+                }
+            }
+        }
+        unsafe { munmap(old.as_mut_ptr().cast(), old.len() * 32) };
+        std::mem::forget((off, by, fill)); // freed, they would change how malloc grows
+    }
+
     /// The slot of the key k, probing from slot h (its hash, or that masked): k or empty.
     fn slot(&self, k: [u64; 2], h: usize) -> usize {
         let mask = self.keys.len() - 1;
@@ -97,10 +155,9 @@ impl Plan {
         let t = if w.len() > 16 {
             *self.long.entry(w.to_vec()).or_insert(t as u64) as u32
         } else {
-            let (h, i) = (Self::hash(k), self.slot(k, Self::hash(k)));
+            let i = self.slot(k, Self::hash(k));
             if self.keys[i][0] == 0 {
                 self.keys[i] = [k[0], k[1], t as u64, 0];
-                self.filter[h % FILTER / 64] |= 1 << h % 64;
             }
             self.keys[i][2] as u32
         };
@@ -138,28 +195,29 @@ impl Plan {
 /// as the scan passes them, so only a few of them stay resident.
 fn for_each_doc(data: &[u8], plan: &Plan, mut f: impl FnMut(&[u32], &[(usize, usize)])) {
     let (mut i, mut done, mut tokens, mut keys, mut anch) = (0, 0, vec![], vec![], vec![]);
-    let (tbl, mask, empty) = (&*plan.keys, plan.keys.len() - 1, plan.empty);
-    let filter: &[u64; FILTER / 64] = plan.filter[..].try_into().unwrap();
+    let (tbl, empty) = (&*plan.keys, plan.empty);
+    let disp = &plan.disp[..];
     let none = tbl[empty][2]; // term 0, which empty slots hold
     let long = |w: &[u8]| *plan.long.get(&w.to_ascii_lowercase()).unwrap_or(&none);
     while i < data.len() {
         // Key every token but the id and prefetch its slot, then look them all
         // up, so that many cache misses are in flight at once. A short token
-        // whose filter bit is clear is no query term: it is looked up as the
-        // empty key at an empty slot, which matches at once. A long token is
-        // looked up by its bytes, at its start and length.
+        // is a query term if and only if its one slot holds its key. A long
+        // token is looked up by its bytes, at its start and length.
         i = each_token(data, i, true, |s, e| {
             let k = key(data, s, e - s);
-            let h = Plan::hash(k);
-            let hit = filter[h % FILTER / 64] >> h % 64 & 1 != 0;
-            let (k, h) = std::hint::select_unpredictable(hit, (k, h & mask), ([0; 2], empty));
-            prefetch(&tbl[h]);
+            let h = Plan::at(Plan::mix(k), disp, tbl.len());
+            prefetch(unsafe { &*tbl.as_ptr().add(h) }); // h < tbl.len()
             let w = ([s as u64, (e - s) as u64], usize::MAX);
             keys.push(if e - s > 16 { w } else { (k, h) });
         });
         tokens.extend(keys.iter().enumerate().map(|(j, &(k, h))| {
             let w = || long(&data[k[0] as usize..][..k[1] as usize]);
-            let v = tbl.get(h).map_or_else(w, |_| tbl[plan.slot(k, h)][2]);
+            let find = |i: usize| {
+                let e = unsafe { tbl.get_unchecked(i) }; // i < tbl.len()
+                std::hint::select_unpredictable((e[0] == k[0]) & (e[1] == k[1]), e[2], none)
+            };
+            let v = if h == usize::MAX { w() } else { find(h) };
             // An anchor: its phrases start at phr[(v >> 32) - 1].
             if v >> 32 != 0 {
                 prefetch(&plan.phr[(v >> 32) as usize - 1]);
@@ -631,7 +689,7 @@ fn main() {
     let qtext = map_file(&format!("{data_dir}/queries.txt"));
     let mut plan = Plan::default();
     // Term 0 stands for every token no query uses; empty slots hold it.
-    (plan.filter, plan.role) = (vec![0; FILTER / 64], vec![0]);
+    plan.role = vec![0];
     plan.grow((qtext.len() / 16 | 64).next_power_of_two()); // rarely grows
     // Query words: BOOL and PHRASE start a query, AND, OR and NOT are
     // operators and terms are lowercase. Query i is (b'B' or b'P', its first
@@ -659,6 +717,7 @@ fn main() {
     let nq = qs.len();
     qs.push((0, terms.len() as u32));
     let data = map_file(&format!("{data_dir}/docs.txt"));
+    plan.perfect();
 
     // Anchor each phrase on its rarest term in a sample of the corpus.
     plan.empty = plan.keys.iter().position(|e| e[0] == 0).unwrap();
