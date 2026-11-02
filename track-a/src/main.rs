@@ -176,10 +176,11 @@ fn parse(d: &[u8], mut i: usize, end: usize, shared: &Dictionary) -> Vec<Records
             e += eq_mask(d, e, None, b' ').trailing_zeros() as usize;
         }
         assert!(e < s + 128, "endpoint longer than the spec allows");
-        let h = hash(d, s, e - s);
-        let id = shared.find(d, h, s, e) as u64;
+        // The next line's start first, so its loads can begin during the lookup.
         let (latency, next) = parse_latency(d, e + 5);
         let is_5xx = (d[e + 1] == b'5') as u64;
+        let h = hash(d, s, e - s);
+        let id = shared.find(d, h, s, e) as u64;
         if hour != cur_h {
             unsafe { cur.0.set_len(n) };
             if cur_h < HOURS {
