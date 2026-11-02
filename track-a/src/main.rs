@@ -11,13 +11,16 @@
 //! 4. The threads take whole hours in order from an atomic counter: count the hour's records per endpoint id,
 //!    counting-sort them in place (no second buffer) into groups laid out in rank order, find the three
 //!    nearest-rank percentiles (branch-free AVX2 rank counting for groups of up to 64 values,
-//!    selection otherwise), format the lines, free the records. The main thread writes the
-//!    hours in order.
+//!    selection otherwise) and free the records. An hour waits as compact stats until the
+//!    writer is close; then a worker formats its lines. The main thread writes the hours in order.
 use std::sync::{atomic::*, mpsc, Barrier, Mutex, OnceLock};
 use std::{env, fs, io::Write, os::unix::io::AsRawFd, thread};
 
 /// The spec fixes the span: 72 hours from 18:00 UTC on 30 October 2026.
 const HOURS: usize = 72;
+/// Finished hours get formatted once fewer than this many hours remain to be written before them:
+/// formatted hours waiting for the writer were the peak of memory use.
+const AHEAD: usize = 6;
 const ONES: u64 = 0x0101_0101_0101_0101;
 
 extern "C" {
@@ -264,9 +267,12 @@ fn select_ranks(v: &mut [u32], [r50, r95, r99]: [usize; 3]) -> [u32; 3] {
 /// The endpoint names in rank (byte) order, and the id of each rank.
 type Plan<'a> = (Vec<&'a [u8]>, Vec<u32>);
 
-/// Formats every group of one hour from each chunk's records into `out`. The records are sorted
-/// in place, so an hour in progress needs no memory beyond its own records and `out`.
-fn summarize(hour: usize, chunks: Vec<Records>, (names, order): &Plan, out: &mut Vec<u8>) {
+/// One hour's results by endpoint rank: count, p50, p95, p99 and 5xx count (count 0: no line).
+type Stats = Vec<[u32; 5]>;
+
+/// Computes every group of one hour from each chunk's records. The records are sorted in place,
+/// so an hour in progress needs no memory beyond its own records, and they are freed on return.
+fn summarize(chunks: Vec<Records>, (_, order): &Plan) -> Stats {
     // The hour's records all go into its largest chunk's vector, to be sorted in place there.
     // An escaped record becomes `id << 21 | is_5xx << 20 | 0xfffff`; its full latency stays.
     let (mut counts, mut lat, mut escapes) = (vec![0u64; order.len()], Vec::new(), Vec::new());
@@ -327,20 +333,12 @@ fn summarize(hour: usize, chunks: Vec<Records>, (names, order): &Plan, out: &mut
         }
     }
     lat.resize(total as usize + 64, 0); // `small_ranks` reads up to 64 values past a group
-    let (day, hh) = ((18 + hour) / 24, (18 + hour) % 24);
-    let (month, dd) = (10 + day / 2, [30, 31, 1, 2][day]);
-    let prefix = format!("2026-{month:02}-{dd:02}T{hh:02}:00:00Z ");
-    out.clear();
-    out.reserve(1 << 18);
-    let mut line = [0u8; 512]; // prefix (21) + name (at most 125 by spec) + 6 numbers
-    line[..prefix.len()].copy_from_slice(prefix.as_bytes());
-    for (g, name) in names.iter().enumerate() {
-        let id = order[g] as usize;
-        let n = counts[id] as u32 as usize;
+    let stats = order.iter().map(|&id| {
+        let n = counts[id as usize] as u32 as usize;
         if n == 0 {
-            continue;
+            return [0; 5];
         }
-        let at = next[id] as usize - n;
+        let at = next[id as usize] as usize - n;
         let r = [50, 95, 99].map(|p| (p * n + 99) / 100 - 1);
         let [p50, p95, p99] = match n {
             0..=8 => small_ranks::<1>(&lat, at, n, r),
@@ -348,12 +346,29 @@ fn summarize(hour: usize, chunks: Vec<Records>, (names, order): &Plan, out: &mut
             17..=32 => small_ranks::<4>(&lat, at, n, r),
             33..=64 => small_ranks::<8>(&lat, at, n, r),
             _ => select_ranks(&mut lat[at..at + n], r),
+        };
+        [n as u32, p50, p95, p99, (counts[id as usize] >> 32) as u32]
+    });
+    stats.collect()
+}
+
+/// Formats the lines of one hour into `out`.
+fn format(hour: usize, stats: &Stats, (names, _): &Plan, out: &mut Vec<u8>) {
+    let (day, hh) = ((18 + hour) / 24, (18 + hour) % 24);
+    let (month, dd) = (10 + day / 2, [30, 31, 1, 2][day]);
+    let prefix = format!("2026-{month:02}-{dd:02}T{hh:02}:00:00Z ");
+    out.clear();
+    out.reserve(1 << 18);
+    let mut line = [0u8; 512]; // prefix (21) + name (at most 125 by spec) + 6 numbers
+    line[..prefix.len()].copy_from_slice(prefix.as_bytes());
+    for (name, s) in names.iter().zip(stats) {
+        let [n, p50, p95, p99, e] = s.map(u64::from);
+        if n == 0 {
+            continue;
         }
-        .map(u64::from);
-        let e = counts[id] >> 32;
         let mut k = prefix.len() + name.len();
         line[prefix.len()..k].copy_from_slice(name);
-        for x in [n as u64, p50, p95, p99, e, e * 1_000_000 / n as u64] {
+        for x in [n, p50, p95, p99, e, e * 1_000_000 / n] {
             k = put_num(&mut line, k, x);
         }
         line[k] = b'\n';
@@ -396,6 +411,8 @@ fn main() {
     let mut f = fs::File::create(format!("{out_dir}/summary.txt")).expect("create summary.txt");
     let (tx, rx) = mpsc::channel();
     let pool = &Mutex::new(Vec::<Vec<u8>>::new());
+    let stash: &Vec<Mutex<Option<Stats>>> = &(0..HOURS).map(|_| Mutex::default()).collect();
+    let written = &AtomicUsize::new(0);
     thread::scope(|s| {
         for t in 0..threads {
             let tx = tx.clone();
@@ -410,21 +427,42 @@ fn main() {
                     return;
                 }
                 let plan = plan.get_or_init(|| make_plan(shared));
+                // Each finished hour waits as compact stats until the writer is within AHEAD
+                // hours of it, so few formatted hours wait in memory. Workers format the hours
+                // that are due after each hour they finish; with no hour left, they wait for the
+                // rest to come due.
+                let flush = |wait: bool| {
+                    for w in written.load(Ordering::Relaxed)..HOURS {
+                        while w >= written.load(Ordering::Relaxed) + AHEAD {
+                            if !wait {
+                                return;
+                            }
+                            thread::yield_now();
+                        }
+                        let stats = stash[w].lock().unwrap().take();
+                        if let Some(stats) = stats {
+                            let mut out = pool.lock().unwrap().pop().unwrap_or_default();
+                            format(w, &stats, plan, &mut out);
+                            tx.send((w, out)).unwrap();
+                        }
+                    }
+                };
                 while let h @ 0..HOURS = next_hour.fetch_add(1, Ordering::Relaxed) {
-                    let chunks = std::mem::take(&mut *hours[h].lock().unwrap());
-                    let mut out = pool.lock().unwrap().pop().unwrap_or_default();
-                    summarize(h, chunks, plan, &mut out);
-                    tx.send((h, out)).unwrap();
+                    let stats = summarize(std::mem::take(&mut *hours[h].lock().unwrap()), plan);
+                    *stash[h].lock().unwrap() = Some(stats);
+                    flush(false);
                 }
+                flush(true);
             });
         }
         drop(tx);
-        let (mut pending, mut written) = (vec![None; HOURS], 0);
+        let (mut pending, mut w) = (vec![None; HOURS], 0);
         for (h, out) in rx {
             pending[h] = Some(out);
-            while let Some(out) = pending.get_mut(written).and_then(Option::take) {
+            while let Some(out) = pending.get_mut(w).and_then(Option::take) {
                 f.write_all(&out).unwrap();
-                written += 1;
+                w += 1;
+                written.store(w, Ordering::Relaxed);
                 let mut pool = pool.lock().unwrap();
                 if pool.len() < 4 { pool.push(out); }
             }
