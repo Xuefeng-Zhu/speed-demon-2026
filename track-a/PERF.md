@@ -242,3 +242,4 @@ Board trials, 1 Nov 2026: PR #30 (`a-mem`, hours streamed during the parse, pool
 - c733a49: run-6fa01abe4c90 T 22.50 ms, M 22.68 MB, K 45.85.
 - cbd0e02: run-8a97c4946f70 T 25.24 ms, K 43.45 (noise).
 - c758b5e opt13 compact dict: run-071e0cb68164 T 32.11 ms, M 21.17 MB, S 342, K 38.74 (big loss or noise; rerun).
+- 4b2faf0 rerun: run-93dd8c7c4b5a T 30.22 ms, K 39.73. opt13 compact dict NOT kept (38.74/39.73; VM gain does not transfer). opt12 cand2 restored.

@@ -3,7 +3,7 @@
 //! 1. mmap the log and split it into one newline-aligned chunk per thread.
 //! 2. Each thread parses its chunk into packed records (endpoint id, 5xx bit, latency),
 //!    bucketed by hour. One shared append-only dictionary owns endpoint names and publishes
-//!    dense ids with release stores; published names are immutable for all workers.
+//!    dense ids with per-slot OnceLocks; initialized entries are immutable for all workers.
 //!    The dictionary copies names, so each parsed input chunk's pages can be dropped.
 //!    Each thread then hands its records to the shared per-hour lists.
 //! 3. The same threads then meet at a barrier; the first to go on sorts the shared names once,
@@ -92,53 +92,40 @@ fn parse_latency(d: &[u8], q: usize) -> (u64, usize) {
     (lo.wrapping_add(hi) >> 32, q + k + 1)
 }
 
-/// Append-only open addressing over 8192 slot words, each 0 or `hash & !0xfff | id + 1`; then per
-/// id 16 words (128 bytes, 64-byte aligned): the name, a space and zeros, so 64-byte equality
-/// loads stay inside and a short name is one cache line. The slot's release store publishes the
-/// name. The counter gives out the ids (at most 2048).
-type Dictionary = (&'static [AtomicU64], AtomicUsize);
+/// An immutable endpoint, owned once for the entire input: hash, length, id and name. The
+/// zero-padded name permits both 64-byte equality loads, including a name of the maximum length.
+type Entry = (u64, u32, u32, [u8; 128]);
 
-/// The 128-byte name block of `id`.
-fn name(dict: &[AtomicU64], id: usize) -> &[u8] {
-    // SAFETY: 16 words in bounds; written only before the slot that publishes `id`.
-    unsafe { std::slice::from_raw_parts(dict[8192 + 16 * id..][..16].as_ptr().cast(), 128) }
-}
+/// Append-only open addressing over 4096 slots, and the next id: OnceLock publishes each slot
+/// exactly once. A thread that loses initialization compares the published key before continuing
+/// its probe.
+type Dictionary = (Vec<OnceLock<Entry>>, AtomicU32);
 
 /// The id of the endpoint `d[s..e]`, adding it to the dictionary if it is new. The hash comes
 /// from the endpoint's first and last words and its length.
 #[inline(always)]
-fn find((dict, next): &Dictionary, d: &[u8], s: usize, e: usize) -> u32 {
+fn find((slots, next_id): &Dictionary, d: &[u8], s: usize, e: usize) -> u32 {
     let n = e - s;
     let h = if n >= 8 {
         load(d, s) ^ load(d, e - 8).rotate_left(29)
     } else {
         load(d, s) & ((1 << (8 * n)) - 1)
     };
-    let h = (h ^ n as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) & !0xfff;
+    let h = (h ^ n as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
     let mut i = (h >> 40) as usize;
     loop {
-        let slot = &dict[i & 8191];
-        let mut v = slot.load(Ordering::Acquire);
-        // An empty slot is claimed with 0xfff (no id), then filled; a racing thread waits.
-        if v == 0 && slot.compare_exchange(0, 0xfff, Ordering::Relaxed, Ordering::Relaxed).is_ok() {
-            let id = next.fetch_add(1, Ordering::Relaxed);
+        let entry = slots[i & 4095].get_or_init(|| {
+            let id = next_id.fetch_add(1, Ordering::Relaxed);
             assert!(id < 2048, "more endpoints than the spec allows");
-            let p = dict[8192 + 16 * id].as_ptr().cast::<u8>();
-            // SAFETY: n < 128, the block is new, and the release store below publishes it.
-            unsafe { p.copy_from_nonoverlapping(d[s..e].as_ptr(), n) };
-            unsafe { p.add(n).write(b' ') };
-            v = h | (id + 1) as u64;
-            slot.store(v, Ordering::Release);
-        }
-        while v & 0xfff == 0xfff || v == 0 {
-            v = slot.load(Ordering::Acquire);
-        }
-        // Equal through the space: the same name, and the stored one is no longer. Both 64-byte
-        // halves are always compared, so the endpoint's length costs no mispredicted branch.
-        let id = (v & 0xfff) as usize - 1;
-        let diff = |k: usize| !eq_mask(name(dict, id), k, Some((d, s + k)), 0) as u128;
-        if v & !0xfff == h && (diff(0) | diff(64) << 64) & ((2 << n) - 1) == 0 {
-            return id as u32;
+            let mut name = [0; 128];
+            name[..n].copy_from_slice(&d[s..e]);
+            (h, n as u32, id, name)
+        });
+        let diff = |k: usize| !eq_mask(&entry.3, k, Some((d, s + k)), 0);
+        let tail = |k: usize| diff(k) & ((1 << (n - k)) - 1) == 0;
+        let same = || n < 64 && tail(0) || n >= 64 && diff(0) == 0 && tail(64);
+        if entry.0 == h && entry.1 as usize == n && same() {
+            return entry.2;
         }
         i += 1;
     }
@@ -353,9 +340,8 @@ fn summarize(hour: usize, chunks: Vec<Records>, plan: &Plan, s: &mut Scratch, ou
 
 /// Sorts the endpoint names once every chunk is parsed: an endpoint's position in byte order is
 /// its output rank. The ids are exactly 0..names.len().
-fn make_plan((dict, next): &Dictionary) -> Plan<'_> {
-    let name = |id| name(dict, id).split(|&c| c == b' ').next().unwrap();
-    let mut names: Vec<_> = (0..next.load(Ordering::Relaxed)).map(|id| (name(id), id as u32)).collect();
+fn make_plan((slots, _): &Dictionary) -> Plan<'_> {
+    let mut names: Vec<_> = slots.iter().filter_map(OnceLock::get).map(|e| (&e.3[..e.1 as usize], e.2)).collect();
     names.sort_unstable();
     names.into_iter().unzip()
 }
@@ -377,10 +363,8 @@ fn main() {
         }
         at
     };
-    // 8192 slots and 2048 names of 16 words, as zero pages (read | write, private | anonymous).
-    let words = unsafe { mmap(std::ptr::null_mut(), (8192 + 2048 * 16) * 8, 3, 0x22, -1, 0) };
-    assert!(words as isize > 0, "mmap failed");
-    let shared = &(unsafe { std::slice::from_raw_parts(words.cast(), 8192 + 2048 * 16) }, AtomicUsize::new(0));
+    // The first worker to start makes the dictionary while the main thread starts the others.
+    let dictionary: &OnceLock<Dictionary> = &OnceLock::new();
     // Each hour's records, one entry per chunk. The parse threads go on to summarize: after a
     // barrier, the first to need the plan makes it, and all take hours in order from a counter.
     let hours: &Vec<Mutex<Vec<Records>>> = &(0..HOURS).map(|_| Mutex::default()).collect();
@@ -393,6 +377,7 @@ fn main() {
         for t in 0..threads {
             let tx = tx.clone();
             s.spawn(move || {
+                let shared = dictionary.get_or_init(|| ((0..4096).map(|_| OnceLock::new()).collect(), AtomicU32::new(0)));
                 for (hour, r) in hours.iter().zip(parse(d, cut(t), cut(t + 1), shared)) {
                     hour.lock().unwrap().push(r);
                 }
