@@ -274,3 +274,4 @@ The final head `6d785be`, with #28 kept, ran `run-a283f9503c48`: T=173.0 ms, M=6
 - 52fcdb5 (B src unchanged): run-255e60b90867 T 118.3 ms, K 34.17.
 - bec2446: run-cd25af9b8fe9 K 33.71.
 - 2026-11-02 05:38 PST e6973a4 opt17 c4 line trim: run-48dd30f69941 T 122.8 ms M 47.8 MB S 701 K 33.92 (rerun next)
+- 2026-11-02 05:44 PST f28e9da c4 rerun: run-e5ea1f5e35fa T 120.7 ms S 701 K 34.13. c4 KEPT.
