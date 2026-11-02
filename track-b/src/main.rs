@@ -60,7 +60,7 @@ fn key(data: &[u8], s: usize, n: usize) -> [u64; 2] {
 /// of `filter` is set for each hash h of a short term in the table.
 #[derive(Default)]
 struct Plan {
-    keys: &'static mut [[u64; 3]],
+    keys: &'static mut [[u64; 4]],
     filter: Vec<u64>,
     empty: usize,
     long: HashMap<Vec<u8>, u64>,
@@ -99,7 +99,7 @@ impl Plan {
         } else {
             let (h, i) = (Self::hash(k), self.slot(k, Self::hash(k)));
             if self.keys[i][0] == 0 {
-                self.keys[i] = [k[0], k[1], t as u64];
+                self.keys[i] = [k[0], k[1], t as u64, 0];
                 self.filter[h % FILTER / 64] |= 1 << h % 64;
             }
             self.keys[i][2] as u32
@@ -114,21 +114,22 @@ impl Plan {
         t
     }
 
-    /// Rebuilds the table with n zeroed 24-byte slots, on 2 MiB pages if the
-    /// table is large, so that the scan's random lookups need few TLB entries.
+    /// Rebuilds the table with n zeroed 32-byte slots (none straddles two cache
+    /// lines), on 2 MiB pages if the table is large, so that the scan's random
+    /// lookups need few TLB entries.
     fn grow(&mut self, n: usize) {
         // PROT_READ | PROT_WRITE; MAP_PRIVATE | MAP_ANONYMOUS (Linux).
-        let p = unsafe { mmap(std::ptr::null_mut(), n * 24 + (2 << 20), 3, 0x22, -1, 0) };
+        let p = unsafe { mmap(std::ptr::null_mut(), n * 32 + (2 << 20), 3, 0x22, -1, 0) };
         assert!(p as isize != -1, "mmap failed");
         let a = (p as usize).next_multiple_of(2 << 20);
-        unsafe { madvise(a as *mut u8, n * 24, 14) }; // MADV_HUGEPAGE on Linux
-        let new = unsafe { std::slice::from_raw_parts_mut(a as *mut [u64; 3], n) };
+        unsafe { madvise(a as *mut u8, n * 32, 14) }; // MADV_HUGEPAGE on Linux
+        let new = unsafe { std::slice::from_raw_parts_mut(a as *mut [u64; 4], n) };
         let old = std::mem::replace(&mut self.keys, new);
         for &mut e in old.iter_mut().filter(|e| e[0] != 0) {
             let i = self.slot([e[0], e[1]], Self::hash([e[0], e[1]]));
             self.keys[i] = e;
         }
-        unsafe { munmap(old.as_mut_ptr().cast(), old.len() * 24) };
+        unsafe { munmap(old.as_mut_ptr().cast(), old.len() * 32) };
     }
 }
 
@@ -631,8 +632,7 @@ fn main() {
     let mut plan = Plan::default();
     // Term 0 stands for every token no query uses; empty slots hold it.
     (plan.filter, plan.role) = (vec![0; FILTER / 64], vec![0]);
-    // About 30% full, so that probes are short; rarely grows.
-    plan.grow((qtext.len() / 8 | 64).next_power_of_two());
+    plan.grow((qtext.len() / 16 | 64).next_power_of_two()); // rarely grows
     // Query words: BOOL and PHRASE start a query, AND, OR and NOT are
     // operators and terms are lowercase. Query i is (b'B' or b'P', its first
     // term), its terms terms[qs[i].1..qs[i + 1].1] as (first byte of the
