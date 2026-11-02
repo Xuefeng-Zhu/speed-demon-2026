@@ -253,3 +253,4 @@ Board trials, 1 Nov 2026: PR #30 (`a-mem`, hours streamed during the parse, pool
 - bec2446 rerun: run-c780a03d4e8c T 23.74 ms, M 18.11 MB, K 45.78. opt15 NOT kept (40.79/45.78 vs opt14 45.97-46.90; S +28 and T cost). opt14 restored.
 
 - 2026-11-02 05:22 PST ab51247 opt16 line trim: run-31c8ef4986de T 22.4 ms M 19.8 MB S 325 K 47.32
+- 2026-11-02 05:27 PST cb3e3c6 (same src) run-eaa1f1ced772 T 23.2 ms M 19.8 MB S 325 K 46.60. KEPT (avg 46.96 vs prod 45.97-46.90; S gain deterministic)
