@@ -218,3 +218,4 @@ Board trial, 1 Nov 2026: PR #27 (`d-mem`, two-pass CSR from mmap, S 416) ran `ru
 - Nov 1 2026: PR #42 d-reuse-spare cb9c687 run-012cda1c4d0c T 142.2 ms M 87.1 MB S 389 K 25.88 (run 1; M spike like production noise 69-87 MB).
 - Nov 1 2026: PR #42 run 2 7af73b3 run-3761681eb879 T 150.2 ms M 71.0 MB S 389 K 26.23. Mean 26.06 vs same-code production ~25.6 (range 25.0-26.7). Kept (structural: fewer serial huge-page faults, S unchanged).
 - Nov 1 2026: build-time PGO (Dockerfile stage, sample seed 2, +19 S). c3c3056 run-d60644be17aa T 138.2 ms M 71.9 MB S 408 K 27.08; 58f702e run-9483b5685af5 T 141.6 M 72.0 K 26.75; 5530ffa run-6b6f46ded213 T 150.8 M 72.0 K 25.93. Mean 26.59 = production (~26.6). Not kept.
+- Nov 1 2026: PR #53 run 1, 9120151 run-d504d41a9dd3 T 141.1 ms M 70.7 MB S 392 K 27.05 (same batch A 40.63 a bit slow).
