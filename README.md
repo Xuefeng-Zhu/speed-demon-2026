@@ -2,12 +2,12 @@
 
 Rust (standard library only) solutions for all four tracks of [Speed Demon 2026](https://speeddemon.dev). Each solution writes output byte-identical to the official Python reference. Licensed under MIT (see `LICENSE`).
 
-| Track | Directory | Approach | Best board run (K) |
+| Track | Directory | Approach | Best board run of the submitted code (K) |
 |---|---|---|---|
-| A: Ingest | `track-a/` | mmap, parallel parse into packed per-hour records with a shared endpoint dictionary, then per-hour counting sort and AVX2 nearest-rank percentiles | 44.25 |
-| B: Index | `track-b/` | Per-chunk tokenizing and inverted index with bitmaps, phrase and boolean answering per chunk, merged in document order; build-time PGO | 30.02 |
-| C: Join | `track-c/` | Small `pread` buffers, AVX2 quote-parity record splitting, shared atomic per-region aggregates | 41.13 |
-| D: Traverse | `track-d/` | Parallel CSR build with locality renumbering, bidirectional Dijkstra per query across threads | 27.13 |
+| A: Ingest | `track-a/` | mmap, parallel parse into packed per-hour records with a shared endpoint dictionary, then per-hour summaries on N-1 workers (counting sort, AVX2 nearest-rank percentiles) with a recycled output buffer pool | 47.32 |
+| B: Index | `track-b/` | Per-chunk AVX2 tokenizing into a collision-free (displacement) term table, phrase and boolean answering per chunk with 16-bit result lists, merged in document order; build-time PGO | 34.20 |
+| C: Join | `track-c/` | Small `pread` buffers, AVX2 quote-parity record splitting, shared atomic per-region aggregates and an arena name table | 41.77 |
+| D: Traverse | `track-d/` | Parallel CSR build with locality renumbering, bidirectional Dijkstra per query across threads | 27.59 |
 
 Each track directory holds `src/main.rs`, its `Dockerfile`, a short `README.md` on the design and `PERF.md`, the log of official board runs (run IDs, T, M, S, K) and correctness checks.
 
