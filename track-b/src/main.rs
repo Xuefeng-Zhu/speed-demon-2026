@@ -26,8 +26,6 @@ use std::{collections::HashMap, env, fs, thread};
 const SAMPLE: usize = 1 << 19;
 /// Bytes of corpus a thread scans between releasing what it has read.
 const SLICE: usize = 1 << 20;
-/// The role of a term used by a BOOL query.
-const IN_BOOL: u8 = 1;
 
 /// ONES[16 - n..32 - n] masks the first n of 16 bytes.
 const ONES: [u8; 32] = *b"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
@@ -51,16 +49,14 @@ fn key(data: &[u8], s: usize, n: usize) -> [u64; 2] {
 /// corpus scan does with each term: its roles, and the phrases it anchors,
 /// anchors[aoff[t]..aoff[t + 1]] for term t, as (query, start of the phrase
 /// in `flat`, its length, position of the term in it). The list terms
-/// (IN_BOOL) are 0..nlist, nlist <= 65,535, so their ids fit a u16; the
+/// (BOOL terms) are 0..nlist, nlist <= 65,535, so their ids fit a u16; the
 /// BITMAP terms follow, term nlist + i with bitmap i of nbm. For the scan, the
 /// table is rebuilt without collisions: bucket displacements `disp` (see `at`).
 #[derive(Default)]
 struct Plan {
     keys: &'static mut [[u64; 4]],
     disp: Vec<u16>,
-    empty: usize,
     long: HashMap<Vec<u8>, u64>,
-    role: Vec<u8>,
     phr: Vec<u32>,
     nlist: usize,
     nbm: usize,
@@ -83,7 +79,8 @@ impl Plan {
     /// The 64-bit mix of the key k, distinct for distinct keys (in practice).
     fn mix(k: [u64; 2]) -> u64 {
         // Not k[0] ^ f(k[1]): xor folds two keys onto one too easily.
-        k[1].wrapping_mul(0xff51_afd7_ed55_8ccd).wrapping_add(k[0]).wrapping_mul(0x9e37_79b9_7f4a_7c15)
+        let x = k[1].wrapping_mul(0xff51_afd7_ed55_8ccd).wrapping_add(k[0]);
+        x.wrapping_mul(0x9e37_79b9_7f4a_7c15)
     }
 
     /// The slot of the key with mix x in the collision-free table: its bucket's
@@ -141,13 +138,6 @@ impl Plan {
         old
     }
 
-    /// The slot of the key k, probing from slot h (its hash, or that masked): k or empty.
-    fn slot(&self, k: [u64; 2], h: usize) -> usize {
-        let mask = self.keys.len() - 1;
-        let hit = |&i: &usize| self.keys[i][..2] == k || self.keys[i][0] == 0;
-        (h..).map(|i| i & mask).find(hit).unwrap()
-    }
-
     /// Rebuilds the table with n zeroed 32-byte slots (none straddles two cache
     /// lines), on 2 MiB pages if the table is large, so that the scan's random
     /// lookups need few TLB entries.
@@ -160,11 +150,17 @@ impl Plan {
         let new = unsafe { std::slice::from_raw_parts_mut(a as *mut [u64; 4], n) };
         let old = std::mem::replace(&mut self.keys, new);
         for &mut e in old.iter_mut().filter(|e| e[0] != 0) {
-            let i = self.slot([e[0], e[1]], Self::hash([e[0], e[1]]));
-            self.keys[i] = e;
+            self.keys[slot(self.keys, [e[0], e[1]])] = e;
         }
         unsafe { munmap(old.as_mut_ptr().cast(), old.len() * 32) };
     }
+}
+
+/// The slot of the key k in the probing table keys: k's, or the empty one it would take.
+fn slot(keys: &[[u64; 4]], k: [u64; 2]) -> usize {
+    let hit = |&i: &usize| keys[i][..2] == k || keys[i][0] == 0;
+    let mask = keys.len() - 1;
+    (Plan::hash(k)..).map(|i| i & mask).find(hit).unwrap()
 }
 
 /// Calls `f` with the term ids (term 0's for a token no query uses) of
@@ -172,9 +168,8 @@ impl Plan {
 /// as the scan passes them, so only a few of them stay resident.
 fn for_each_doc(data: &[u8], plan: &Plan, mut f: impl FnMut(&[u32], &[(usize, usize)])) {
     let (mut i, mut done, mut tokens, mut keys, mut anch) = (0, 0, vec![], vec![], vec![]);
-    let (tbl, empty) = (&*plan.keys, plan.empty);
-    let disp = &plan.disp[..];
-    let none = tbl[empty][2]; // term 0, which empty slots hold
+    let (tbl, disp) = (&*plan.keys, &plan.disp[..]);
+    let none = tbl.iter().find(|e| e[0] == 0).unwrap()[2]; // term 0, which empty slots hold
     let long = |w: &[u8]| *plan.long.get(&w.to_ascii_lowercase()).unwrap_or(&none);
     while i < data.len() {
         // Key every token but the id and prefetch its slot, then look them all
@@ -203,9 +198,7 @@ fn for_each_doc(data: &[u8], plan: &Plan, mut f: impl FnMut(&[u32], &[(usize, us
             v as u32
         }));
         f(&tokens, &anch);
-        tokens.clear();
-        keys.clear();
-        anch.clear();
+        (tokens.clear(), keys.clear(), anch.clear());
         if i - done >= SLICE || i >= data.len() {
             release(&data[done..i.min(data.len())]);
             done = i;
@@ -252,14 +245,11 @@ fn each_token(data: &[u8], mut i: usize, id: bool, mut f: impl FnMut(usize, usiz
 /// Bit masks of the token bytes (spec 2.2) and of the LFs in data[i..i + 64].
 fn masks(data: &[u8], i: usize) -> (u64, u64) {
     let mut pad = [0u8; 64];
-    let b: &[u8; 64] = match data.get(i..i + 64) {
-        Some(b) => b.try_into().unwrap(),
-        None => {
-            pad[..data.len() - i].copy_from_slice(&data[i..]);
-            &pad
-        }
-    };
-    #[cfg(target_feature = "avx2")]
+    let b = data.get(i..i + 64).unwrap_or_else(|| {
+        pad[..data.len() - i].copy_from_slice(&data[i..]);
+        &pad
+    });
+    // The target is x86-64-v3 (AVX2).
     unsafe {
         use std::arch::x86_64::*;
         let half = |h: usize| {
@@ -278,29 +268,12 @@ fn masks(data: &[u8], i: usize) -> (u64, u64) {
         let ((m0, l0), (m1, l1)) = (half(0), half(1));
         (m0 | m1 << 32, l0 | l1 << 32)
     }
-    #[cfg(not(target_feature = "avx2"))]
-    {
-        let (mut m, mut lf) = (0u64, 0u64);
-        for (j, &c) in b.iter().enumerate() {
-            let tok = (c | 0x20).wrapping_sub(b'a') < 26 || c.wrapping_sub(b'0') < 10;
-            m |= (tok as u64) << j;
-            lf |= ((c == b'\n') as u64) << j;
-        }
-        (m, lf)
-    }
 }
 
 /// Asks the CPU to start loading the cache line of `p`.
 fn prefetch<T>(p: &T) {
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        use std::arch::x86_64::{_mm_prefetch, _MM_HINT_T0};
-        _mm_prefetch::<_MM_HINT_T0>(p as *const T as *const i8)
-    };
-    #[cfg(target_arch = "aarch64")]
-    unsafe {
-        std::arch::asm!("prfm pldl1keep, [{0}]", in(reg) p, options(nostack, readonly, preserves_flags))
-    };
+    // _MM_HINT_T0
+    unsafe { std::arch::x86_64::_mm_prefetch::<3>(p as *const T as *const i8) };
 }
 
 /// A chunk's posting lists: list l has the ids first + docs[offs[l]..offs[l + 1]];
@@ -342,9 +315,9 @@ fn scan_chunk(c: &mut Chunk, data: &[u8], lo: usize, hi: usize, plan: &Plan) {
     let stream = &mut c.stream;
     (c.first, c.words, _) = (first, words, (stream.clear(), hits.clear(), offs.clear()));
     stream.reserve_exact((hi - lo) / 16);
-    let mut doc = first;
-    // The bitmap words of the current 64 documents, stored when they are done.
-    let mut group = vec![0u64; plan.nbm + 1]; // and one for all other terms
+    // The bitmap words of the current 64 documents, stored when they are done,
+    // and one for all other terms.
+    let (mut doc, mut group) = (first, vec![0u64; plan.nbm + 1]);
     let flush = |rows: &mut [u64], group: &mut [u64], doc: u32| {
         for (b, x) in group[..plan.nbm].iter_mut().enumerate() {
             rows[b * words + (doc - first) as usize / 64] = std::mem::take(x);
@@ -368,11 +341,8 @@ fn scan_chunk(c: &mut Chunk, data: &[u8], lo: usize, hi: usize, plan: &Plan) {
         stream.truncate(base + n + 1);
         // Phrases: compare the tokens around each anchor with its phrases.
         for &(p, mut i) in anch {
-            while let [q, n, j, ..] = plan.phr[i..] {
+            while let [q @ ..u32::MAX, n, j, ..] = plan.phr[i..] {
                 let (n, j) = (n as usize, j as usize);
-                if q == u32::MAX {
-                    break;
-                }
                 if p >= j && tokens.get(p - j..p - j + n) == Some(&plan.phr[i + 3..i + 3 + n]) {
                     hits.push((q, doc));
                 }
@@ -407,9 +377,7 @@ fn scan_chunk(c: &mut Chunk, data: &[u8], lo: usize, hi: usize, plan: &Plan) {
         let (a, b) = (offs[l] as usize, offs[l + 1] as usize);
         offs[l] = w as u32;
         for i in a..b {
-            let keep = i == a || docs[i] != docs[i - 1];
-            docs[w] = docs[i];
-            w += keep as usize;
+            (docs[w], w) = (docs[i], w + (i == a || docs[i] != docs[i - 1]) as usize);
         }
     }
     offs[nl] = w as u32;
@@ -430,7 +398,7 @@ impl Acc {
         if n == 0 {
             return;
         }
-        self.0.fetch_add((n << 44) + sum + n * first as u64, Relaxed);
+        self.0.fetch_add(n << 44 | n * first as u64 + sum, Relaxed); // the sum fits 44 bits
         if first < self.1.load(Relaxed) {
             // Merge the new ids into the sorted ten.
             let (t, mut i) = (&mut *self.2.lock().unwrap(), 0);
@@ -453,16 +421,14 @@ impl Acc {
 /// list `r` until a large set is ORed in, then the bitmap `bm`, which is all
 /// zero whenever it is not in use.
 fn boolean(q: &[(u8, u32)], plan: &Plan, c: &Chunk, s: &mut Scratch, acc: &Acc) {
-    let words = c.words;
-    let (r, o, bm) = s;
+    let (words, (r, o, bm)) = (c.words, s);
     let (mut is_bm, bm) = (false, &mut bm[..words]);
     r.clear();
     let get = |b: &[u64], d: u16| b[d as usize / 64] >> (d & 63) & 1 != 0;
     let set = |b: &mut [u64], d: u16| b[d as usize / 64] |= 1 << (d & 63);
     let clear = |b: &mut [u64], d: u16| b[d as usize / 64] &= !(1 << (d & 63));
     for &(op, t) in q {
-        let t = t as usize;
-        let and = op == b'A';
+        let (t, and) = (t as usize, op == b'A');
         if !is_bm && r.is_empty() && (and || op == b'N') {
             continue; // the result stays empty
         }
@@ -545,7 +511,6 @@ fn boolean(q: &[(u8, u32)], plan: &Plan, c: &Chunk, s: &mut Scratch, acc: &Acc) 
 /// The number of set bits in the words b and the sum of their positions.
 fn count_sum(b: &[u64]) -> (u64, u64) {
     let (mut n, mut sum) = (0, 0);
-    #[cfg(target_feature = "avx2")]
     unsafe {
         use std::arch::x86_64::*;
         let lut = |t: [i8; 16]| _mm256_broadcastsi128_si256(_mm_loadu_si128(t.as_ptr().cast()));
@@ -578,8 +543,7 @@ fn count_sum(b: &[u64]) -> (u64, u64) {
     }
     // The words the vector loop left. The positions of the set bits of x sum
     // to the sum over k of 2^k times the count of those with bit k.
-    let done = b.len() / 4 * 4 * cfg!(target_feature = "avx2") as usize;
-    for (i, &x) in b.iter().enumerate().skip(done) {
+    for (i, &x) in b.iter().enumerate().skip(b.len() / 4 * 4) {
         let pos = (0..6).map(|k| ((x & !(!0 / ((1 << (1 << k)) + 1))).count_ones() as u64) << k);
         n += x.count_ones() as u64;
         sum += (i * 64) as u64 * x.count_ones() as u64 + pos.sum::<u64>();
@@ -627,7 +591,7 @@ fn map_file(path: &str) -> &'static [u8] {
     let f = fs::File::open(path).expect("open input");
     let len = f.metadata().unwrap().len() as usize;
     let fd = std::os::fd::AsRawFd::as_raw_fd(&f);
-    // PROT_READ = 1, MAP_PRIVATE = 2 on Linux x86-64 and aarch64.
+    // PROT_READ = 1, MAP_PRIVATE = 2 on Linux.
     let p = unsafe { mmap(std::ptr::null_mut(), len, 1, 2, fd, 0) };
     assert!(p as isize != -1, "mmap failed");
     unsafe { std::slice::from_raw_parts(p, len) }
@@ -666,7 +630,6 @@ fn main() {
     let qtext = map_file(&format!("{data_dir}/queries.txt"));
     let mut plan = Plan::default();
     // Term 0 stands for every token no query uses; empty slots hold it.
-    plan.role = vec![0];
     plan.grow((qtext.len() / 16 | 64).next_power_of_two()); // rarely grows
     // Query words: BOOL and PHRASE start a query, AND, OR and NOT are
     // operators and terms are lowercase. Query i is (b'B' or b'P', its first
@@ -684,7 +647,10 @@ fn main() {
     let mut role = vec![0u8; qtext.len() / 2 + 256 * (nthreads + 1)];
     let roles = unsafe { &*(&mut role[..] as *mut [u8] as *const [AtomicU8]) };
     let new = |own: &mut u32| {
-        *own = if *own % 256 == 0 { ids.fetch_add(256, Relaxed) } else { *own } + 1;
+        if *own % 256 == 0 {
+            *own = ids.fetch_add(256, Relaxed);
+        }
+        *own += 1;
         *own as u64 - 1
     };
     let intern = |own: &mut u32, s: usize, e: usize| {
@@ -724,7 +690,7 @@ fn main() {
                 for (op, s, e, q) in batch.drain(..) {
                     terms.push((op, intern(&mut own, s, e)));
                     if q == b'B' {
-                        roles[terms.last().unwrap().1 as usize].store(IN_BOOL, Relaxed);
+                        roles[terms.last().unwrap().1 as usize].store(1, Relaxed);
                     }
                 }
             }
@@ -733,7 +699,6 @@ fn main() {
     });
     plan.long = long.into_inner().unwrap();
     role.truncate(ids.into_inner() as usize);
-    plan.role = role;
     if plan.keys.iter().filter(|e| e[0] != 0).count() * 3 >= plan.keys.len() * 2 {
         plan.grow(plan.keys.len() * 2); // at most two thirds full
     }
@@ -744,7 +709,7 @@ fn main() {
     // of each document in their parts of the sample, without repeats.
     // Meanwhile another thread joins the queries and terms of the parts,
     // and one more thread rebuilds the table without collisions.
-    let (n, sample) = (plan.role.len(), &data[..line_start(data, SAMPLE)]);
+    let (n, sample) = (role.len(), &data[..line_start(data, SAMPLE)]);
     let join = |parts: Vec<(Vec<_>, Vec<_>)>| {
         let (mut qs, mut terms) = (Vec::new(), Vec::new());
         for (q, t) in parts {
@@ -755,17 +720,16 @@ fn main() {
         (qs.len() - 1, qs, terms)
     };
     let old: &'static [[u64; 4]] = unsafe { &*(&*plan.keys as *const [[u64; 4]]) };
-    let mut t = Plan { keys: std::mem::take(&mut plan.keys), ..Default::default() };
+    let mut t = Plan::default();
+    t.keys = std::mem::take(&mut plan.keys);
     let perfect = thread::spawn(move || (t.perfect(), t).1);
-    let ((nq, mut qs, mut terms), parts) = thread::scope(|s| {
+    let ((nq, qs, mut terms), parts) = thread::scope(|s| {
         let joined = s.spawn(|| join(parts));
         // The sample's term ids, from the old table.
+        let long = |w: &[u8]| *plan.long.get(&w.to_ascii_lowercase()).unwrap_or(&0) as u32;
         let lin = |s: usize, e: usize| match (e - s, key(sample, s, e - s)) {
-            (17.., _) => *plan.long.get(&sample[s..e].to_ascii_lowercase()).unwrap_or(&0) as u32,
-            (_, k) => {
-                let hit = |e: &&[u64; 4]| e[..2] == k || e[0] == 0;
-                (Plan::hash(k)..).map(|i| &old[i & (old.len() - 1)]).find(hit).unwrap()[2] as u32
-            }
+            (17.., _) => long(&sample[s..e]),
+            (_, k) => old[slot(old, k)][2] as u32,
         };
         let counts = par(nthreads, |k| {
             let (mut v, mut d, mut doc) = (Vec::new(), 0, Vec::new());
@@ -802,14 +766,14 @@ fn main() {
         });
         // A BOOL term in more than 1 of 32 sample documents gets a bitmap,
         // and so do the most frequent others beyond 65,535.
-        let mut bools: Vec<usize> = (0..n).filter(|&t| plan.role[t] & IN_BOOL != 0).collect();
+        let mut bools: Vec<usize> = (0..n).filter(|&t| role[t] != 0).collect();
         bools.sort_unstable_by_key(|&t| std::cmp::Reverse(freq[t]));
         let common = bools.partition_point(|&t| freq[t] as usize * 32 > sdocs as usize);
         let nbm = common.max(bools.len().saturating_sub(65535));
         (plan.nlist, plan.nbm) = (bools.len() - nbm, nbm);
         // Renumber the terms: list terms first, then bitmap terms, then the rest.
         let (mut new, mut df) = (vec![0; n], vec![0; n]);
-        let rest = (0..n).filter(|&t| plan.role[t] == 0);
+        let rest = (0..n).filter(|&t| role[t] == 0);
         let lists = bools[nbm..].iter().chain(&bools[..nbm]);
         for (i, t) in lists.copied().chain(rest).enumerate() {
             (new[t], df[i]) = (i as u32, freq[t]);
@@ -832,7 +796,6 @@ fn main() {
     let t = perfect.join().unwrap();
     unsafe { munmap(old.as_ptr() as *mut u8, old.len() * 32) };
     (plan.keys, plan.disp) = (t.keys, t.disp);
-    plan.empty = plan.keys.iter().position(|e| e[0] == 0).unwrap();
     // One pass gives each term its new number and its phrases' start.
     let remap = |t: u64| new[t as usize] as u64 | (start[t as usize] as u64) << 32;
     plan.keys.iter_mut().for_each(|e| e[2] = remap(e[2]));
@@ -863,8 +826,7 @@ fn main() {
             // through NOT, extended by OR, and swapped for the AND term if that is rarer.
             let (mut trig, mut toff) = (Vec::new(), vec![0]);
             for qi in 0..nq {
-                let from = trig.len();
-                let mut est = 0;
+                let (from, mut est) = (trig.len(), 0);
                 for &(op, t) in query(qi).iter().filter(|_| plan.qs[qi].0 == b'B') {
                     match op {
                         b'A' if d(t) < est => (trig.truncate(from), trig.push(t), est = d(t)).1,
@@ -906,6 +868,6 @@ fn main() {
     });
     fs::create_dir_all(&out_dir).ok();
     let mut f = fs::File::create(format!("{out_dir}/results.txt")).expect("create results.txt");
-    outs.iter().for_each(|o| f.write_all(o.as_bytes()).expect("write results.txt"));
+    outs.iter().for_each(|o| f.write_all(o.as_bytes()).unwrap());
     std::process::exit(0); // the OS frees everything faster than the destructors
 }
