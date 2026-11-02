@@ -239,3 +239,8 @@ The final head `6d785be`, with #28 kept, ran `run-a283f9503c48`: T=173.0 ms, M=6
 - fb39dab run-edbd957a7d8c: T 182.7 ms, M 49.9 MB, S 651, K 27.88
 - e9a3433 run-79340111b370: T 174.3 ms, M 49.4 MB, S 651, K 28.61
 - Mean 28.24 < #43 28.87 (S +3, T not lower). Restored #43 source.
+
+### opt9 exact-bitmap answer step (Nov 1 2026, not kept)
+- 93df090 run-f9ff4a5d4d1c: T 172.8 ms, M 48.3 MB, S 667, K 28.75
+- b7621ac run-11edd8d04381: T 178.6 ms, M 48.7 MB, S 667, K 28.23
+- Mean 28.49 < #43 28.87. Local ARM answer step -21-24% / CPU -5% did not show as lower T on board; S +19. Restored #43.
