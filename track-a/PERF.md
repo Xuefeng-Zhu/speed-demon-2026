@@ -228,3 +228,41 @@ Board trials, 1 Nov 2026: PR #30 (`a-mem`, hours streamed during the parse, pool
 - f888b90 run-2cbfc20aac8c: T 26.3 ms, M 24.0 MB, S 405, K 40.70
 - 632f485 run-8a26a2326c3e: T 25.1 ms, M 23.0 MB, S 405, K 41.96
 - Mean 41.33 vs same-session previous A 41.26 / 39.64. Lower T and S; M +1-2 MB. Now production A.
+
+### Candidate: fewer summary workers and four idle output buffers
+
+The candidate keeps all N parsing workers, then retires one after the second
+barrier when N>1. The main writer recycles fully written output buffers through
+a pool retaining at most four idle buffers. Pool misses allocate immediately;
+neither pending hours nor worker lookahead is bounded. No physical CPU is pinned
+or reserved. The endpoint dictionary, record encoding and percentile kernels
+are unchanged.
+
+Native x86 VM comparisons against the shared-dictionary source used randomized
+adjacent A/B pairs. Each block compares the two middle-three-of-five means;
+the values below are medians of those block ratios (candidate/baseline).
+
+| Full seed | Blocks per worker count | 16 workers | 20 workers |
+|---|---:|---:|---:|
+| 1, cap selection screen | 11 | 0.9355 | 0.9491 |
+| 2, fresh confirmation | 15 | 0.9287 | 0.9932 |
+| 3, fresh confirmation | 15 | 0.9445 | 0.9770 |
+
+The 16-worker result is consistent across inputs; the 20-worker seed-2 interval
+crosses one. This VM exposes 16 logical CPUs, so 20 workers oversubscribe it.
+Local native container greatest-of-five peaks rose from 24,727,552 to 25,063,424
+bytes at 16 workers (+1.4%) and from 26,763,264 to 27,508,736 at 20 (+2.8%). These
+include the loader, shell/cat wrapper and charged output pages; they are not the
+official parent-cgroup M. Local formatted code lines increase from 398 to 412;
+official S may differ. No official run or K improvement is claimed for this
+candidate.
+
+The exact source passed 55 native check groups: 15 full/reference, page-end and
+percentile-grid checks, 20 adversarial cases and 20 forced-hash-collision cases.
+Across the complete experiment study, 11,516 timed outputs matched, including
+664 warmups. Shared-VM drift and multi-second raw outliers remain in the evidence;
+trimming measures central time, not tail latency.
+
+See [`experiments/a-writer-reuse`](../experiments/a-writer-reuse/README.md) for
+source identities, raw evidence, controls and reproduction commands. This
+candidate needs an official comparison before a production score decision.

@@ -310,7 +310,7 @@ struct Scratch {
 
 /// Formats every group of one hour from each chunk's records, freeing them as soon as they are
 /// sorted. `order[rank]` is the id of the endpoint at output position `rank`, `names[rank]` its name.
-fn summarize(hour: usize, chunks: Vec<Records>, order: &[u32], names: &[&[u8]], s: &mut Scratch) -> Vec<u8> {
+fn summarize(hour: usize, chunks: Vec<Records>, order: &[u32], names: &[&[u8]], s: &mut Scratch, recycled: Option<Vec<u8>>) -> Vec<u8> {
     let Scratch { counts, next, lat } = s;
     counts.clear();
     counts.resize(order.len(), 0);
@@ -332,7 +332,8 @@ fn summarize(hour: usize, chunks: Vec<Records>, order: &[u32], names: &[&[u8]], 
     let (day, hh) = ((18 + hour) / 24, (18 + hour) % 24);
     let (month, dd) = (10 + day / 2, [30, 31, 1, 2][day]);
     let prefix = format!("2026-{month:02}-{dd:02}T{hh:02}:00:00Z ");
-    let mut out = Vec::with_capacity(1 << 18); // ample for one hour; untouched pages cost nothing
+    let mut out = recycled.unwrap_or_else(|| Vec::with_capacity(1 << 18));
+    out.clear();
     let mut line = [0u8; 512]; // prefix (21) + name (at most 125 by spec) + 6 numbers
     line[..prefix.len()].copy_from_slice(prefix.as_bytes());
     for (g, name) in names.iter().enumerate() {
@@ -411,10 +412,11 @@ fn main() {
     let barrier = Barrier::new(threads);
     let mut f = fs::File::create(format!("{out_dir}/summary.txt")).expect("create summary.txt");
     let (tx, rx) = mpsc::channel();
+    let output_pool = Mutex::new(Vec::<Vec<u8>>::new());
     thread::scope(|s| {
         for t in 0..threads {
-            let (tx, shared, parsed, plan, barrier) =
-                (tx.clone(), &shared, &parsed, &plan, &barrier);
+            let (tx, shared, parsed, plan, barrier, output_pool) =
+                (tx.clone(), &shared, &parsed, &plan, &barrier, &output_pool);
             let (start, end) = (cuts[t], cuts[t + 1]);
             s.spawn(move || {
                 *parsed[t].lock().unwrap() = parse(d, start, end, shared);
@@ -422,12 +424,14 @@ fn main() {
                     let _ = plan.set(make_plan(shared, parsed));
                 }
                 barrier.wait();
+                if threads > 1 && t == threads - 1 { return; }
                 // Workers take whole hours, in order, from a queue; the main thread writes them
                 // out in order.
                 let (order, names, jobs) = plan.get().unwrap();
                 let mut scratch = Scratch::default();
                 while let Some((h, records)) = { let job = jobs.lock().unwrap().next(); job } {
-                    tx.send((h, summarize(h, records, order, names, &mut scratch))).unwrap();
+                    let recycled = output_pool.lock().unwrap().pop();
+                    tx.send((h, summarize(h, records, order, names, &mut scratch, recycled))).unwrap();
                 }
             });
         }
@@ -438,6 +442,8 @@ fn main() {
             while let Some(out) = pending.get_mut(written).and_then(Option::take) {
                 f.write_all(&out).unwrap();
                 written += 1;
+                let mut pool = output_pool.lock().unwrap();
+                if pool.len() < 4 { pool.push(out); }
             }
         }
     });
