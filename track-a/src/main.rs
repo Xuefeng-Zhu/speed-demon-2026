@@ -38,7 +38,6 @@ fn map_file(file: &fs::File, len: usize) -> &'static [u8] {
 }
 
 /// Little-endian 8-byte load.
-#[inline(always)]
 fn load(d: &[u8], i: usize) -> u64 {
     assert!(i + 8 <= d.len());
     // SAFETY: in bounds by the assert; any alignment is fine for read_unaligned.
@@ -47,7 +46,6 @@ fn load(d: &[u8], i: usize) -> u64 {
 
 /// Index of the first byte equal to `b` in the word `w`, or 8 if none: the high bit of the first
 /// zero byte of `x` is set (higher bytes may be noise).
-#[inline(always)]
 fn find_byte(w: u64, b: u8) -> usize {
     let x = w ^ (ONES * b as u64);
     ((x.wrapping_sub(ONES) & !x & (ONES << 7)).trailing_zeros() / 8) as usize
@@ -71,7 +69,6 @@ fn eq_mask(a: &[u8], i: usize, b: Option<(&[u8], usize)>, c: u8) -> u64 {
 }
 
 /// Parses the decimal latency starting at `q`; returns it and the start of the next line.
-#[inline(always)]
 fn parse_latency(d: &[u8], q: usize) -> (u64, usize) {
     let w = load(d, q);
     let k = find_byte(w, b'\n');
@@ -103,7 +100,6 @@ type Dictionary = (Vec<OnceLock<Entry>>, AtomicU32);
 
 /// The id of the endpoint `d[s..e]`, adding it to the dictionary if it is new. The hash comes
 /// from the endpoint's first and last words and its length.
-#[inline(always)]
 fn find((slots, next_id): &Dictionary, d: &[u8], s: usize, e: usize) -> u32 {
     let n = e - s;
     let h = if n >= 8 {
@@ -247,17 +243,13 @@ fn small_ranks<const V: usize>(lat: &[u32], at: usize, n: usize, r: [usize; 3]) 
     }
 }
 
-/// The values of ranks `r` (0-based) among `v`.
-#[inline(always)]
+/// The values of ranks `r` (0-based) among `v`. The ranks must increase strictly, which holds
+/// for more than 64 values (the only case that comes here).
 fn select_ranks(v: &mut [u32], [r50, r95, r99]: [usize; 3]) -> [u32; 3] {
     // Each selection leaves larger values to the right, so later ones search less.
     v.select_nth_unstable(r50);
-    if r95 > r50 {
-        v[r50 + 1..].select_nth_unstable(r95 - r50 - 1);
-    }
-    if r99 > r95 {
-        v[r95 + 1..].select_nth_unstable(r99 - r95 - 1);
-    }
+    v[r50 + 1..].select_nth_unstable(r95 - r50 - 1);
+    v[r95 + 1..].select_nth_unstable(r99 - r95 - 1);
     [v[r50], v[r95], v[r99]]
 }
 
@@ -327,19 +319,16 @@ fn summarize(hour: usize, chunks: Vec<Records>, (names, order): &Plan, out: &mut
         }
     }
     lat.resize(total as usize + 64, 0); // `small_ranks` reads up to 64 values past a group
-    let (day, hh) = ((18 + hour) / 24, (18 + hour) % 24);
-    let (month, dd) = (10 + day / 2, [30, 31, 1, 2][day]);
-    let prefix = format!("2026-{month:02}-{dd:02}T{hh:02}:00:00Z ");
+    let date = ["10-30", "10-31", "11-01", "11-02"][(18 + hour) / 24];
+    let prefix = format!("2026-{date}T{:02}:00:00Z ", (18 + hour) % 24);
     out.clear();
     out.reserve(1 << 18);
     let mut line = [0u8; 512]; // prefix (21) + name (at most 125 by spec) + 6 numbers
     line[..prefix.len()].copy_from_slice(prefix.as_bytes());
     for (g, name) in names.iter().enumerate() {
         let id = order[g] as usize;
-        let n = counts[id] as u32 as usize;
-        if n == 0 {
-            continue;
-        }
+        let n @ 1.. = counts[id] as u32 else { continue };
+        let n = n as usize;
         let at = next[id] as usize - n;
         let r = [50, 95, 99].map(|p| (p * n + 99) / 100 - 1);
         let [p50, p95, p99] = match n {
@@ -362,11 +351,12 @@ fn summarize(hour: usize, chunks: Vec<Records>, (names, order): &Plan, out: &mut
 }
 
 /// Sorts the endpoint names once every chunk is parsed: an endpoint's position in byte order is
-/// its output rank. The ids are exactly 0..names.len().
+/// its output rank. The ids are exactly 0..names.len(). Names hold no zero byte, so the
+/// zero-padded names sort in the same order as the names.
 fn make_plan((slots, _): &Dictionary) -> Plan<'_> {
-    let mut names: Vec<_> = slots.iter().filter_map(OnceLock::get).map(|e| (&e.3[..e.1 as usize], e.2)).collect();
-    names.sort_unstable();
-    names.into_iter().unzip()
+    let mut names: Vec<_> = slots.iter().filter_map(OnceLock::get).collect();
+    names.sort_unstable_by(|a, b| a.3.cmp(&b.3));
+    names.iter().map(|e| (&e.3[..e.1 as usize], e.2)).unzip()
 }
 
 fn main() {
@@ -379,28 +369,21 @@ fn main() {
     let threads = env::var("SD_THREADS").map_or(cpus, |t| t.parse().unwrap());
 
     // Chunk t starts at the first line start at or after len * t / threads (so cuts never decrease).
-    let cut = |t: usize| {
-        let mut at = len * t / threads;
-        while at > 0 && at < len && d[at - 1] != b'\n' {
-            at += 1;
-        }
-        at
-    };
+    let cut = |t: usize| (len * t / threads..len).find(|&a| a == 0 || d[a - 1] == b'\n').unwrap_or(len);
     // The first worker to start makes the dictionary while the main thread starts the others.
-    let dictionary: &OnceLock<Dictionary> = &OnceLock::new();
+    let dict: &OnceLock<Dictionary> = &OnceLock::new();
     // Each hour's records, one entry per chunk. The parse threads go on to summarize: after a
     // barrier, the first to need the plan makes it, and all take hours in order from a counter.
     let hours: &Vec<Mutex<Vec<Records>>> = &(0..HOURS).map(|_| Mutex::default()).collect();
     let (plan, next_hour) = (&OnceLock::new(), &AtomicUsize::new(0));
-    let barrier = &Barrier::new(threads);
+    let (barrier, pool) = (&Barrier::new(threads), &Mutex::new(Vec::new()));
     let mut f = fs::File::create(format!("{out_dir}/summary.txt")).expect("create summary.txt");
     let (tx, rx) = mpsc::channel();
-    let pool = &Mutex::new(Vec::<Vec<u8>>::new());
     thread::scope(|s| {
         for t in 0..threads {
             let tx = tx.clone();
             s.spawn(move || {
-                let shared = dictionary.get_or_init(|| ((0..4096).map(|_| OnceLock::new()).collect(), AtomicU32::new(0)));
+                let shared = dict.get_or_init(|| (vec![OnceLock::new(); 4096], AtomicU32::new(0)));
                 for (hour, r) in hours.iter().zip(parse(d, cut(t), cut(t + 1), shared)) {
                     hour.lock().unwrap().push(r);
                 }
@@ -426,7 +409,8 @@ fn main() {
                 f.write_all(&out).unwrap();
                 written += 1;
                 let mut pool = pool.lock().unwrap();
-                if pool.len() < 4 { pool.push(out); }
+                pool.truncate(3); // keep at most 4 buffers for reuse
+                pool.push(out);
             }
         }
     });
