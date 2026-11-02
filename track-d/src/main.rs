@@ -42,17 +42,20 @@ fn atomic(v: &mut [u32]) -> &[AtomicU32] {
 }
 
 /// `len` zeros, on huge pages where the kernel allows: fewer page faults to
-/// fill the array and fewer TLB misses to search it.
-fn zeros(len: usize) -> Vec<u32> {
+/// fill the array and fewer TLB misses to search it. Each huge page gets one
+/// first writer (racing faults would each charge a 2 MiB page), and the
+/// `threads` writers take every `threads`-th page, so the kernel zeroes the
+/// pages in parallel.
+fn zeros(len: usize, threads: usize) -> Vec<u32> {
     let v = vec![0u32; len];
     let huge = |p: usize| (v.as_ptr() as usize + p) & !((1 << 21) - 1);
     let (a, b) = (huge((1 << 21) - 1), huge(len * 4));
     if a < b {
         unsafe { madvise(a as *mut u8, b - a, 14) }; // MADV_HUGEPAGE
-                                                     // One first writer per huge page: racing faults each charge a 2 MiB page.
-        (a..b)
-            .step_by(1 << 21)
-            .for_each(|p| unsafe { (p as *mut u8).write_volatile(0) });
+        parallel(threads, &|i| {
+            let pages = (a + (i << 21)..b).step_by(threads << 21);
+            pages.for_each(|p| unsafe { (p as *mut u8).write_volatile(0) })
+        });
     }
     v
 }
@@ -145,6 +148,7 @@ fn load_graph(path: &str, threads: usize) -> (Csr, u32, Vec<(u32, u32, u32)>) {
     let wide = u32::MAX >> bits;
     let cut = |i: usize| line_end((i * len / threads).max(1) - 1);
     let block_len = n.div_ceil(threads);
+    let inv = (1u128 << 64) / block_len as u128 + 1; // u * inv >> 64 is u / block_len
     let parts = parallel(threads, &|i| {
         // Sized for an even spread, so the lists rarely have to grow.
         let cap = m / threads / threads * 9 / 8 + 64;
@@ -153,7 +157,8 @@ fn load_graph(path: &str, threads: usize) -> (Csr, u32, Vec<(u32, u32, u32)>) {
         let (mut p, end) = (cut(i), cut(i + 1));
         while p < end {
             let (u, v, w) = (num(text, &mut p), num(text, &mut p), num(text, &mut p));
-            lists[u as usize / block_len].push((u as u64) << 32 | (v | w.min(wide) << bits) as u64);
+            lists[(u as u128 * inv >> 64) as usize]
+                .push((u as u64) << 32 | (v | w.min(wide) << bits) as u64);
             if w >= wide {
                 big.push((u, v, w));
             }
@@ -161,7 +166,7 @@ fn load_graph(path: &str, threads: usize) -> (Csr, u32, Vec<(u32, u32, u32)>) {
         (lists, big)
     });
     let (mut buckets, big): (Vec<_>, Vec<_>) = parts.into_iter().unzip();
-    let (mut first, mut adj) = (zeros(n + 1), zeros(m));
+    let (mut first, mut adj) = (zeros(n + 1, threads), zeros(m, threads));
     let (mut adj_rest, mut start) = (&mut adj[..], 0);
     thread::scope(|sc| {
         for (j, first) in first[..n].chunks_mut(block_len).enumerate() {
@@ -214,7 +219,7 @@ const SHIFT: u32 = 6;
 /// node changes the numbering but never an answer.
 fn renumber(g: &Csr, bits: u32, threads: usize) -> (Vec<u32>, Csr) {
     let (n, m) = (g.first.len() - 1, g.adj.len());
-    let (mut rank, mut first, mut adj) = (vec![0; n], zeros(n + 1), zeros(m));
+    let (mut rank, mut first, mut adj) = (vec![0; n], zeros(n + 1, threads), zeros(m, threads));
     let (r, f, a) = (atomic(&mut rank), atomic(&mut first), atomic(&mut adj));
     // Unclaimed is 0; a claimed node holds 1 or its complemented id, never 0,
     // so raising a slot to at least 1 claims it only if it was free.
