@@ -228,3 +228,5 @@ Board trials, 1 Nov 2026: PR #30 (`a-mem`, hours streamed during the parse, pool
 - f888b90 run-2cbfc20aac8c: T 26.3 ms, M 24.0 MB, S 405, K 40.70
 - 632f485 run-8a26a2326c3e: T 25.1 ms, M 23.0 MB, S 405, K 41.96
 - Mean 41.33 vs same-session previous A 41.26 / 39.64. Lower T and S; M +1-2 MB. Now production A.
+
+- Nov 1 17:36 PST: PR #49 (N-1 summary workers + output buffer pool) KEPT, now production A. 250810b run-ba959add6f72 T 23.3 ms M 22.0 MB S 419 K 43.80; ad553c0 run-5c193abf8440 T 22.9 ms M 22.1 MB K 44.09. Mean 43.94 vs #47 same-period 40.08/40.74.
