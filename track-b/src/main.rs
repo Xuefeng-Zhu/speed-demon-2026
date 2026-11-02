@@ -1,7 +1,7 @@
 //! Speed Demon 2026, Track B (Index). Standard library only.
 //!
-//! 1. Parse the queries and intern every term they use. From a small sample
-//!    of the corpus: frequent BOOL terms get bitmaps, the others posting
+//! 1. Parse the queries and intern every term they use, on all threads. From
+//!    a small sample of the corpus: frequent BOOL terms get bitmaps, the others posting
 //!    lists; each phrase is anchored on its rarest term, and each BOOL query
 //!    gets trigger terms whose sets hold its result.
 //! 2. Map docs.txt and cut it into chunks of whole lines, each starting at a
@@ -18,7 +18,7 @@
 
 use std::fmt::Write as _;
 use std::io::Write as _;
-use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering::Relaxed};
+use std::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering::*};
 use std::sync::Mutex;
 use std::{collections::HashMap, env, fs, thread};
 
@@ -97,7 +97,8 @@ impl Plan {
 
     /// Moves every key to its own slot (hash and displace): buckets of about two
     /// keys, the largest first, each with the first d whose slots are all free.
-    fn perfect(&mut self) {
+    /// Returns the old table, which the caller unmaps.
+    fn perfect(&mut self) -> &'static mut [[u64; 4]] {
         let (n, nb) = (self.keys.len(), (self.keys.len() / 4).max(2));
         let b = |e: &[u64; 4]| (e[3] >> (64 - nb.trailing_zeros())) as usize;
         let mut off = vec![0u32; nb + 1];
@@ -138,8 +139,8 @@ impl Plan {
                 }
             }
         }
-        unsafe { munmap(old.as_mut_ptr().cast(), old.len() * 32) };
         std::mem::forget((off, by, fill)); // freed, they would change how malloc grows
+        old
     }
 
     /// The slot of the key k, probing from slot h (its hash, or that masked): k or empty.
@@ -147,28 +148,6 @@ impl Plan {
         let mask = self.keys.len() - 1;
         let hit = |&i: &usize| self.keys[i][..2] == k || self.keys[i][0] == 0;
         (h..).map(|i| i & mask).find(hit).unwrap()
-    }
-
-    /// The id of the term w = data[s..e], added if new, and marked IN_BOOL if `in_bool`.
-    fn intern(&mut self, data: &[u8], s: usize, e: usize, in_bool: bool) -> u32 {
-        let (w, k, t) = (&data[s..e], key(data, s, e - s), self.role.len() as u32);
-        let t = if w.len() > 16 {
-            *self.long.entry(w.to_vec()).or_insert(t as u64) as u32
-        } else {
-            let i = self.slot(k, Self::hash(k));
-            if self.keys[i][0] == 0 {
-                self.keys[i] = [k[0], k[1], t as u64, 0];
-            }
-            self.keys[i][2] as u32
-        };
-        if t as usize == self.role.len() {
-            self.role.push(0);
-            if t as usize * 3 >= self.keys.len() * 2 {
-                self.grow(self.keys.len() * 2); // at most two thirds full
-            }
-        }
-        self.role[t as usize] |= in_bool as u8 * IN_BOOL;
-        t
     }
 
     /// Rebuilds the table with n zeroed 32-byte slots (none straddles two cache
@@ -695,69 +674,154 @@ fn main() {
     // operators and terms are lowercase. Query i is (b'B' or b'P', its first
     // term), its terms terms[qs[i].1..qs[i + 1].1] as (first byte of the
     // operator: AND, NOT, else OR; term); the first term of a BOOL query has
-    // operator 0, OR on the empty set.
-    // The terms are interned in batches of (operator, query, bounds), their
-    // slots prefetched first, so that the table's cache misses overlap.
-    let (mut qs, mut terms, mut i, mut op, mut batch) = (Vec::new(), Vec::new(), 0, 0, Vec::new());
-    while i < qtext.len() {
-        i = each_token(qtext, i, false, |s, e| match qtext[s] {
-            b'B' | b'P' => qs.push((qtext[s], (terms.len() + batch.len()) as u32)),
-            b'A' | b'O' | b'N' => op = qtext[s],
-            _ => batch.push((std::mem::take(&mut op), qs.len() - 1, s, e)),
-        });
-        if batch.len() >= 64 || i >= qtext.len() {
-            for &(_, _, s, e) in &batch {
-                prefetch(&plan.keys[Plan::hash(key(qtext, s, e - s)) & (plan.keys.len() - 1)]);
+    // operator 0, OR on the empty set. Each thread parses a part of whole
+    // lines and interns its terms into the shared table in batches, their
+    // slots prefetched first, so that the table's cache misses overlap. A
+    // slot's last word is 0 while empty, 1 while being filled, then 2. The
+    // threads take new ids in blocks of 256 from `ids`; `own` is a thread's
+    // next one, at the end of its block if a multiple of 256. A thread marks
+    // the terms of BOOL queries in `role`, which has room for every id.
+    let (ids, long) = (AtomicU32::new(256), Mutex::new(HashMap::new()));
+    let tbl = unsafe { &*(&mut *plan.keys as *mut [[u64; 4]] as *const [[AtomicU64; 4]]) };
+    let mut role = vec![0u8; qtext.len() / 2 + 256 * (nthreads + 1)];
+    let roles = unsafe { &*(&mut role[..] as *mut [u8] as *const [AtomicU8]) };
+    let new = |own: &mut u32| {
+        *own = if *own % 256 == 0 { ids.fetch_add(256, Relaxed) } else { *own } + 1;
+        *own as u64 - 1
+    };
+    let intern = |own: &mut u32, s: usize, e: usize| {
+        if e - s > 16 {
+            let w = qtext[s..e].to_vec();
+            return *long.lock().unwrap().entry(w).or_insert_with(|| new(own)) as u32;
+        }
+        let (k, h) = (key(qtext, s, e - s), Plan::hash(key(qtext, s, e - s)));
+        for x in (h..h + tbl.len()).map(|i| &tbl[i & (tbl.len() - 1)]) {
+            if x[3].load(Acquire) == 0 && x[3].compare_exchange(0, 1, Acquire, Acquire).is_ok() {
+                for (y, v) in x.iter().zip([k[0], k[1], new(own)]) {
+                    y.store(v, Relaxed);
+                }
+                x[3].store(2, Release);
             }
-            for (op, q, s, e) in batch.drain(..) {
-                terms.push((op, plan.intern(qtext, s, e, qs[q].0 == b'B')));
+            while x[3].load(Acquire) == 1 {}
+            if x[0].load(Relaxed) == k[0] && x[1].load(Relaxed) == k[1] {
+                return x[2].load(Relaxed) as u32;
             }
         }
+        unreachable!()
+    };
+    let parts = par(nthreads, |k| {
+        let (mut qs, mut terms, mut op, mut batch, mut own) = (vec![], vec![], 0, vec![], 0);
+        let part = |k| line_start(qtext, k * qtext.len() / nthreads);
+        let (mut i, end) = (part(k), part(k + 1));
+        while i < end {
+            i = each_token(qtext, i, false, |s, e| match qtext[s] {
+                b'B' | b'P' => qs.push((qtext[s], (terms.len() + batch.len()) as u32)),
+                b'A' | b'O' | b'N' => op = qtext[s],
+                _ => batch.push((std::mem::take(&mut op), s, e, qs.last().unwrap().0)),
+            });
+            if batch.len() >= 64 || i >= end {
+                for &(_, s, e, _) in &batch {
+                    prefetch(&tbl[Plan::hash(key(qtext, s, e - s)) & (tbl.len() - 1)]);
+                }
+                for (op, s, e, q) in batch.drain(..) {
+                    terms.push((op, intern(&mut own, s, e)));
+                    if q == b'B' {
+                        roles[terms.last().unwrap().1 as usize].store(IN_BOOL, Relaxed);
+                    }
+                }
+            }
+        }
+        (qs, terms)
+    });
+    plan.long = long.into_inner().unwrap();
+    role.truncate(ids.into_inner() as usize);
+    plan.role = role;
+    if plan.keys.iter().filter(|e| e[0] != 0).count() * 3 >= plan.keys.len() * 2 {
+        plan.grow(plan.keys.len() * 2); // at most two thirds full
     }
-    let nq = qs.len();
-    qs.push((0, terms.len() as u32));
     let data = map_file(&format!("{data_dir}/docs.txt"));
-    plan.perfect();
 
     // Anchor each phrase on its rarest term in a sample of the corpus.
-    plan.empty = plan.keys.iter().position(|e| e[0] == 0).unwrap();
-    // freq[t]: (sample documents with the term t, the last of them).
-    let n = plan.role.len();
-    let (mut freq, mut sdocs) = (vec![(0u32, 0u32); n], 0);
-    for_each_doc(&data[..line_start(data, SAMPLE)], &plan, |tokens, _| {
-        sdocs += 1;
-        for &t in tokens {
-            let f = &mut freq[t as usize];
-            *f = (f.0 + (f.1 != sdocs) as u32, sdocs);
+    // freq[t]: sample documents with the term t. The threads list the terms
+    // of each document in their parts of the sample, without repeats.
+    // Meanwhile another thread joins the queries and terms of the parts,
+    // and one more thread rebuilds the table without collisions.
+    let (n, sample) = (plan.role.len(), &data[..line_start(data, SAMPLE)]);
+    let join = |parts: Vec<(Vec<_>, Vec<_>)>| {
+        let (mut qs, mut terms) = (Vec::new(), Vec::new());
+        for (q, t) in parts {
+            qs.extend(q.iter().map(|&(b, j)| (b, j + terms.len() as u32)));
+            terms.extend(t);
         }
+        qs.push((0, terms.len() as u32));
+        (qs.len() - 1, qs, terms)
+    };
+    let old: &'static [[u64; 4]] = unsafe { &*(&*plan.keys as *const [[u64; 4]]) };
+    let mut t = Plan { keys: std::mem::take(&mut plan.keys), ..Default::default() };
+    let perfect = thread::spawn(move || (t.perfect(), t).1);
+    let ((nq, mut qs, mut terms), parts) = thread::scope(|s| {
+        let joined = s.spawn(|| join(parts));
+        // The sample's term ids, from the old table.
+        let lin = |s: usize, e: usize| match (e - s, key(sample, s, e - s)) {
+            (17.., _) => *plan.long.get(&sample[s..e].to_ascii_lowercase()).unwrap_or(&0) as u32,
+            (_, k) => {
+                let hit = |e: &&[u64; 4]| e[..2] == k || e[0] == 0;
+                (Plan::hash(k)..).map(|i| &old[i & (old.len() - 1)]).find(hit).unwrap()[2] as u32
+            }
+        };
+        let counts = par(nthreads, |k| {
+            let (mut v, mut d, mut doc) = (Vec::new(), 0, Vec::new());
+            let part = |k| line_start(sample, k * sample.len() / nthreads);
+            let mut i = part(k);
+            while i < part(k + 1) {
+                i = each_token(sample, i, true, |s, e| doc.push(lin(s, e)));
+                (doc.sort_unstable(), doc.dedup());
+                v.extend(doc.drain(..));
+                d += 1;
+            }
+            (v, d)
+        });
+        (joined.join().unwrap(), counts)
     });
-    // A BOOL term in more than 1 of 32 sample documents gets a bitmap,
-    // and so do the most frequent others beyond 65,535.
-    let mut bools: Vec<usize> = (0..n).filter(|&t| plan.role[t] & IN_BOOL != 0).collect();
-    bools.sort_unstable_by_key(|&t| std::cmp::Reverse(freq[t].0));
-    let common = bools.partition_point(|&t| freq[t].0 as usize * 32 > sdocs as usize);
-    let nbm = common.max(bools.len().saturating_sub(65535));
-    (plan.nlist, plan.nbm) = (bools.len() - nbm, nbm);
-    // Renumber the terms: list terms first, then bitmap terms, then the rest.
-    let (mut new, mut role, mut df) = (vec![0; n], vec![0; n], vec![0; n]);
-    let rest = (0..n).filter(|&t| plan.role[t] == 0);
-    let lists = bools[nbm..].iter().chain(&bools[..nbm]);
-    for (i, t) in lists.copied().chain(rest).enumerate() {
-        (new[t], role[i], df[i]) = (i as u32, plan.role[t], freq[t].0);
+    let (mut freq, mut sdocs) = (vec![0; n], 0);
+    for (v, d) in parts {
+        v.iter().for_each(|&t: &u32| freq[t as usize] += 1);
+        sdocs += d;
     }
-    plan.role = role;
-    plan.role[plan.nlist..][..nbm].fill(BITMAP); // those terms' role was IN_BOOL
-    // Each phrase as (its rarest term, the anchor; query; anchor position).
+    // Each phrase as (its rarest term, the anchor; query; anchor position),
+    // sorted by anchor, found by another thread meanwhile.
     let query = |i: usize| &terms[qs[i].1 as usize..qs[i + 1].1 as usize];
-    let mut list = Vec::new();
-    for qi in (0..nq).filter(|&i| qs[i].0 == b'P') {
-        let p = query(qi);
-        let j = (0..p.len()).min_by_key(|&j| freq[p[j].1 as usize].0).unwrap();
-        list.push((p[j].1, qi as u32, j as u32));
-    }
+    let (list, (new, df, nbm)) = thread::scope(|s| {
+        let list = s.spawn(|| {
+            let mut list = Vec::new();
+            for qi in (0..nq).filter(|&i| qs[i].0 == b'P') {
+                let p = query(qi);
+                let j = (0..p.len()).min_by_key(|&j| freq[p[j].1 as usize]).unwrap();
+                list.push((p[j].1, qi as u32, j as u32));
+            }
+            list.sort_unstable_by_key(|a| a.0);
+            list
+        });
+        // A BOOL term in more than 1 of 32 sample documents gets a bitmap,
+        // and so do the most frequent others beyond 65,535.
+        let mut bools: Vec<usize> = (0..n).filter(|&t| plan.role[t] & IN_BOOL != 0).collect();
+        bools.sort_unstable_by_key(|&t| std::cmp::Reverse(freq[t]));
+        let common = bools.partition_point(|&t| freq[t] as usize * 32 > sdocs as usize);
+        let nbm = common.max(bools.len().saturating_sub(65535));
+        (plan.nlist, plan.nbm) = (bools.len() - nbm, nbm);
+        // Renumber the terms: list terms first, then bitmap terms, then the rest.
+        let (mut new, mut role, mut df) = (vec![0; n], vec![0; n], vec![0; n]);
+        let rest = (0..n).filter(|&t| plan.role[t] == 0);
+        let lists = bools[nbm..].iter().chain(&bools[..nbm]);
+        for (i, t) in lists.copied().chain(rest).enumerate() {
+            (new[t], role[i], df[i]) = (i as u32, plan.role[t], freq[t]);
+        }
+        plan.role = role;
+        (list.join().unwrap(), (new, df, nbm))
+    });
+    plan.role[plan.nlist..][..nbm].fill(BITMAP); // those terms' role was IN_BOOL
     // The phrases by anchor, as (query, length, anchor position, terms); each
     // anchor's end with u32::MAX, and its start + 1 in the high half of its value.
-    list.sort_unstable_by_key(|a| a.0);
     let mut start = vec![0u32; n];
     plan.phr.reserve(list.len() * 14);
     for g in list.chunk_by(|a, b| a.0 == b.0) {
@@ -769,12 +833,16 @@ fn main() {
         }
         plan.phr.extend([u32::MAX; 3]);
     }
+    let t = perfect.join().unwrap();
+    unsafe { munmap(old.as_ptr() as *mut u8, old.len() * 32) };
+    (plan.keys, plan.disp) = (t.keys, t.disp);
+    plan.empty = plan.keys.iter().position(|e| e[0] == 0).unwrap();
     // One pass gives each term its new number and its phrases' start.
     let remap = |t: u64| new[t as usize] as u64 | (start[t as usize] as u64) << 32;
     plan.keys.iter_mut().for_each(|e| e[2] = remap(e[2]));
     plan.long.values_mut().for_each(|t| *t = remap(*t));
     terms.iter_mut().for_each(|e| e.1 = new[e.1 as usize]);
-    drop((qtext, freq, bools, new, start)); // the scan uses none of these
+    drop((qtext, freq, new, start)); // the scan uses none of these
 
     (plan.qs, plan.terms) = (qs, terms);
     // Equal byte ranges, each moved to the next line whose id is a multiple
