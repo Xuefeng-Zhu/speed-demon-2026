@@ -265,3 +265,4 @@ The final head `6d785be`, with #28 kept, ran `run-a283f9503c48`: T=173.0 ms, M=6
 - c733a49 third run: run-d773ef099628 T 196.0 ms, K 26.87. 24-byte slots 31.16/28.95/26.87: NOT kept, production (c9eaa98) restored.
 - cbd0e02 control: run-108468a9e32f T 155.6 ms, K 30.44.
 - 37be10e opt13 one-slot-per-term table: run-29f053e2d4a1 T 132.6 ms, M 49.38 MB, S 690, K 32.51 (best B; same batch A/D slow). Rerun.
+- 9a76f59 rerun: run-bea1498f9f40 T 149.5 ms, K 30.67 (normal batch, A 45.97). Mixed 32.51/30.67; third run.

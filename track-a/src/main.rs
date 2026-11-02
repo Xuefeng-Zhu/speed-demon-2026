@@ -9,7 +9,7 @@
 //! 3. The same threads then meet at a barrier; the first to go on sorts the shared names once,
 //!    so every endpoint id gets its output rank.
 //! 4. The threads take whole hours in order from an atomic counter: count the hour's records per endpoint id,
-//!    counting-sort its latencies into groups laid out in rank order, find the three
+//!    counting-sort them in place (no second buffer) into groups laid out in rank order, find the three
 //!    nearest-rank percentiles (branch-free AVX2 rank counting for groups of up to 64 values,
 //!    selection otherwise), format the lines, free the records. The main thread writes the
 //!    hours in order.
@@ -206,22 +206,6 @@ fn put_num(b: &mut [u8], at: usize, mut v: u64) -> usize {
     end
 }
 
-/// Calls `f(id, is_5xx, latency)` for every record of `chunks`.
-#[inline(always)]
-fn each(chunks: &[Records], mut f: impl FnMut(usize, u32, u32)) {
-    for (records, escapes) in chunks {
-        let mut escapes = escapes.iter();
-        for &r in records {
-            if r == u32::MAX {
-                let r = *escapes.next().expect("missing escaped record");
-                f((r >> 33) as usize, (r >> 32) as u32 & 1, r as u32);
-            } else {
-                f((r >> 21) as usize, (r >> 20) & 1, r & 0x000f_ffff);
-            }
-        }
-    }
-}
-
 /// The values of ranks `r` (0-based) among the at most `8 * V` values of `v`, with AVX2: the
 /// value of rank r is the largest value with at most r values below it, so one branch-free count
 /// per value replaces sorting. Reads `8 * V` values from the start of `v`, so the caller's buffer
@@ -277,33 +261,72 @@ fn select_ranks(v: &mut [u32], [r50, r95, r99]: [usize; 3]) -> [u32; 3] {
     [v[r50], v[r95], v[r99]]
 }
 
-/// A summary worker's buffers, kept across hours so their pages fault in only once: per id
-/// records | errors << 32, per id the next free slot of its group in the latencies, latencies.
-type Scratch = (Vec<u64>, Vec<u32>, Vec<u32>);
-
 /// The endpoint names in rank (byte) order, and the id of each rank.
 type Plan<'a> = (Vec<&'a [u8]>, Vec<u32>);
 
-/// Formats every group of one hour from each chunk's records into `out`, freeing the records as
-/// soon as they are sorted.
-fn summarize(hour: usize, chunks: Vec<Records>, plan: &Plan, s: &mut Scratch, out: &mut Vec<u8>) {
-    let ((names, order), (counts, next, lat)) = (plan, s);
-    *counts = vec![0; order.len()];
-    each(&chunks, |id, error, _| counts[id] += 1 | (error as u64) << 32);
-    // Groups are laid out in rank order, but looked up by id.
-    next.resize(order.len(), 0);
-    let mut total = 0;
+/// Formats every group of one hour from each chunk's records into `out`. The records are sorted
+/// in place, so an hour in progress needs no memory beyond its own records and `out`.
+fn summarize(hour: usize, chunks: Vec<Records>, (names, order): &Plan, out: &mut Vec<u8>) {
+    // The hour's records all go into its largest chunk's vector, to be sorted in place there.
+    // An escaped record becomes `id << 21 | is_5xx << 20 | 0xfffff`; its full latency stays.
+    let (mut counts, mut lat, mut escapes) = (vec![0u64; order.len()], Vec::new(), Vec::new());
+    for (mut records, e) in chunks {
+        let mut e_it = e.iter();
+        for r in &mut records {
+            if *r == u32::MAX {
+                let x = e_it.next().expect("missing escaped record");
+                *r = (x >> 33 << 21 | (x >> 32 & 1) << 20 | 0xfffff) as u32;
+            }
+            counts[(*r >> 21) as usize] += 1 | ((*r >> 20 & 1) as u64) << 32;
+        }
+        if records.len() > lat.len() {
+            std::mem::swap(&mut records, &mut lat);
+        }
+        lat.extend_from_slice(&records);
+        escapes.extend_from_slice(&e);
+    }
+    // Groups are laid out in rank order, but looked up by id; `next` is a group's first unplaced
+    // slot and `ends` its end.
+    let (mut next, mut ends, mut total) = (vec![0; order.len()], vec![0; order.len()], 0);
     for &id in order {
         next[id as usize] = total;
         total += counts[id as usize] as u32;
+        ends[id as usize] = total;
+    }
+    // In-place counting sort: the record at the head of a group's unplaced slots swaps with the
+    // next free slot of its own group, keeping only its latency there. Four streams of groups
+    // (quarters of the rank order) step in turn, so their dependent loads overlap.
+    let q = order.len().div_ceil(4);
+    let (mut g, mut busy) = ([0, q, 2 * q, 3 * q], true);
+    while busy {
+        busy = false;
+        for s in 0..4 {
+            let lim = order.len().min(q * (s + 1));
+            while g[s] < lim && next[order[g[s]] as usize] == ends[order[g[s]] as usize] {
+                g[s] += 1;
+            }
+            if g[s] < lim {
+                busy = true;
+                let i = next[order[g[s]] as usize] as usize;
+                let x = lat[i];
+                let slot = &mut next[(x >> 21) as usize];
+                let d = *slot as usize;
+                *slot += 1;
+                lat[i] = lat[d];
+                lat[d] = x & 0xfffff;
+            }
+        }
+    }
+    // Each group's escaped latencies replace its 0xfffff fields, in any order.
+    escapes.sort_unstable();
+    for e in escapes.chunk_by(|a, b| a >> 33 == b >> 33) {
+        let id = (e[0] >> 33) as usize;
+        let group = &mut lat[(ends[id] - counts[id] as u32) as usize..ends[id] as usize];
+        for (&e, v) in e.iter().zip(group.iter_mut().filter(|v| **v == 0xfffff)) {
+            *v = e as u32;
+        }
     }
     lat.resize(total as usize + 64, 0); // `small_ranks` reads up to 64 values past a group
-    each(&chunks, |id, _, latency| {
-        let slot = &mut next[id];
-        lat[*slot as usize] = latency;
-        *slot += 1;
-    });
-    drop(chunks);
     let (day, hh) = ((18 + hour) / 24, (18 + hour) % 24);
     let (month, dd) = (10 + day / 2, [30, 31, 1, 2][day]);
     let prefix = format!("2026-{month:02}-{dd:02}T{hh:02}:00:00Z ");
@@ -320,10 +343,10 @@ fn summarize(hour: usize, chunks: Vec<Records>, plan: &Plan, s: &mut Scratch, ou
         let at = next[id] as usize - n;
         let r = [50, 95, 99].map(|p| (p * n + 99) / 100 - 1);
         let [p50, p95, p99] = match n {
-            0..=8 => small_ranks::<1>(lat, at, n, r),
-            9..=16 => small_ranks::<2>(lat, at, n, r),
-            17..=32 => small_ranks::<4>(lat, at, n, r),
-            33..=64 => small_ranks::<8>(lat, at, n, r),
+            0..=8 => small_ranks::<1>(&lat, at, n, r),
+            9..=16 => small_ranks::<2>(&lat, at, n, r),
+            17..=32 => small_ranks::<4>(&lat, at, n, r),
+            33..=64 => small_ranks::<8>(&lat, at, n, r),
             _ => select_ranks(&mut lat[at..at + n], r),
         }
         .map(u64::from);
@@ -387,11 +410,10 @@ fn main() {
                     return;
                 }
                 let plan = plan.get_or_init(|| make_plan(shared));
-                let mut scratch = Scratch::default();
                 while let h @ 0..HOURS = next_hour.fetch_add(1, Ordering::Relaxed) {
                     let chunks = std::mem::take(&mut *hours[h].lock().unwrap());
                     let mut out = pool.lock().unwrap().pop().unwrap_or_default();
-                    summarize(h, chunks, plan, &mut scratch, &mut out);
+                    summarize(h, chunks, plan, &mut out);
                     tx.send((h, out)).unwrap();
                 }
             });
