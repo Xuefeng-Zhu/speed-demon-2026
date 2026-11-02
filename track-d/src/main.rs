@@ -219,7 +219,7 @@ const SHIFT: u32 = 6;
 /// node changes the numbering but never an answer.
 fn renumber(g: &Csr, bits: u32, threads: usize) -> (Vec<u32>, Csr) {
     let (n, m) = (g.first.len() - 1, g.adj.len());
-    let (mut rank, mut first, mut adj) = (vec![0; n], zeros(n + 1, threads), zeros(m, threads));
+    let [mut rank, mut first, mut adj] = [n, n + 1, m].map(|len| zeros(len, threads));
     let (r, f, a) = (atomic(&mut rank), atomic(&mut first), atomic(&mut adj));
     // Unclaimed is 0; a claimed node holds 1 or its complemented id, never 0,
     // so raising a slot to at least 1 claims it only if it was free.
