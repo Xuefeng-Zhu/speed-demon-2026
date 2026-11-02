@@ -234,3 +234,7 @@ Board trials, 1 Nov 2026: PR #30 (`a-mem`, hours streamed during the parse, pool
 - Nov 1 2026: PR #54 run 1, 59a7b54 run-214450429918 T 30.6 ms M 22.8 MB S 419 K 37.90 — likely noisy batch (same batch unchanged B T 162.9 ms K 29.26); run 2.
 - Nov 1 2026: PR #54 run 2, 58495d4 run-a71351c31c85 T 28.7 ms M 22.6 MB K 39.19 — noisy batch (same batch B T 192 ms K 26.93, D T 151). Restored #49 A src as control.
 - Nov 1 2026: control #49 at 66bb4d8 run-1d571e6cb3dd T 22.9 ms M 22.3 MB S 419 K 44.09 (same batch B still slow, T 192). #54 NOT kept (37.90/39.19, T 30.6/28.7 vs control 22.9); A stays #49.
+
+## Nov 2 opt12 (VM-profiled) trials
+- 121c04a cand (prod + hour-key compare + lazy dictionary/per-thread cut): run-34860157f325 T 24.39 ms, K 42.30; 29fbafd rerun run-2ac371de9532 T 24.22, K 42.68. Tie with prod (41.75/43.12).
+- 339bc5a cand2 (S-trim + same two changes, S 332): run-a1f859080567 T 24.08 ms, M 22.11 MB, K 44.55. Rerun pending.

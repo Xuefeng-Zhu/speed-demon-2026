@@ -266,3 +266,6 @@ The extra 94 lines cost about 3.6% of K. If the board's T falls as much as the s
 
 - Nov 1 18:10 PST: PR #50 (read buffer 32 KiB, BLOCK 512) KEPT, now production C. 1d7027d run-b72b80106d5e T 22.9 ms M 11.0 MB S 435 K 41.13; 8242135 run-577ad66a6bfa T 22.9 ms M 11.0 MB K 41.08. Mean 41.11 vs prior best 39.94.
 - Nov 1 2026: build-time PGO, c3c3056 run-879dee969a36 T 22.9 ms M 10.9 MB S 454 K 40.94 (production 41.11). Not kept; Dockerfile lines count in S.
+
+## Nov 2 opt12: recycle event blocks (spare cap n)
+- 121c04a: run-c45ae6367b02 T 22.83 ms, K 41.09; 29fbafd: run-9027e801c48c T 22.45 ms, M 10.66 MB, S 441, K 41.69. Prod 41.17/41.39. Rerun pending.

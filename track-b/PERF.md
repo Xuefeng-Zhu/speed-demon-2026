@@ -258,3 +258,6 @@ The final head `6d785be`, with #28 kept, ran `run-a283f9503c48`: T=173.0 ms, M=6
 - Nov 1 2026: PR #52 run 2, 38d2652 run-88a8dbba69db T 179.9 ms K 27.83 — noisy batch (same batch A 38.21, unchanged code), excluded; run 3.
 - Nov 1 2026: PR #52 run 3, 5d45470 run-2ee475b7ac16 T 178.4 ms M 49.7 MB K 27.83 (same batch A 43.92 normal). #52 runs 30.69/27.83/27.83: not clearly better; restored PR #51 src and re-ran it as control.
 - Nov 1 2026: control #51 at 5e8bee5 run-50c9044f6221 T 150.1 ms M 50.0 MB S 711 K 30.35. #52 NOT kept (30.69/27.83/27.83 vs #51 30.35); production B stays PR #51.
+
+## Nov 2 opt12: 24-byte key slots, 2x table
+- 29fbafd: run-ca657398c632 T 145.9 ms, M 51.0 MB, S 636, K 31.16 (controls 30.54/30.85/30.89). Rerun pending.
