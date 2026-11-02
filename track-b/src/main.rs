@@ -106,9 +106,10 @@ impl Plan {
         let t = if w.len() > 16 {
             *self.long.entry(w.to_vec()).or_insert(t as u64) as u32
         } else {
-            let i = self.slot(k, self.home(k));
+            let (h, i) = (Self::hash(k), self.slot(k, self.home(k)));
             if self.keys[i][0] == 0 {
                 self.keys[i] = [k[0], k[1], t as u64, 0];
+                self.filter[h % FILTER / 64] |= 1 << h % 64;
             }
             self.keys[i][2] as u32
         };
@@ -146,14 +147,14 @@ fn slots(n: usize) -> &'static mut [[u64; 4]] {
     unsafe { std::slice::from_raw_parts_mut(a as *mut [u64; 4], n) }
 }
 
-/// Calls `f` with the term ids (the last id for a token no query uses) of
+/// Calls `f` with the term ids (term 0's for a token no query uses) of
 /// each document in data[lo..hi], which must be whole lines. Pages are released
 /// as the scan passes them, so only a few of them stay resident.
 fn for_each_doc(data: &[u8], lo: usize, hi: usize, plan: &Plan, mut f: impl FnMut(&[u32], &[(usize, usize)])) {
     let (mut i, mut done, mut tokens, mut keys, mut anch) = (lo, lo, Vec::new(), Vec::new(), Vec::new());
     let (tbl, mask, empty) = (&*plan.keys, plan.keys.len() - 1, plan.empty);
     let filter: &[u64; FILTER / 64] = plan.filter[..].try_into().unwrap();
-    let none = plan.role.len() as u64 - 1;
+    let none = tbl[empty][2]; // term 0, which empty slots hold
     let long = |w: &[u8]| *plan.long.get(&w.to_ascii_lowercase()).unwrap_or(&none);
     while i < hi {
         // Key every token but the id and prefetch its slot, then look them all
@@ -653,6 +654,8 @@ fn main() {
 
     let qtext = map_file(&format!("{data_dir}/queries.txt"));
     let mut plan = Plan::default();
+    // Term 0 stands for every token no query uses; empty slots hold it.
+    (plan.filter, plan.role) = (vec![0; FILTER / 64], vec![0]);
     plan.grow((qtext.len() / 16 | 64).next_power_of_two()); // rarely grows
     // Query words: BOOL and PHRASE start a query, AND, OR and NOT are
     // operators and terms are lowercase. Query i is (b'B' or b'P', its first
@@ -680,16 +683,7 @@ fn main() {
     let data = map_file(&format!("{data_dir}/docs.txt"));
 
     // Anchor each phrase on its rarest term in a sample of the corpus.
-    // The id of every token no query uses: a term with no role.
-    let none = plan.role.len() as u32;
-    plan.filter = vec![0; FILTER / 64];
     plan.empty = plan.keys.iter().position(|e| e[0] == 0).unwrap();
-    for e in plan.keys.iter_mut() {
-        let f = Plan::hash([e[0], e[1]]) % FILTER;
-        plan.filter[f / 64] |= ((e[0] != 0) as u64) << (f % 64);
-        e[2] = if e[0] == 0 { none as u64 } else { e[2] };
-    }
-    plan.role.push(0);
     // freq[t]: (sample documents with the term t, the last of them).
     let (mut freq, mut sdocs) = (vec![(0u32, 0u32); plan.role.len()], 0);
     for_each_doc(data, 0, line_start(data, SAMPLE), &plan, |tokens, _| {
@@ -708,42 +702,42 @@ fn main() {
     bools[..nbm].iter().for_each(|&t| plan.role[t] ^= IN_BOOL | BITMAP);
     (plan.nlist, plan.nbm) = (bools.len() - nbm, nbm);
     // Renumber the terms: list terms first, then bitmap terms, then the rest.
-    let rest = (0..plan.role.len()).filter(|&t| plan.role[t] & (IN_BOOL | BITMAP) == 0);
-    let mut order = [&bools[nbm..], &bools[..nbm]].concat();
-    order.extend(rest);
-    let mut new = vec![0; order.len()];
-    for (i, &t) in order.iter().enumerate() {
-        new[t] = i as u32;
+    let n = plan.role.len();
+    let (mut new, mut role, mut df) = (vec![0; n], vec![0; n], vec![0; n]);
+    let rest = (0..n).filter(|&t| plan.role[t] & (IN_BOOL | BITMAP) == 0);
+    let lists = bools[nbm..].iter().chain(&bools[..nbm]);
+    for (i, t) in lists.copied().chain(rest).enumerate() {
+        (new[t], role[i], df[i]) = (i as u32, plan.role[t], freq[t].0);
     }
-    let remap = |t: u64| new[t as usize] as u64;
-    plan.keys.iter_mut().for_each(|e| e[2] = remap(e[2]));
-    plan.long.values_mut().for_each(|t| *t = remap(*t));
-    plan.role = order.iter().map(|&t| plan.role[t]).collect();
-    let df: Vec<u32> = order.iter().map(|&t| freq[t].0).collect();
-    terms.iter_mut().for_each(|e| e.1 = new[e.1 as usize]);
+    plan.role = role;
+    // Each phrase as (its rarest term, the anchor; query; anchor position).
     let query = |i: usize| (qs[i].0, &terms[qs[i].1 as usize..qs[i + 1].1 as usize]);
     let mut list = Vec::new();
     for qi in (0..nq).filter(|&i| qs[i].0 == b'P') {
         let p = query(qi).1;
-        let j = (0..p.len()).min_by_key(|&j| df[p[j].1 as usize]).unwrap();
-        list.push((p[j].1, qi, p, j));
+        let j = (0..p.len()).min_by_key(|&j| freq[p[j].1 as usize].0).unwrap();
+        list.push((p[j].1, qi as u32, j as u32));
     }
-    drop((qtext, freq, bools, order, new)); // the scan uses none of these
     // The phrases by anchor, as (query, length, anchor position, terms); each
     // anchor's end with u32::MAX, and its start + 1 in the high half of its value.
     list.sort_unstable_by_key(|a| a.0);
-    let mut start = vec![0u64; plan.role.len()];
+    let mut start = vec![0u32; n];
+    plan.phr.reserve(list.len() * 14);
     for g in list.chunk_by(|a, b| a.0 == b.0) {
-        start[g[0].0 as usize] = plan.phr.len() as u64 + 1 << 32;
-        for (_, qi, p, j) in g {
-            plan.phr.extend([*qi as u32, p.len() as u32, *j as u32]);
-            plan.phr.extend(p.iter().map(|e| e.1));
+        start[g[0].0 as usize] = plan.phr.len() as u32 + 1;
+        for &(_, qi, j) in g {
+            let p = query(qi as usize).1;
+            plan.phr.extend([qi, p.len() as u32, j]);
+            plan.phr.extend(p.iter().map(|e| new[e.1 as usize]));
         }
         plan.phr.extend([u32::MAX; 3]);
     }
-    let anchor = |t: u64| start[t as usize];
-    plan.keys.iter_mut().for_each(|e| e[2] |= anchor(e[2]));
-    plan.long.values_mut().for_each(|t| *t |= anchor(*t));
+    // One pass gives each term its new number and its phrases' start.
+    let remap = |t: u64| new[t as usize] as u64 | (start[t as usize] as u64) << 32;
+    plan.keys.iter_mut().for_each(|e| e[2] = remap(e[2]));
+    plan.long.values_mut().for_each(|t| *t = remap(*t));
+    terms.iter_mut().for_each(|e| e.1 = new[e.1 as usize]);
+    drop((qtext, freq, bools, new, start)); // the scan uses none of these
 
     (plan.qs, plan.terms) = (qs, terms);
     // Equal byte ranges, each moved to the next line whose id is a multiple
