@@ -19,7 +19,7 @@
 //! Override the directories with `SD_DATA` and `SD_OUT`.
 
 use std::sync::atomic::{AtomicI64, AtomicU32, AtomicU64, AtomicUsize, Ordering::Relaxed};
-use std::{fs, fs::File, mem::take, os::fd::AsRawFd, thread};
+use std::{fs, fs::File, mem::take, ops::Not, os::fd::AsRawFd, thread};
 
 extern "C" {
     fn mmap(addr: *mut u8, len: usize, prot: i32, flags: i32, fd: i32, off: i64) -> *mut u8;
@@ -93,26 +93,19 @@ fn prefetch<T>(x: &[T], i: usize) {
     }
 }
 
-/// Compressed sparse rows: the edges out of `u` are `adj[first[u]..first[u + 1]]`,
+/// Compressed sparse rows `(first, adj)`: the edges out of `u` are `adj[first[u]..first[u + 1]]`,
 /// each packed as `head | code << bits`, where `code` is the weight, or `wide`
 /// (all ones) for a weight that does not fit, found in `Net::wide` instead.
-struct Csr {
-    first: Vec<u32>,
-    adj: Vec<u32>,
-}
+struct Csr(Vec<u32>, Vec<u32>);
 
 fn edges(g: &Csr, u: usize) -> &[u32] {
-    &g.adj[g.first[u] as usize..g.first[u + 1] as usize]
+    &g.1[g.0[u] as usize..g.0[u + 1] as usize]
 }
 
-/// The two graphs (forward, backward), in the new ids, plus the encoding.
-struct Net {
-    graphs: [Csr; 2],
-    bits: u32,
-    /// `(tail << 32 | head, lightest weight)` of every forward edge whose
-    /// weight is `wide` or more, sorted.
-    wide: Vec<(u64, u32)>,
-}
+/// The two graphs (forward, backward), in the new ids; `bits`, the encoding;
+/// and `wide`: `(tail << 32 | head, lightest weight)` of every forward edge
+/// whose weight is `wide` or more, sorted.
+struct Net([Csr; 2], u32, Vec<(u64, u32)>);
 
 /// Turns per-node counts into running sums, so `first[u]` is the end of u's
 /// edges; threads then place each edge by taking one off its tail's end.
@@ -193,7 +186,7 @@ fn load_graph(path: &str, threads: usize) -> (Csr, u32, Vec<(u32, u32, u32)>) {
         }
     });
     first[n] = m as u32;
-    (Csr { first, adj }, bits, big.concat())
+    (Csr(first, adj), bits, big.concat())
 }
 
 /// Nodes per cluster: a ball of this many nodes fills a few pages of the
@@ -218,7 +211,7 @@ const SHIFT: u32 = 6;
 /// are still in cache. Nodes are claimed atomically; which thread wins a
 /// node changes the numbering but never an answer.
 fn renumber(g: &Csr, bits: u32, threads: usize) -> (Vec<u32>, Csr) {
-    let (n, m) = (g.first.len() - 1, g.adj.len());
+    let (n, m) = (g.0.len() - 1, g.1.len());
     let [mut rank, mut first, mut adj] = [n, n + 1, m].map(|len| zeros(len, threads));
     let (r, f, a) = (atomic(&mut rank), atomic(&mut first), atomic(&mut adj));
     // Unclaimed is 0; a claimed node holds 1 or its complemented id, never 0,
@@ -234,7 +227,7 @@ fn renumber(g: &Csr, bits: u32, threads: usize) -> (Vec<u32>, Csr) {
             'grow: while k < mine.len() {
                 // A node queued ahead: start loading its row.
                 if let Some(&v) = mine.get(k + 8) {
-                    prefetch(&g.adj, g.first[v as usize] as usize);
+                    prefetch(&g.1, g.0[v as usize] as usize);
                 }
                 for &e in edges(g, mine[k] as usize) {
                     let v = (e & ((1 << bits) - 1)) as usize;
@@ -263,7 +256,7 @@ fn renumber(g: &Csr, bits: u32, threads: usize) -> (Vec<u32>, Csr) {
         }
     });
     first[n] = m as u32;
-    (rank, Csr { first, adj })
+    (rank, Csr(first, adj))
 }
 
 /// The forward and backward graphs in the new ids: the forward rows' heads
@@ -273,11 +266,11 @@ fn renumber(g: &Csr, bits: u32, threads: usize) -> (Vec<u32>, Csr) {
 /// and are no longer needed: their pages are already mapped, so only the
 /// counts need zeroing, and no fresh pages are faulted in.
 fn relabel(mut fwd: Csr, spare: Csr, rank: Vec<u32>, bits: u32, threads: usize) -> [Csr; 2] {
-    let (n, m, mask) = (rank.len(), fwd.adj.len(), (1 << bits) - 1);
+    let (n, m, mask) = (rank.len(), fwd.1.len(), (1 << bits) - 1);
     let span = |i: usize| i * n / threads..(i + 1) * n / threads;
-    let Csr { mut first, mut adj } = spare;
+    let Csr(mut first, mut adj) = spare;
     first.fill(0);
-    let (f, a) = (atomic(&mut first), atomic(&mut fwd.adj));
+    let (f, a) = (atomic(&mut first), atomic(&mut fwd.1));
     parallel(threads, &|i| {
         for e in &a[i * m / threads..(i + 1) * m / threads] {
             let old = e.load(Relaxed);
@@ -296,15 +289,19 @@ fn relabel(mut fwd: Csr, spare: Csr, rank: Vec<u32>, bits: u32, threads: usize) 
             a[p as usize].store(u | e & !mask, Relaxed);
         }
     });
-    [fwd, Csr { first, adj }]
+    [fwd, Csr(first, adj)]
 }
 
 /// A tentative distance as stored: the bitwise complement, so that zero
 /// means "not reached". `u32` slots halve the memory of a search; a distance
 /// that does not fit is refused, and the query is then run again with `u64`.
-trait Dist: Copy + Default {
-    fn get(self) -> u64;
-    fn put(d: u64) -> Option<Self>;
+trait Dist: Copy + Default + Into<u64> + TryFrom<u64> + Not<Output = Self> {
+    fn get(self) -> u64 {
+        (!self).into()
+    }
+    fn put(d: u64) -> Option<Self> {
+        Some(!Self::try_from(d).ok()?)
+    }
 }
 
 impl Dist for u32 {
@@ -316,14 +313,7 @@ impl Dist for u32 {
     }
 }
 
-impl Dist for u64 {
-    fn get(self) -> u64 {
-        !self
-    }
-    fn put(d: u64) -> Option<u64> {
-        Some(!d)
-    }
-}
+impl Dist for u64 {}
 
 /// One side (forward or backward) of a thread's search state, reused between
 /// queries. Distances live in blocks of `1 << BLOCK` consecutive node ids,
@@ -414,7 +404,8 @@ impl<D: Dist> Side<D> {
 /// up to `best`, no shorter path remains: its first unexpanded node on each
 /// side would still be queued at or above that side's start.
 fn distance<D: Dist>(sides: &mut [Side<D>; 2], net: &Net, s: u32, t: u32) -> (u64, bool) {
-    let (mask, wide) = ((1 << net.bits) - 1, u32::MAX >> net.bits);
+    let Net(graphs, bits, wide) = net;
+    let (mask, code) = ((1 << bits) - 1, u32::MAX >> bits);
     sides[0].reach(s, 0);
     sides[1].reach(t, 0);
     let mut best = if s == t { 0 } else { u64::MAX };
@@ -430,21 +421,21 @@ fn distance<D: Dist>(sides: &mut [Side<D>; 2], net: &Net, s: u32, t: u32) -> (u6
         // The next two nodes this side pops: start loading their rows.
         let q = &me.heap.buckets[0];
         if let Some(&(_, next)) = q.len().checked_sub(2).map(|i| &q[i]) {
-            prefetch(&net.graphs[side].first, next as usize);
+            prefetch(&graphs[side].0, next as usize);
         }
         if let Some(&(_, next)) = q.last() {
-            let g = &net.graphs[side];
-            prefetch(&g.adj, g.first[next as usize] as usize);
+            let g = &graphs[side];
+            prefetch(&g.1, g.0[next as usize] as usize);
         }
         let d = me.get(u);
         if d >> SHIFT < key {
             continue; // stale: already expanded from an earlier bucket
         }
-        for &e in edges(&net.graphs[side], u as usize) {
-            let (v, mut w) = (e & mask, e >> net.bits);
-            if w == wide {
+        for &e in edges(&graphs[side], u as usize) {
+            let (v, mut w) = (e & mask, e >> bits);
+            if w == code {
                 let key = [(u as u64) << 32 | v as u64, (v as u64) << 32 | u as u64][side];
-                w = net.wide[net.wide.binary_search_by_key(&key, |x| x.0).unwrap()].1;
+                w = wide[wide.binary_search_by_key(&key, |x| x.0).unwrap()].1;
             }
             // Only an improvement can make a shorter meeting; an unreached
             // other side reads as u64::MAX, which saturates.
@@ -506,7 +497,7 @@ fn main() {
     wide.dedup_by_key(|x| x.0);
     let n = rank.len();
     let graphs = relabel(fwd, g, rank, bits, threads);
-    let net = Net { graphs, bits, wide };
+    let net = Net(graphs, bits, wide);
     let answers: Vec<AtomicI64> = (0..ids.len() / 2).map(|_| AtomicI64::new(0)).collect();
     let next = AtomicUsize::new(0);
     parallel(threads, &|_| {
