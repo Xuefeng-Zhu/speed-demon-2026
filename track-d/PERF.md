@@ -220,3 +220,4 @@ Board trial, 1 Nov 2026: PR #27 (`d-mem`, two-pass CSR from mmap, S 416) ran `ru
 - Nov 1 2026: build-time PGO (Dockerfile stage, sample seed 2, +19 S). c3c3056 run-d60644be17aa T 138.2 ms M 71.9 MB S 408 K 27.08; 58f702e run-9483b5685af5 T 141.6 M 72.0 K 26.75; 5530ffa run-6b6f46ded213 T 150.8 M 72.0 K 25.93. Mean 26.59 = production (~26.6). Not kept.
 - Nov 1 2026: PR #53 run 1, 9120151 run-d504d41a9dd3 T 141.1 ms M 70.7 MB S 392 K 27.05 (same batch A 40.63 a bit slow).
 - Nov 1 2026: PR #53 run 2, 9d3af37 run-911736f103f5 T 141.6 ms M 70.9 MB S 392 K 26.99. Runs 27.05/26.99 (mean 27.02, T ~141) vs recent #42 runs 26.96/26.70/26.12 (T 142.6-150.5): KEPT. Production D src = PR #53 head 545c5fe.
+- Nov 1 2026: #53 at 66bb4d8 run-5af102536092 T 136.6 ms M 71.9 MB S 392 K 27.41 (best D).
