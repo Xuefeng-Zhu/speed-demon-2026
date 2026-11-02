@@ -161,14 +161,10 @@ fn parse(d: &[u8], mut i: usize, end: usize, shared: &Dictionary) -> Vec<Records
     // The current hour's records, swapped out of `hours`: consecutive lines almost always share
     // an hour, so most lines push to this local pair without indexing `hours`.
     let (mut cur_h, mut cur): (usize, Records) = (HOURS, (Vec::new(), Vec::new()));
+    let mut cur_key = 0; // bytes 5..13 of the current hour's lines, "MM-DDTHH": compared, not parsed
     let mut n = 0; // length of `cur.0`, kept in a register and stored only when the hour changes
     while i < end {
-        // Bytes 5..13 are "MM-DDTHH"; their low nibbles x make 10 * x[k] + x[k + 1] in byte k of
-        // y without carries. October 30, 31 and November 1, 2 become day indexes 0..=3.
-        let x = load(d, i + 5) & (ONES * 0x0f);
-        let y = x * 10 + (x >> 8);
-        let day = (y >> 24 & 0xff) + 31 * (x >> 8 & 0xff) - 30;
-        let hour = (day * 24 + (y >> 48 & 0xff) - 18) as usize;
+        let key = load(d, i + 5);
         let s = i + 29 + find_byte(load(d, i + 28), b' ');
         // The space after the endpoint, among the next 128 bytes (endpoints are at most 125).
         let mut e = s + eq_mask(d, s, None, b' ').trailing_zeros() as usize;
@@ -180,7 +176,14 @@ fn parse(d: &[u8], mut i: usize, end: usize, shared: &Dictionary) -> Vec<Records
         let id = shared.find(d, h, s, e) as u64;
         let (latency, next) = parse_latency(d, e + 5);
         let is_5xx = (d[e + 1] == b'5') as u64;
-        if hour != cur_h {
+        if key != cur_key {
+            // Bytes 5..13 are "MM-DDTHH"; their low nibbles x make 10 * x[k] + x[k + 1] in byte k
+            // of y without carries. October 30, 31 and November 1, 2 become day indexes 0..=3.
+            let x = key & (ONES * 0x0f);
+            let y = x * 10 + (x >> 8);
+            let day = (y >> 24 & 0xff) + 31 * (x >> 8 & 0xff) - 30;
+            let hour = (day * 24 + (y >> 48 & 0xff) - 18) as usize;
+            cur_key = key;
             unsafe { cur.0.set_len(n) };
             if cur_h < HOURS {
                 std::mem::swap(&mut hours[cur_h], &mut cur);
@@ -392,19 +395,16 @@ fn main() {
     let cpus = thread::available_parallelism().map_or(1, |n| n.get());
     let threads = env::var("SD_THREADS").map_or(cpus, |t| t.parse().unwrap());
 
-    let mut cuts = vec![0];
-    for t in 1..threads {
-        let mut at = (len * t / threads).max(cuts[t - 1]);
+    // Chunk t starts at the first line start at or after len * t / threads (so cuts never decrease).
+    let cut = |t: usize| {
+        let mut at = len * t / threads;
         while at > 0 && at < len && d[at - 1] != b'\n' {
             at += 1;
         }
-        cuts.push(at);
-    }
-    cuts.push(len);
-    let shared = Dictionary {
-        slots: (0..4096).map(|_| OnceLock::new()).collect(),
-        next_id: AtomicU32::new(0),
+        at
     };
+    // The first worker to start makes the dictionary while the main thread starts the others.
+    let dictionary = OnceLock::new();
     // The parse threads go on to summarize: after a barrier, one of them makes the plan, and after
     // a second one all take hours from the queue.
     let parsed: Vec<Mutex<Vec<Records>>> = (0..threads).map(|_| Mutex::default()).collect();
@@ -415,10 +415,14 @@ fn main() {
     let output_pool = Mutex::new(Vec::<Vec<u8>>::new());
     thread::scope(|s| {
         for t in 0..threads {
-            let (tx, shared, parsed, plan, barrier, output_pool) =
-                (tx.clone(), &shared, &parsed, &plan, &barrier, &output_pool);
-            let (start, end) = (cuts[t], cuts[t + 1]);
+            let (tx, dictionary, parsed, plan, barrier, output_pool) =
+                (tx.clone(), &dictionary, &parsed, &plan, &barrier, &output_pool);
             s.spawn(move || {
+                let shared = dictionary.get_or_init(|| Dictionary {
+                    slots: (0..4096).map(|_| OnceLock::new()).collect(),
+                    next_id: AtomicU32::new(0),
+                });
+                let (start, end) = (cut(t), cut(t + 1));
                 *parsed[t].lock().unwrap() = parse(d, start, end, shared);
                 if barrier.wait().is_leader() {
                     let _ = plan.set(make_plan(shared, parsed));
