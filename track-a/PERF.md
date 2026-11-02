@@ -238,3 +238,4 @@ Board trials, 1 Nov 2026: PR #30 (`a-mem`, hours streamed during the parse, pool
 ## Nov 2 opt12 (VM-profiled) trials
 - 121c04a cand (prod + hour-key compare + lazy dictionary/per-thread cut): run-34860157f325 T 24.39 ms, K 42.30; 29fbafd rerun run-2ac371de9532 T 24.22, K 42.68. Tie with prod (41.75/43.12).
 - 339bc5a cand2 (S-trim + same two changes, S 332): run-a1f859080567 T 24.08 ms, M 22.11 MB, K 44.55. Rerun pending.
+- 7c120d2 cand2 rerun: run-ffcee18939e1 T 22.45 ms, M 23.31 MB, S 332, K 45.65. KEPT as A production (44.55/45.65 vs prod 41.75-43.12).

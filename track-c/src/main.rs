@@ -376,9 +376,9 @@ fn main() {
             let word = move |w: usize| unsafe { mine.get_unchecked(w) };
             // Bits 8k..8k + 8 are set where key k of bucket b (< m) is y.
             let find = move |b: usize, y: u64| eq8(word(40 * b), y);
-            let mut mark = move |agg: &mut [Agg; 256], out: &mut Vec<Vec<u64>>| {
+            let mut mark = move |agg: &mut [Agg; 256]| {
                 let blocks = std::mem::take(&mut *inbox[t].0.lock().unwrap()); // unlock before the loop
-                for mut v in blocks {
+                for v in blocks {
                     if used + v.len() >= 8 * m {
                         full.store(true, Relaxed); // the table might fill: start over, larger
                         continue;
@@ -412,10 +412,6 @@ fn main() {
                         w.store(old | bit, Relaxed);
                         agg[g][5] += (old & bit == 0) as i64;
                     }
-                    v.clear(); // kept past out[n - 1] as a spare block to fill, so no allocation
-                    if out.len() < 2 * n {
-                        out.push(v);
-                    }
                 }
             };
             // Records are parsed into a batch and finished (group looked up, totals added, name
@@ -428,12 +424,10 @@ fn main() {
                     let g = entry(r.rid).load(Relaxed);
                     let (id, c, nl, tl) = (r.id as i64, r.cents as i64, r.nl as i64, r.tl as i64);
                     merge(&mut agg[g as usize], [1, id, c, c, c, 0, nl, tl]);
-                    let o = unsafe { out.get_unchecked_mut(owner(r.h)) }; // owner(h) < n <= out.len()
+                    let o = unsafe { out.get_unchecked_mut(owner(r.h)) }; // owner(h) < n = out.len()
                     o.push(r.h & !0xFF | g as u64);
                     if o.len() == BLOCK {
-                        let s = out.len() > n; // a spare block, else a new one that grows
-                        let v = out.pop_if(|_| s).unwrap_or_default();
-                        let full = std::mem::replace(&mut out[owner(r.h)], v);
+                        let full = std::mem::replace(o, Vec::with_capacity(BLOCK));
                         inbox[owner(r.h)].0.lock().unwrap().push(full);
                     }
                 }
@@ -489,7 +483,7 @@ fn main() {
                         qs += quote.count_ones() as usize;
                         base += 64;
                     }
-                    mark(&mut agg, &mut out); // after every 64 KiB, so few blocks wait in the inbox
+                    mark(&mut agg); // after every 64 KiB, so few blocks wait in the inbox
                     if done {
                         break;
                     }
@@ -504,11 +498,11 @@ fn main() {
                 }
             }
             flush(&batch[..nb], &mut agg, &mut out);
-            for (o, v) in out.drain(..n).enumerate() {
+            for (o, v) in out.into_iter().enumerate() {
                 inbox[o].0.lock().unwrap().push(v);
             }
             barrier.wait();
-            mark(&mut agg, &mut out);
+            mark(&mut agg);
             let mut sum = total.lock().unwrap();
             (0..256).for_each(|g| merge(&mut sum[g], agg[g]));
             drop(sum);

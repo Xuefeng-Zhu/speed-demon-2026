@@ -261,3 +261,4 @@ The final head `6d785be`, with #28 kept, ran `run-a283f9503c48`: T=173.0 ms, M=6
 
 ## Nov 2 opt12: 24-byte key slots, 2x table
 - 29fbafd: run-ca657398c632 T 145.9 ms, M 51.0 MB, S 636, K 31.16 (controls 30.54/30.85/30.89). Rerun pending.
+- 7c120d2 rerun: run-f3fa8c6c0002 T 169.3 ms, K 28.95 (D control in same batch normal). Mixed (31.16/28.95); third run.
