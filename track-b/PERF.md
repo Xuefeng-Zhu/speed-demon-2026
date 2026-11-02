@@ -244,3 +244,8 @@ The final head `6d785be`, with #28 kept, ran `run-a283f9503c48`: T=173.0 ms, M=6
 - 93df090 run-f9ff4a5d4d1c: T 172.8 ms, M 48.3 MB, S 667, K 28.75
 - b7621ac run-11edd8d04381: T 178.6 ms, M 48.7 MB, S 667, K 28.23
 - Mean 28.49 < #43 28.87. Local ARM answer step -21-24% / CPU -5% did not show as lower T on board; S +19. Restored #43.
+
+### PR #48 b-speed4 (Nov 1 2026, kept)
+- d4efa0d run-56647286efdc: T 156.9 ms, M 50.8 MB, S 717, K 29.54
+- df9103d run-723a5ea26805: T 151.8 ms, M 50.9 MB, S 717, K 30.02
+- Mean 29.78 vs #43 28.87. Now production B.
