@@ -251,3 +251,4 @@ The final head `6d785be`, with #28 kept, ran `run-a283f9503c48`: T=173.0 ms, M=6
 - Mean 29.78 vs #43 28.87. Now production B.
 
 - Nov 1 17:10 PST: #48 36-chunk variant (`<< 23`) not kept. dfb8c3f run-f9adb9228565 T 166.1 ms M 41.5 MB S 717 K 29.55; a74997e run-6a5f8680a5bf T 163.8 ms M 41.7 MB K 29.76. Mean 29.66 vs #48 29.78: M -9 MB but T +8%. Restored #48 src.
+- Nov 1 2026: PR #51 b-speed5 trial run 1, d83ff69 run-7d4d3a19e633 T 152.9 ms M 47.9 MB S 711 K 30.33 (#48 mean 29.78).
