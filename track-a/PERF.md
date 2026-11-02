@@ -230,3 +230,4 @@ Board trials, 1 Nov 2026: PR #30 (`a-mem`, hours streamed during the parse, pool
 - Mean 41.33 vs same-session previous A 41.26 / 39.64. Lower T and S; M +1-2 MB. Now production A.
 
 - Nov 1 17:36 PST: PR #49 (N-1 summary workers + output buffer pool) KEPT, now production A. 250810b run-ba959add6f72 T 23.3 ms M 22.0 MB S 419 K 43.80; ad553c0 run-5c193abf8440 T 22.9 ms M 22.1 MB K 44.09. Mean 43.94 vs #47 same-period 40.08/40.74.
+- Nov 1 2026: build-time PGO, c3c3056 run-dfe59f091862 T 23.1 ms M 22.5 MB S 438 K 43.48 (production mean 43.94). Not kept; Dockerfile lines count in S.
