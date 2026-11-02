@@ -173,7 +173,13 @@ fn for_each_doc(data: &[u8], lo: usize, hi: usize, plan: &Plan, mut f: impl FnMu
         });
         tokens.extend(keys.iter().enumerate().map(|(j, &(k, h))| {
             let w = || long(&data[k[0] as usize..][..k[1] as usize]);
-            let v = tbl.get(h).map_or_else(w, |_| tbl[plan.slot(k, h)][2]);
+            let v = tbl.get(h).map_or_else(w, |entry| {
+                if entry[..2] == k || entry[0] == 0 {
+                    entry[2]
+                } else {
+                    tbl[plan.slot(k, (h + 1) & mask)][2]
+                }
+            });
             // An anchor: its phrases start at phr[(v >> 32) - 1].
             if v >> 32 != 0 {
                 prefetch(&plan.phr[(v >> 32) as usize - 1]);
