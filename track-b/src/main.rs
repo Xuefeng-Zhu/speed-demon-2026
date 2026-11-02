@@ -26,10 +26,8 @@ use std::{collections::HashMap, env, fs, thread};
 const SAMPLE: usize = 1 << 19;
 /// Bytes of corpus a thread scans between releasing what it has read.
 const SLICE: usize = 1 << 20;
-/// Term roles: used by a BOOL query and gets a posting list; anchors a
-/// phrase; used by a BOOL query and common, so it gets a bitmap instead.
+/// The role of a term used by a BOOL query.
 const IN_BOOL: u8 = 1;
-const BITMAP: u8 = 4;
 
 /// ONES[16 - n..32 - n] masks the first n of 16 bytes.
 const ONES: [u8; 32] = *b"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
@@ -459,16 +457,16 @@ fn boolean(q: &[(u8, u32)], plan: &Plan, c: &Chunk, s: &mut Scratch, acc: &Acc) 
     let (r, o, bm) = s;
     let (mut is_bm, bm) = (false, &mut bm[..words]);
     r.clear();
-    let get = |b: &[u64], d: u32| b[d as usize / 64] >> (d & 63) & 1 != 0;
-    let set = |b: &mut [u64], d: u32| b[d as usize / 64] |= 1 << (d & 63);
-    let clear = |b: &mut [u64], d: u32| b[d as usize / 64] &= !(1 << (d & 63));
+    let get = |b: &[u64], d: u16| b[d as usize / 64] >> (d & 63) & 1 != 0;
+    let set = |b: &mut [u64], d: u16| b[d as usize / 64] |= 1 << (d & 63);
+    let clear = |b: &mut [u64], d: u16| b[d as usize / 64] &= !(1 << (d & 63));
     for &(op, t) in q {
         let t = t as usize;
         let and = op == b'A';
         if !is_bm && r.is_empty() && (and || op == b'N') {
             continue; // the result stays empty
         }
-        if plan.role[t] & BITMAP != 0 {
+        if t >= plan.nlist {
             let row = &c.rows[(t - plan.nlist) * words..][..words];
             match (is_bm, op) {
                 (false, b'A' | b'N') => r.retain(|&d| get(row, d) == and),
@@ -486,18 +484,18 @@ fn boolean(q: &[(u8, u32)], plan: &Plan, c: &Chunk, s: &mut Scratch, acc: &Acc) 
         let p = c.post(t);
         if !is_bm && (and || op == b'N') && r.len() * 16 < p.len() {
             // Look the few ids of r up in the term's list.
-            r.retain(|&d| p.binary_search(&(d as u16)).is_ok() == and);
+            r.retain(|d| p.binary_search(d).is_ok() == and);
             continue;
         }
         if op == 0 {
-            r.extend(p.iter().map(|&d| d as u32)); // the first term
+            r.extend_from_slice(p); // the first term
             continue;
         }
         if !is_bm && op == b'O' && r.len() + p.len() > words / 4 {
             r.drain(..).for_each(|d| set(bm, d));
             is_bm = true;
         }
-        let pl = p.iter().map(|&d| d as u32);
+        let pl = p.iter().copied();
         match (is_bm, op) {
             (true, b'A') => {
                 r.extend(pl.filter(|&d| get(bm, d)));
@@ -521,19 +519,19 @@ fn boolean(q: &[(u8, u32)], plan: &Plan, c: &Chunk, s: &mut Scratch, acc: &Acc) 
                 let (mut i, mut j) = (0, 0);
                 o.clear();
                 while i < r.len() && j < p.len() {
-                    let (a, b) = (r[i], p[j] as u32);
+                    let (a, b) = (r[i], p[j]);
                     o.push(a.min(b));
                     i += (a <= b) as usize;
                     j += (b <= a) as usize;
                 }
                 o.extend_from_slice(&r[i..]);
-                o.extend(p[j..].iter().map(|&d| d as u32));
+                o.extend_from_slice(&p[j..]);
                 std::mem::swap(r, o);
             }
         }
     }
     if !is_bm {
-        return acc.add_sorted(c.first, r.iter().copied());
+        return acc.add_sorted(c.first, r.iter().map(|&d| d as u32));
     }
     // Count, id sum and the first ten ids.
     let (n, sum) = count_sum(bm);
@@ -596,7 +594,7 @@ fn answer(c: &Chunk, plan: &Plan, (trig, toff, acc): &Late, s: &mut Scratch) {
     let from = (c.first as usize).wrapping_mul(0x9e37_79b9) % acc.len().max(1);
     for qi in (from..acc.len()).chain(0..from) {
         let trig = &trig[toff[qi] as usize..toff[qi + 1] as usize];
-        let has = |&t: &u32| plan.role[t as usize] & BITMAP != 0 || !c.post(t as usize).is_empty();
+        let has = |&t: &u32| t as usize >= plan.nlist || !c.post(t as usize).is_empty();
         if trig.iter().any(has) {
             let q = &plan.terms[plan.qs[qi].1 as usize..plan.qs[qi + 1].1 as usize];
             boolean(q, plan, c, s, &acc[qi]);
@@ -609,7 +607,7 @@ fn answer(c: &Chunk, plan: &Plan, (trig, toff, acc): &Late, s: &mut Scratch) {
 
 /// Per-thread buffers for answering queries: the running result as a sorted
 /// list, a second list, and the running result as a bitmap.
-type Scratch = (Vec<u32>, Vec<u32>, Vec<u64>);
+type Scratch = (Vec<u16>, Vec<u16>, Vec<u64>);
 
 /// The id of the line that starts at byte i.
 fn id_at(data: &[u8], i: usize) -> u32 {
@@ -791,7 +789,7 @@ fn main() {
     // Each phrase as (its rarest term, the anchor; query; anchor position),
     // sorted by anchor, found by another thread meanwhile.
     let query = |i: usize| &terms[qs[i].1 as usize..qs[i + 1].1 as usize];
-    let (list, (new, df, nbm)) = thread::scope(|s| {
+    let (list, (new, df)) = thread::scope(|s| {
         let list = s.spawn(|| {
             let mut list = Vec::new();
             for qi in (0..nq).filter(|&i| qs[i].0 == b'P') {
@@ -810,16 +808,14 @@ fn main() {
         let nbm = common.max(bools.len().saturating_sub(65535));
         (plan.nlist, plan.nbm) = (bools.len() - nbm, nbm);
         // Renumber the terms: list terms first, then bitmap terms, then the rest.
-        let (mut new, mut role, mut df) = (vec![0; n], vec![0; n], vec![0; n]);
+        let (mut new, mut df) = (vec![0; n], vec![0; n]);
         let rest = (0..n).filter(|&t| plan.role[t] == 0);
         let lists = bools[nbm..].iter().chain(&bools[..nbm]);
         for (i, t) in lists.copied().chain(rest).enumerate() {
-            (new[t], role[i], df[i]) = (i as u32, plan.role[t], freq[t]);
+            (new[t], df[i]) = (i as u32, freq[t]);
         }
-        plan.role = role;
-        (list.join().unwrap(), (new, df, nbm))
+        (list.join().unwrap(), (new, df))
     });
-    plan.role[plan.nlist..][..nbm].fill(BITMAP); // those terms' role was IN_BOOL
     // The phrases by anchor, as (query, length, anchor position, terms); each
     // anchor's end with u32::MAX, and its start + 1 in the high half of its value.
     let mut start = vec![0u32; n];
