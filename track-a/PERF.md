@@ -257,3 +257,4 @@ Board trials, 1 Nov 2026: PR #30 (`a-mem`, hours streamed during the parse, pool
 - 2026-11-02 05:44 PST f28e9da opt17 (S 320, single-stage Dockerfile): run-b3e5e1f24737 T 23.1 ms K 46.76
 - 2026-11-02 05:49 PST 50252bf (same A src) run-16560d66e79f T 22.3 ms M 19.5 S 320 K 47.70
 - 2026-11-02 05:55 PST f80fc99 (same src) run-e248e1149da3 T 32.3 ms K 39.56 outlier; restoring 2-stage Dockerfile to be safe (main.rs opt17 kept)
+- 2026-11-02 06:07 PST 147769e opt17 main + 2-stage: run-19249c482c6c T 28.9 ms K 41.78. opt17 runs 46.76/47.70/39.56/41.78 vs opt16 47.32/46.60/47.11 -> restore opt16 main.rs.

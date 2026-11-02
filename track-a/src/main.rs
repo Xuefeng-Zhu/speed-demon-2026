@@ -160,10 +160,11 @@ fn parse(d: &[u8], mut i: usize, end: usize, shared: &Dictionary) -> Vec<Records
             let y = x * 10 + (x >> 8);
             let day = (y >> 24 & 0xff) + 31 * (x >> 8 & 0xff) - 30;
             let hour = (day * 24 + (y >> 48 & 0xff) - 18) as usize;
+            cur_key = key;
             unsafe { cur.0.set_len(n) };
             std::mem::swap(&mut hours[cur_h], &mut cur);
             std::mem::swap(&mut hours[hour], &mut cur);
-            (cur_h, n, cur_key) = (hour, cur.0.len(), key);
+            (cur_h, n) = (hour, cur.0.len());
         }
         let r = if latency < 0x000f_ffff {
             ((id as u32) << 21) | ((is_5xx as u32) << 20) | latency as u32
@@ -370,10 +371,11 @@ fn main() {
     // Chunk t starts at the first line start at or after len * t / threads (so cuts never decrease).
     let cut = |t: usize| (len * t / threads..len).find(|&a| a == 0 || d[a - 1] == b'\n').unwrap_or(len);
     // The first worker to start makes the dictionary while the main thread starts the others.
+    let dict: &OnceLock<Dictionary> = &OnceLock::new();
     // Each hour's records, one entry per chunk. The parse threads go on to summarize: after a
     // barrier, the first to need the plan makes it, and all take hours in order from a counter.
     let hours: &Vec<Mutex<Vec<Records>>> = &(0..HOURS).map(|_| Mutex::default()).collect();
-    let (dict, plan, next_hour) = (&OnceLock::new(), &OnceLock::new(), &AtomicUsize::new(0));
+    let (plan, next_hour) = (&OnceLock::new(), &AtomicUsize::new(0));
     let (barrier, pool) = (&Barrier::new(threads), &Mutex::new(Vec::new()));
     let mut f = fs::File::create(format!("{out_dir}/summary.txt")).expect("create summary.txt");
     let (tx, rx) = mpsc::channel();
