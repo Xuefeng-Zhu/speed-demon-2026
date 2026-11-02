@@ -35,7 +35,7 @@ for i in range(8):
 for name, samples in times.items():
     print(name, samples, "middle-six mean", sum(sorted(samples)[1:-1]) / 6)
 PYBENCH
-INGEST_BINARY=/tmp/track-a-final python3 track-a-verification/test.py
+INGEST_BINARY=/tmp/track-a-final python3 experiments/a-verification/test.py
 ```
 
 Re-run this comparison when the machine is otherwise idle, then profile and validate again in the official Linux container. This does not substitute for live-board run IDs.
@@ -102,7 +102,7 @@ Official practice `run-39ea5704e350` at b9c2b54 passed every gate, with six work
 
 The restored auto default passed all gates in official practice `run-2ff15013ed39` at e8e828a: T=0.051316 s, M=50,696,192 bytes, S=273, K=26.616965 (`experiments/board-e8.json`). Auto's two results bracket the six-worker result, so separate practice runs do not establish a reliable ordering.
 
-`track-a-verification/latency_grid_test.py` additionally checked 132,624 singleton groups across all 72 hours and 1,842 endpoints, random unsigned-32-bit latencies of every decimal width, 0 and 4294967295, and 1, 2, 6, 12 and 64 workers. This used the same Darwin-only test adaptation.
+`experiments/a-verification/latency_grid_test.py` additionally checked 132,624 singleton groups across all 72 hours and 1,842 endpoints, random unsigned-32-bit latencies of every decimal width, 0 and 4294967295, and 1, 2, 6, 12 and 64 workers. This used the same Darwin-only test adaptation.
 
 ## Proposed hardened PR line reduction
 
