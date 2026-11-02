@@ -232,3 +232,4 @@ Board trials, 1 Nov 2026: PR #30 (`a-mem`, hours streamed during the parse, pool
 - Nov 1 17:36 PST: PR #49 (N-1 summary workers + output buffer pool) KEPT, now production A. 250810b run-ba959add6f72 T 23.3 ms M 22.0 MB S 419 K 43.80; ad553c0 run-5c193abf8440 T 22.9 ms M 22.1 MB K 44.09. Mean 43.94 vs #47 same-period 40.08/40.74.
 - Nov 1 2026: build-time PGO, c3c3056 run-dfe59f091862 T 23.1 ms M 22.5 MB S 438 K 43.48 (production mean 43.94). Not kept; Dockerfile lines count in S.
 - Nov 1 2026: PR #54 run 1, 59a7b54 run-214450429918 T 30.6 ms M 22.8 MB S 419 K 37.90 — likely noisy batch (same batch unchanged B T 162.9 ms K 29.26); run 2.
+- Nov 1 2026: PR #54 run 2, 58495d4 run-a71351c31c85 T 28.7 ms M 22.6 MB K 39.19 — noisy batch (same batch B T 192 ms K 26.93, D T 151). Restored #49 A src as control.
