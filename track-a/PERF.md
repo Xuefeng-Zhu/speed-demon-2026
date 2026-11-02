@@ -240,3 +240,4 @@ Board trials, 1 Nov 2026: PR #30 (`a-mem`, hours streamed during the parse, pool
 - 339bc5a cand2 (S-trim + same two changes, S 332): run-a1f859080567 T 24.08 ms, M 22.11 MB, K 44.55. Rerun pending.
 - 7c120d2 cand2 rerun: run-ffcee18939e1 T 22.45 ms, M 23.31 MB, S 332, K 45.65. KEPT as A production (44.55/45.65 vs prod 41.75-43.12).
 - c733a49: run-6fa01abe4c90 T 22.50 ms, M 22.68 MB, K 45.85.
+- cbd0e02: run-8a97c4946f70 T 25.24 ms, K 43.45 (noise).

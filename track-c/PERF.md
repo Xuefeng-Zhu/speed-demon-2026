@@ -271,3 +271,4 @@ The extra 94 lines cost about 3.6% of K. If the board's T falls as much as the s
 - 121c04a: run-c45ae6367b02 T 22.83 ms, K 41.09; 29fbafd: run-9027e801c48c T 22.45 ms, M 10.66 MB, S 441, K 41.69. Prod 41.17/41.39. Rerun pending.
 - 7c120d2 rerun: run-e8b03f04075c T 22.80 ms, K 41.17. Tie with prod over 3 runs (41.09/41.69/41.17) at +6 S: NOT kept, prod restored.
 - c733a49 production: run-64ea3c79376d T 24.13 ms, K 40.13 (board noise).
+- cbd0e02 opt13 line trim: run-1b56e76aeba3 T 23.12 ms, M 10.70 MB, S 412, K 41.47. KEPT (S -23 deterministic, T/M same).
