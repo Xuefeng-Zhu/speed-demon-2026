@@ -16,10 +16,16 @@
 //!    the chunk's buffers for its next one, so only the chunks in progress
 //!    are in memory.
 
+use std::fmt::Write as _;
+use std::io::Write as _;
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering::*};
 use std::sync::Mutex;
-use std::{collections::HashMap, fmt::Write as _, fs, io::Write as _, os::fd::AsRawFd, thread};
+use std::{collections::HashMap, env, fs, thread};
 
+/// Bytes of corpus read up front to estimate which phrase term is rarest.
+const SAMPLE: usize = 1 << 19;
+/// Bytes of corpus a thread scans between releasing what it has read.
+const SLICE: usize = 1 << 20;
 
 /// ONES[16 - n..32 - n] masks the first n of 16 bytes.
 const ONES: [u8; 32] = *b"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
@@ -64,6 +70,7 @@ struct Plan {
 /// in a chunk without them; and every query's answer so far: (trig, toff, acc).
 type Late = (Vec<u32>, Vec<u32>, Vec<Acc>);
 
+impl Plan {
     /// The 24-bit hash of the key k; its low bits are the home slot.
     fn hash(k: [u64; 2]) -> usize {
         ((k[0] ^ k[1].rotate_left(29)).wrapping_mul(0x9e37_79b9_7f4a_7c15) >> 40) as usize
@@ -86,32 +93,32 @@ type Late = (Vec<u32>, Vec<u32>, Vec<Acc>);
     /// Moves every key to its own slot (hash and displace): buckets of about two
     /// keys, the largest first, each with the first d whose slots are all free.
     /// Returns the old table, which the caller unmaps.
-    fn perfect(pl: &mut Plan) -> &'static mut [[u64; 4]] {
-        let (n, nb) = (pl.keys.len(), (pl.keys.len() / 4).max(2));
+    fn perfect(&mut self) -> &'static mut [[u64; 4]] {
+        let (n, nb) = (self.keys.len(), (self.keys.len() / 4).max(2));
         let b = |e: &[u64; 4]| (e[3] >> (64 - nb.trailing_zeros())) as usize;
         let mut off = vec![0u32; nb + 1];
-        for e in pl.keys.iter_mut().filter(|e| e[0] != 0) {
-            e[3] = mix([e[0], e[1]]); // kept in the spare word
+        for e in self.keys.iter_mut().filter(|e| e[0] != 0) {
+            e[3] = Self::mix([e[0], e[1]]); // kept in the spare word
             off[b(e) + 1] += 1;
         }
         let max = *off.iter().max().unwrap() as usize;
         (1..=nb).for_each(|i| off[i] += off[i - 1]);
         let (mut by, mut fill) = (vec![0u32; off[nb] as usize], off.clone());
-        for (j, e) in pl.keys.iter().enumerate().filter(|e| e.1[0] != 0) {
+        for (j, e) in self.keys.iter().enumerate().filter(|e| e.1[0] != 0) {
             (by[fill[b(e)] as usize] = j as u32, fill[b(e)] += 1);
         }
-        let old = std::mem::take(&mut pl.keys);
-        resize(n, pl); // an empty table: old is unmapped after the moves
+        let old = std::mem::take(&mut self.keys);
+        self.grow(n); // an empty table: old is unmapped after the moves
         let (slots, mut used) = (&mut Vec::new(), vec![0u64; n.div_ceil(64)]);
-        pl.disp = vec![0; nb];
+        self.disp = vec![0; nb];
         for size in (1..=max).rev() {
             for i in (0..nb).filter(|&i| (off[i + 1] - off[i]) as usize == size) {
                 let g = &by[off[i] as usize..off[i + 1] as usize];
                 for d in 0..=u16::MAX {
-                    pl.disp[i] = d;
+                    self.disp[i] = d;
                     slots.clear();
                     for &j in g {
-                        let s = at(old[j as usize][3], &pl.disp, n);
+                        let s = Self::at(old[j as usize][3], &self.disp, n);
                         if used[s / 64] >> (s % 64) & 1 != 0 || slots.contains(&s) {
                             break;
                         }
@@ -123,7 +130,7 @@ type Late = (Vec<u32>, Vec<u32>, Vec<Acc>);
                     assert!(d < u16::MAX, "no displacement");
                 }
                 for (&j, &s) in g.iter().zip(&*slots) {
-                    (pl.keys[s], used[s / 64]) = (old[j as usize], used[s / 64] | 1 << (s % 64));
+                    (self.keys[s], used[s / 64]) = (old[j as usize], used[s / 64] | 1 << (s % 64));
                 }
             }
         }
@@ -134,24 +141,26 @@ type Late = (Vec<u32>, Vec<u32>, Vec<Acc>);
     /// Rebuilds the table with n zeroed 32-byte slots (none straddles two cache
     /// lines), on 2 MiB pages if the table is large, so that the scan's random
     /// lookups need few TLB entries.
-    fn resize(n: usize, pl: &mut Plan) {
+    fn grow(&mut self, n: usize) {
         // PROT_READ | PROT_WRITE; MAP_PRIVATE | MAP_ANONYMOUS (Linux).
         let p = unsafe { mmap(std::ptr::null_mut(), n * 32 + (2 << 20), 3, 0x22, -1, 0) };
+        assert!(p as isize != -1, "mmap failed");
         let a = (p as usize).next_multiple_of(2 << 20);
         unsafe { madvise(a as *mut u8, n * 32, 14) }; // MADV_HUGEPAGE on Linux
         let new = unsafe { std::slice::from_raw_parts_mut(a as *mut [u64; 4], n) };
-        let old = std::mem::replace(&mut pl.keys, new);
+        let old = std::mem::replace(&mut self.keys, new);
         for &mut e in old.iter_mut().filter(|e| e[0] != 0) {
-            pl.keys[slot(pl.keys, [e[0], e[1]])] = e;
+            self.keys[slot(self.keys, [e[0], e[1]])] = e;
         }
         unsafe { munmap(old.as_mut_ptr().cast(), old.len() * 32) };
     }
+}
 
 /// The slot of the key k in the probing table keys: k's, or the empty one it would take.
 fn slot(keys: &[[u64; 4]], k: [u64; 2]) -> usize {
     let hit = |&i: &usize| keys[i][..2] == k || keys[i][0] == 0;
     let mask = keys.len() - 1;
-    (hash(k)..).map(|i| i & mask).find(hit).unwrap()
+    (Plan::hash(k)..).map(|i| i & mask).find(hit).unwrap()
 }
 
 /// Calls `f` with the term ids (term 0's for a token no query uses) of
@@ -169,7 +178,7 @@ fn for_each_doc(data: &[u8], plan: &Plan, mut f: impl FnMut(&[u32], &[(usize, us
         // token is looked up by its bytes, at its start and length.
         i = each_token(data, i, true, |s, e| {
             let k = key(data, s, e - s);
-            let h = at(mix(k), disp, tbl.len());
+            let h = Plan::at(Plan::mix(k), disp, tbl.len());
             prefetch(unsafe { &*tbl.as_ptr().add(h) }); // h < tbl.len()
             let w = ([s as u64, (e - s) as u64], usize::MAX);
             keys.push(if e - s > 16 { w } else { (k, h) });
@@ -190,8 +199,7 @@ fn for_each_doc(data: &[u8], plan: &Plan, mut f: impl FnMut(&[u32], &[(usize, us
         }));
         f(&tokens, &anch);
         (tokens.clear(), keys.clear(), anch.clear());
-        if i - done >= 1 << 20 || i >= data.len() {
-            // 1 MiB scanned since the last release, or the end.
+        if i - done >= SLICE || i >= data.len() {
             release(&data[done..i.min(data.len())]);
             done = i;
         }
@@ -283,9 +291,11 @@ struct Chunk {
     stream: Vec<u16>,
 }
 
-/// The chunk-local ids of the documents in list l of c.
-fn post(c: &Chunk, l: usize) -> &[u16] {
-    &c.docs[c.offs[l] as usize..c.offs[l + 1] as usize]
+impl Chunk {
+    /// The chunk-local ids of the documents in list l.
+    fn post(&self, l: usize) -> &[u16] {
+        &self.docs[self.offs[l] as usize..self.offs[l + 1] as usize]
+    }
 }
 
 /// Sets v's length to n, growing it to exactly n rather than doubling it.
@@ -331,8 +341,7 @@ fn scan_chunk(c: &mut Chunk, data: &[u8], lo: usize, hi: usize, plan: &Plan) {
         stream.truncate(base + n + 1);
         // Phrases: compare the tokens around each anchor with its phrases.
         for &(p, mut i) in anch {
-            while let [q @ ..=0xffff_fffe, n, j, ..] = plan.phr[i..] {
-                // q < u32::MAX: not the end marker.
+            while let [q @ ..u32::MAX, n, j, ..] = plan.phr[i..] {
                 let (n, j) = (n as usize, j as usize);
                 if p >= j && tokens.get(p - j..p - j + n) == Some(&plan.phr[i + 3..i + 3 + n]) {
                     hits.push((q, doc));
@@ -438,7 +447,7 @@ fn boolean(q: &[(u8, u32)], plan: &Plan, c: &Chunk, s: &mut Scratch, acc: &Acc) 
             }
             continue;
         }
-        let p = post(c, t);
+        let p = c.post(t);
         if !is_bm && (and || op == b'N') && r.len() * 16 < p.len() {
             // Look the few ids of r up in the term's list.
             r.retain(|d| p.binary_search(d).is_ok() == and);
@@ -549,7 +558,7 @@ fn answer(c: &Chunk, plan: &Plan, (trig, toff, acc): &Late, s: &mut Scratch) {
     let from = (c.first as usize).wrapping_mul(0x9e37_79b9) % acc.len().max(1);
     for qi in (from..acc.len()).chain(0..from) {
         let trig = &trig[toff[qi] as usize..toff[qi + 1] as usize];
-        let has = |&t: &u32| t as usize >= plan.nlist || !post(c, t as usize).is_empty();
+        let has = |&t: &u32| t as usize >= plan.nlist || !c.post(t as usize).is_empty();
         if trig.iter().any(has) {
             let q = &plan.terms[plan.qs[qi].1 as usize..plan.qs[qi + 1].1 as usize];
             boolean(q, plan, c, s, &acc[qi]);
@@ -581,8 +590,10 @@ extern "C" {
 fn map_file(path: &str) -> &'static [u8] {
     let f = fs::File::open(path).expect("open input");
     let len = f.metadata().unwrap().len() as usize;
+    let fd = std::os::fd::AsRawFd::as_raw_fd(&f);
     // PROT_READ = 1, MAP_PRIVATE = 2 on Linux.
-    let p = unsafe { mmap(std::ptr::null_mut(), len, 1, 2, f.as_raw_fd(), 0) };
+    let p = unsafe { mmap(std::ptr::null_mut(), len, 1, 2, fd, 0) };
+    assert!(p as isize != -1, "mmap failed");
     unsafe { std::slice::from_raw_parts(p, len) }
 }
 
@@ -595,7 +606,8 @@ fn release(s: &[u8]) {
 }
 
 /// Runs f(0), ..., f(n - 1) on n threads and returns the results in order.
-fn par<T: Send>(n: usize, f: &(impl Fn(usize) -> T + Sync)) -> Vec<T> {
+fn par<T: Send>(n: usize, f: impl Fn(usize) -> T + Sync) -> Vec<T> {
+    let f = &f;
     thread::scope(|s| {
         let hs: Vec<_> = (0..n).map(|k| s.spawn(move || f(k))).collect();
         hs.into_iter().map(|h| h.join().unwrap()).collect()
@@ -610,15 +622,15 @@ fn line_start(data: &[u8], i: usize) -> usize {
 }
 
 fn main() {
-    let data_dir = std::env::var("SD_DATA").unwrap_or_else(|_| "/data".into());
-    let out_dir = std::env::var("SD_OUT").unwrap_or_else(|_| "/out".into());
+    let data_dir = env::var("SD_DATA").unwrap_or_else(|_| "/data".into());
+    let out_dir = env::var("SD_OUT").unwrap_or_else(|_| "/out".into());
     let n = thread::available_parallelism().map_or(4, |n| n.get());
-    let nthreads = std::env::var("SD_THREADS").map_or(n, |s| s.parse().unwrap_or(n));
+    let nthreads = env::var("SD_THREADS").map_or(n, |s| s.parse().unwrap_or(n));
 
     let qtext = map_file(&format!("{data_dir}/queries.txt"));
     let mut plan = Plan::default();
     // Term 0 stands for every token no query uses; empty slots hold it.
-    resize((qtext.len() / 16 | 64).next_power_of_two(), &mut plan); // rarely grows
+    plan.grow((qtext.len() / 16 | 64).next_power_of_two()); // rarely grows
     // Query words: BOOL and PHRASE start a query, AND, OR and NOT are
     // operators and terms are lowercase. Query i is (b'B' or b'P', its first
     // term), its terms terms[qs[i].1..qs[i + 1].1] as (first byte of the
@@ -646,7 +658,7 @@ fn main() {
             let w = qtext[s..e].to_vec();
             return *long.lock().unwrap().entry(w).or_insert_with(|| new(own)) as u32;
         }
-        let (k, h) = (key(qtext, s, e - s), hash(key(qtext, s, e - s)));
+        let (k, h) = (key(qtext, s, e - s), Plan::hash(key(qtext, s, e - s)));
         for x in (h..h + tbl.len()).map(|i| &tbl[i & (tbl.len() - 1)]) {
             if x[3].load(Acquire) == 0 && x[3].compare_exchange(0, 1, Acquire, Acquire).is_ok() {
                 for (y, v) in x.iter().zip([k[0], k[1], new(own)]) {
@@ -661,7 +673,7 @@ fn main() {
         }
         unreachable!()
     };
-    let parts = par(nthreads, &|k| {
+    let parts = par(nthreads, |k| {
         let (mut qs, mut terms, mut op, mut batch, mut own) = (vec![], vec![], 0, vec![], 0);
         let part = |k| line_start(qtext, k * qtext.len() / nthreads);
         let (mut i, end) = (part(k), part(k + 1));
@@ -673,7 +685,7 @@ fn main() {
             });
             if batch.len() >= 64 || i >= end {
                 for &(_, s, e, _) in &batch {
-                    prefetch(&tbl[hash(key(qtext, s, e - s)) & (tbl.len() - 1)]);
+                    prefetch(&tbl[Plan::hash(key(qtext, s, e - s)) & (tbl.len() - 1)]);
                 }
                 for (op, s, e, q) in batch.drain(..) {
                     terms.push((op, intern(&mut own, s, e)));
@@ -688,7 +700,7 @@ fn main() {
     plan.long = long.into_inner().unwrap();
     role.truncate(ids.into_inner() as usize);
     if plan.keys.iter().filter(|e| e[0] != 0).count() * 3 >= plan.keys.len() * 2 {
-        resize(plan.keys.len() * 2, &mut plan); // at most two thirds full
+        plan.grow(plan.keys.len() * 2); // at most two thirds full
     }
     let data = map_file(&format!("{data_dir}/docs.txt"));
 
@@ -697,7 +709,7 @@ fn main() {
     // of each document in their parts of the sample, without repeats.
     // Meanwhile another thread joins the queries and terms of the parts,
     // and one more thread rebuilds the table without collisions.
-    let (n, sample) = (role.len(), &data[..line_start(data, 1 << 19)]); // 512 KiB
+    let (n, sample) = (role.len(), &data[..line_start(data, SAMPLE)]);
     let join = |parts: Vec<(Vec<_>, Vec<_>)>| {
         let (mut qs, mut terms) = (Vec::new(), Vec::new());
         for (q, t) in parts {
@@ -710,7 +722,7 @@ fn main() {
     let old: &'static [[u64; 4]] = unsafe { &*(&*plan.keys as *const [[u64; 4]]) };
     let mut t = Plan::default();
     t.keys = std::mem::take(&mut plan.keys);
-    let perfect = thread::spawn(move || (perfect(&mut t), (t.keys, t.disp)).1);
+    let perfect = thread::spawn(move || (t.perfect(), t).1);
     let ((nq, qs, mut terms), parts) = thread::scope(|s| {
         let joined = s.spawn(|| join(parts));
         // The sample's term ids, from the old table.
@@ -719,7 +731,7 @@ fn main() {
             (17.., _) => long(&sample[s..e]),
             (_, k) => old[slot(old, k)][2] as u32,
         };
-        let counts = par(nthreads, &|k| {
+        let counts = par(nthreads, |k| {
             let (mut v, mut d, mut doc) = (Vec::new(), 0, Vec::new());
             let part = |k| line_start(sample, k * sample.len() / nthreads);
             let mut i = part(k);
@@ -733,9 +745,10 @@ fn main() {
         });
         (joined.join().unwrap(), counts)
     });
-    let (mut freq, sdocs) = (vec![0; n], parts.iter().map(|p| p.1).sum::<i32>());
-    for (v, _) in parts {
+    let (mut freq, mut sdocs) = (vec![0; n], 0);
+    for (v, d) in parts {
         v.iter().for_each(|&t: &u32| freq[t as usize] += 1);
+        sdocs += d;
     }
     // Each phrase as (its rarest term, the anchor; query; anchor position),
     // sorted by anchor, found by another thread meanwhile.
@@ -780,8 +793,9 @@ fn main() {
         }
         plan.phr.extend([u32::MAX; 3]);
     }
-    (plan.keys, plan.disp) = perfect.join().unwrap();
+    let t = perfect.join().unwrap();
     unsafe { munmap(old.as_ptr() as *mut u8, old.len() * 32) };
+    (plan.keys, plan.disp) = (t.keys, t.disp);
     // One pass gives each term its new number and its phrases' start.
     let remap = |t: u64| new[t as usize] as u64 | (start[t as usize] as u64) << 32;
     plan.keys.iter_mut().for_each(|e| e[2] = remap(e[2]));
@@ -806,7 +820,7 @@ fn main() {
     let (next, late) = (AtomicUsize::new(0), std::sync::OnceLock::new());
     let query = |i: usize| &plan.terms[plan.qs[i].1 as usize..plan.qs[i + 1].1 as usize];
     let d = |t| df[t as usize];
-    par(nthreads + 1, &|k| {
+    par(nthreads + 1, |k| {
         if k == nthreads {
             // Trigger terms: a list of terms whose sets hold the result so far, kept
             // through NOT, extended by OR, and swapped for the AND term if that is rarer.
@@ -822,8 +836,9 @@ fn main() {
                 }
                 toff.push(trig.len() as u32);
             }
-            let acc = (0..nq).map(|_| Acc(0.into(), (!0).into(), Mutex::new([!0; 10])));
-            _ = late.set((trig, toff, acc.collect()));
+            let mut acc = Vec::new();
+            acc.resize_with(nq, || Acc(0.into(), (!0).into(), Mutex::new([!0; 10])));
+            _ = late.set((trig, toff, acc));
             return;
         }
         let (mut s, mut c): (Scratch, _) = ((vec![], vec![], vec![0; 1024]), Chunk::default());
@@ -839,7 +854,7 @@ fn main() {
     let acc = &late.get().unwrap().2;
     // The answer lines, in blocks of queries.
     let per = nq.div_ceil(nthreads).max(1);
-    let outs = par(nthreads, &|k| {
+    let outs = par(nthreads, |k| {
         let mut out = String::new();
         for a in acc.iter().skip(k * per).take(per) {
             let ns = a.0.load(Relaxed);
