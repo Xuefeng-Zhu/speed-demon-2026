@@ -222,3 +222,4 @@ Board trial, 1 Nov 2026: PR #27 (`d-mem`, two-pass CSR from mmap, S 416) ran `ru
 - Nov 1 2026: PR #53 run 2, 9d3af37 run-911736f103f5 T 141.6 ms M 70.9 MB S 392 K 26.99. Runs 27.05/26.99 (mean 27.02, T ~141) vs recent #42 runs 26.96/26.70/26.12 (T 142.6-150.5): KEPT. Production D src = PR #53 head 545c5fe.
 - Nov 1 2026: #53 at 66bb4d8 run-5af102536092 T 136.6 ms M 71.9 MB S 392 K 27.41 (best D).
 - Nov 1 2026: PR #55 run 1, 06d49e7 run-ed187b6c5f9b T 140.9 ms M 72.0 MB S 392 K 26.98 (same batch A noisy 32.2).
+- Nov 1 2026: PR #55 run 2, f68d948 run-bf9d67e9b22d T 136.3 ms M 70.5 MB S 392 K 27.54. #55 26.98/27.54 (mean 27.26) vs #53 27.05/26.99/27.41 (mean 27.15): tie, 0 lines, may avoid huge-page fault race on rank. KEPT. Production D src = PR #55 head 4c03b36.
