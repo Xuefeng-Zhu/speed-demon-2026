@@ -256,3 +256,4 @@ The final head `6d785be`, with #28 kept, ran `run-a283f9503c48`: T=173.0 ms, M=6
 - Nov 1 2026: PR #51 run 3, 8c9f026 run-f904d162b815 T 150.8 ms M 49.7 MB S 711 K 30.31. Clean runs 30.33/30.31 (mean 30.32) vs #48 mean 29.78: KEPT. Production B src = PR #51 head 09ef365 track-b/src.
 - Nov 1 2026: PR #52 b-first-slot run 1, f23bcb3 run-72a839bac245 T 148.2 ms M 48.5 MB S 717 K 30.69 (same batch A 43.90, C 41.21: clean).
 - Nov 1 2026: PR #52 run 2, 38d2652 run-88a8dbba69db T 179.9 ms K 27.83 — noisy batch (same batch A 38.21, unchanged code), excluded; run 3.
+- Nov 1 2026: PR #52 run 3, 5d45470 run-2ee475b7ac16 T 178.4 ms M 49.7 MB K 27.83 (same batch A 43.92 normal). #52 runs 30.69/27.83/27.83: not clearly better; restored PR #51 src and re-ran it as control.
