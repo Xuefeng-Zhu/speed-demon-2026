@@ -255,3 +255,4 @@ Board trials, 1 Nov 2026: PR #30 (`a-mem`, hours streamed during the parse, pool
 - 2026-11-02 05:22 PST ab51247 opt16 line trim: run-31c8ef4986de T 22.4 ms M 19.8 MB S 325 K 47.32
 - 2026-11-02 05:27 PST cb3e3c6 (same src) run-eaa1f1ced772 T 23.2 ms M 19.8 MB S 325 K 46.60. KEPT (avg 46.96 vs prod 45.97-46.90; S gain deterministic)
 - 2026-11-02 05:44 PST f28e9da opt17 (S 320, single-stage Dockerfile): run-b3e5e1f24737 T 23.1 ms K 46.76
+- 2026-11-02 05:49 PST 50252bf (same A src) run-16560d66e79f T 22.3 ms M 19.5 S 320 K 47.70
