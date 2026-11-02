@@ -247,3 +247,4 @@ Board trials, 1 Nov 2026: PR #30 (`a-mem`, hours streamed during the parse, pool
 - 5943464 opt14 summary redesign: run-0720af4c9f7f T 22.97 ms, M 20.44 MB, S 350, K 45.97 (tie on K with control 45.97; M -2.2 MB). Rerun.
 - 67fb96a opt14 rerun: run-286d015ac674 T 22.40 ms, M 19.69 MB, S 350, K 46.90. KEPT as A production (45.97/46.90 vs 45.65-45.97).
 - 23a0aab: run-d8e985fecd23 K 46.62, M 19.93 MB.
+- c58032a (A src unchanged): run-e18bc8bf7a79 T 27.5 ms, K 42.22 (slow A batch).

@@ -269,3 +269,4 @@ The final head `6d785be`, with #28 kept, ran `run-a283f9503c48`: T=173.0 ms, M=6
 - 5943464: B not rerun (src unchanged). Next: opt13/b2 parallel setup on top of table.
 - 67fb96a opt13/b2 parallel setup: run-056524f793e3 T 127.1 ms, M 49.86 MB, S 761, K 32.66 (best B). Rerun.
 - 23a0aab rerun: run-69edfb3459f6 T 132.95 ms, M 48.54 MB, K 32.10. opt13/b2 KEPT as B production (32.66/32.10 vs prod ~30.4-30.9).
+- c58032a opt15 16-bit BOOL lists: run-b686dd86b081 T 121.3 ms, M 48.64 MB, S 758, K 33.62 (best B). Rerun.
