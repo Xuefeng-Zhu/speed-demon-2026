@@ -249,3 +249,4 @@ Board trials, 1 Nov 2026: PR #30 (`a-mem`, hours streamed during the parse, pool
 - 23a0aab: run-d8e985fecd23 K 46.62, M 19.93 MB.
 - c58032a (A src unchanged): run-e18bc8bf7a79 T 27.5 ms, K 42.22 (slow A batch).
 - 4f05136: run-5de4ae435ec6 K 46.60, M 19.84 MB.
+- 52fcdb5 opt15 deferred formatting: run-d48f763c1076 T 29.88 ms, M 18.15 MB, S 378, K 40.79 (T +30%?). Rerun.
