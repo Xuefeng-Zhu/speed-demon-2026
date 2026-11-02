@@ -263,3 +263,21 @@ Sandbox totals on seed 1 `full`, production (`87e58e1`) against this trial:
 | formatted lines, local count | 334 | 428 |
 
 The extra 94 lines cost about 3.6% of K. If the board's T falls as much as the sandbox's (−34%), K rises about 19%. `.cargo/config.toml` adds `+pclmulqdq,+aes` (not in x86-64-v3; the i5-13500 has both). The source builds without warnings with Rust 1.83 to 1.92, and the committed source builds a binary whose code (`.text`) is identical to the one measured; only panic line numbers differ. The checks listed in README.md pass, including a fresh seed 3 `full` against the official reference, builds forcing 2, 6, 12 and 16 workers, a 128-byte starting buffer, and tables starting at 2^6 slots. Board run pending; revert if K is not above 32.61.
+
+## Smaller read and producer buffers (native VM candidate, 2026-11-01)
+
+On current source `63623afc…`, reduce the normal read buffer from 64 to 32 KiB
+and event blocks from 1024 to 512. Existing long-record growth and parsing are
+unchanged; formatted source count and dependencies are unchanged.
+
+After screening the changes individually and together, an independent twenty
+randomized pairs per full seed on a native Xeon 8573C (six cores/twelve SMT
+threads, Rust 1.99.1, production target/release flags, no PGO) measured paired
+wall +0.68%/+0.54% and cgroup peak -16.43%/-15.36% on seeds 1/2. Observed maximum
+cgroup peaks were 13.609→11.207 and 13.367→11.391 MiB. All 84 executions matched
+complete reference hashes; baseline and final candidate each passed 132 native
+CSV-reference checks at 1/2/7/12 workers, including refill and long-record cases.
+
+These are warmed-input VM results, not Board scores. Board confirmation of the
+time/memory tradeoff remains pending. Reproduction, exact source/binary hashes
+and raw confirmation measurements: `experiments/c-buffer-memory/`.
