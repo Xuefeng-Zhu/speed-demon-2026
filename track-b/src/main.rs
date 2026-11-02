@@ -11,7 +11,8 @@
 //!    phrases around each anchor occurrence.
 //! 3. The thread then answers, on that chunk alone, every BOOL query whose
 //!    trigger terms occur in it (strictly left to right, on a sorted list
-//!    that switches to a bitmap when a large set is ORed in), adds each
+//!    that switches to a bitmap, whose count and id sum it tracks, when a
+//!    set is ORed in), adds each
 //!    answer to the query's count, id sum and ten smallest ids, and reuses
 //!    the chunk's buffers for its next one, so only the chunks in progress
 //!    are in memory.
@@ -270,6 +271,8 @@ struct Chunk {
     offs: Vec<u32>,
     docs: Vec<u16>,
     rows: Vec<u64>,
+    /// The count and id sum of each bitmap row.
+    stat: Vec<(usize, u64)>,
     hits: Vec<(u32, u32)>,
     stream: Vec<u16>,
 }
@@ -369,6 +372,8 @@ fn scan_chunk(c: &mut Chunk, data: &[u8], lo: usize, hi: usize, n: usize, plan: 
     offs[nl] = w as u32;
     hits.sort_unstable();
     hits.dedup(); // a phrase can occur twice in a document
+    c.stat.clear();
+    c.stat.extend(c.rows.chunks(words).map(count_sum));
 }
 
 /// A query's answer: count << 44 | id sum, and ten sorted smallest ids,
@@ -409,101 +414,119 @@ impl Acc {
 }
 
 /// Answers a BOOL query strictly left to right. The running result is a sorted
-/// list `r` until a large set is ORed in, then the bitmap `bm`, which is all
-/// zero whenever it is not in use.
+/// list `r` until a set is ORed in, then a bitmap: the row `row` of a bitmap
+/// term as long as it is just that, else `bm`, which is all zero whenever it
+/// is not in use.
 fn boolean(q: &[(u8, u32)], plan: &Plan, c: &Chunk, s: &mut Scratch, acc: &Acc) {
     let words = c.words;
-    let (mut is_bm, r, bm, o) = (false, &mut s.list, &mut s.bm[..words], &mut s.out);
+    let (mut is_bm, mut row, r, bm, o) = (false, None, &mut s.list, &mut s.bm[..words], &mut s.out);
+    // While `exact`, k is the count and id sum of the bitmap.
+    let (mut exact, mut k) = (false, (0, 0));
     r.clear();
-    let get = |b: &[u64], d: u32| b[d as usize / 64] >> (d & 63) & 1 != 0;
-    let set = |b: &mut [u64], d: u32| b[d as usize / 64] |= 1 << (d & 63);
-    let clear = |b: &mut [u64], d: u32| b[d as usize / 64] &= !(1 << (d & 63));
+    let get = |b: &[u64], d: u16| b[d as usize / 64] >> (d & 63) & 1 != 0;
+    let set = |b: &mut [u64], d: u16| b[d as usize / 64] |= 1 << (d & 63);
     for &(op, t) in q {
         let t = t as usize;
         let and = op == b'A';
         if !is_bm && r.is_empty() && (and || op == b'N') {
             continue; // the result stays empty
         }
-        if plan.role[t] & BITMAP != 0 {
-            let row = &c.rows[(t - plan.nlist) * words..][..words];
+        if let Some(x) = row.take() {
+            if and && t < plan.nlist {
+                r.extend(c.post(t).iter().filter(|&&d| get(x, d)));
+                is_bm = false;
+                continue;
+            }
+            bm.copy_from_slice(x);
+        }
+        if t >= plan.nlist {
+            let x = &c.rows[(t - plan.nlist) * words..][..words];
+            exact &= !is_bm;
             match (is_bm, op) {
-                (false, b'A' | b'N') => r.retain(|&d| get(row, d) == and),
+                (false, b'A' | b'N') => r.retain(|&d| get(x, d) == and),
                 (false, _) => {
-                    bm.copy_from_slice(row);
-                    r.drain(..).for_each(|d| set(bm, d));
+                    (exact, k) = (true, c.stat[t - plan.nlist]);
+                    if r.is_empty() {
+                        row = Some(x);
+                    } else {
+                        bm.copy_from_slice(x);
+                        r.drain(..).for_each(|d| put(bm, d, true, &mut k));
+                    }
                     is_bm = true;
                 }
-                (true, b'A') => bm.iter_mut().zip(row).for_each(|(x, y)| *x &= y),
-                (true, b'N') => bm.iter_mut().zip(row).for_each(|(x, y)| *x &= !y),
-                _ => bm.iter_mut().zip(row).for_each(|(x, y)| *x |= y),
+                (true, b'A') => bm.iter_mut().zip(x).for_each(|(x, y)| *x &= y),
+                (true, b'N') => bm.iter_mut().zip(x).for_each(|(x, y)| *x &= !y),
+                _ => bm.iter_mut().zip(x).for_each(|(x, y)| *x |= y),
             }
             continue;
         }
         let p = c.post(t);
         if !is_bm && (and || op == b'N') && r.len() * 16 < p.len() {
             // Look the few ids of r up in the term's list.
-            r.retain(|&d| p.binary_search(&(d as u16)).is_ok() == and);
+            r.retain(|d| p.binary_search(d).is_ok() == and);
             continue;
         }
         if op == 0 {
-            r.extend(p.iter().map(|&d| d as u32)); // the first term
+            r.extend_from_slice(p); // the first term
             continue;
         }
-        if !is_bm && op == b'O' && r.len() + p.len() > words / 4 {
-            r.drain(..).for_each(|d| set(bm, d));
-            is_bm = true;
+        if !is_bm && op == b'O' {
+            (is_bm, exact, k) = (true, true, (0, 0));
+            r.drain(..).for_each(|d| put(bm, d, true, &mut k));
         }
-        let pl = p.iter().map(|&d| d as u32);
         match (is_bm, op) {
             (true, b'A') => {
-                r.extend(pl.filter(|&d| get(bm, d)));
+                r.extend(p.iter().filter(|&&d| get(bm, d)));
                 bm.fill(0);
                 is_bm = false;
             }
-            (true, b'N') => pl.for_each(|d| clear(bm, d)),
-            (true, _) => pl.for_each(|d| set(bm, d)),
+            (true, b'N') => p.iter().for_each(|&d| put(bm, d, false, &mut k)),
+            (true, _) => p.iter().for_each(|&d| put(bm, d, true, &mut k)),
             (false, b'A') if p.len() * 16 < r.len() => {
                 o.clear();
-                o.extend(pl.filter(|d| r.binary_search(d).is_ok()));
+                o.extend(p.iter().filter(|d| r.binary_search(d).is_ok()));
                 std::mem::swap(r, o);
-            }
-            (false, b'A' | b'N') => {
-                pl.for_each(|d| set(bm, d));
-                r.retain(|&d| get(bm, d) == and);
-                p.iter().for_each(|&d| bm[d as usize / 64] = 0);
             }
             _ => {
-                // Merge the sorted lists r and p.
-                let (mut i, mut j) = (0, 0);
-                o.clear();
-                while i < r.len() && j < p.len() {
-                    let (a, b) = (r[i], p[j] as u32);
-                    o.push(a.min(b));
-                    i += (a <= b) as usize;
-                    j += (b <= a) as usize;
-                }
-                o.extend_from_slice(&r[i..]);
-                o.extend(p[j..].iter().map(|&d| d as u32));
-                std::mem::swap(r, o);
+                p.iter().for_each(|&d| set(bm, d));
+                r.retain(|&d| get(bm, d) == and);
+                p.iter().for_each(|&d| bm[d as usize / 64] = 0);
             }
         }
     }
     if !is_bm {
-        return acc.add_sorted(c.first, r.iter().copied());
+        return acc.add_sorted(c.first, r.iter().map(|&d| d as u32));
     }
-    // Count, id sum and the first ten ids. The positions of the set bits of x
-    // sum to the sum over k of 2^k times the count of those with bit k.
+    // Count, id sum and the first ten ids.
+    let b = row.unwrap_or(bm);
+    let (n, sum) = if exact { k } else { count_sum(b) };
+    let ids = b.iter().enumerate().filter(|(_, &x)| x != 0);
+    let bits = |x: u64| (0..64).filter(move |b| x >> b & 1 != 0);
+    let ids = ids.flat_map(|(i, &x)| bits(x).map(move |b| (i * 64 + b) as u32));
+    acc.add(c.first, n, sum, ids);
+    if row.is_none() {
+        bm.fill(0);
+    }
+}
+
+/// Sets bit d of bm to `on` and updates the count and id sum k by the change.
+fn put(bm: &mut [u64], d: u16, on: bool, k: &mut (usize, u64)) {
+    let (w, b) = (&mut bm[d as usize / 64], 1 << (d & 63));
+    let (ch, sign) = (((*w & b == 0) == on) as u64, if on { 1 } else { u64::MAX });
+    *w ^= b * ch;
+    *k = (k.0.wrapping_add((ch * sign) as usize), k.1.wrapping_add((ch * d as u64).wrapping_mul(sign)));
+}
+
+/// The count and position sum of the set bits of b. The positions of the set
+/// bits of x sum to the sum over k of 2^k times the count of those with bit k.
+fn count_sum(b: &[u64]) -> (usize, u64) {
     let (mut n, mut sum) = (0, 0);
-    for (i, &x) in bm.iter().enumerate() {
+    for (i, &x) in b.iter().enumerate() {
         let pos = (0..6).map(|k| ((x & !(!0 / ((1 << (1 << k)) + 1))).count_ones() as u64) << k);
         n += x.count_ones() as usize;
         sum += (i * 64) as u64 * x.count_ones() as u64 + pos.sum::<u64>();
     }
-    let ids = bm.iter().enumerate().filter(|(_, &x)| x != 0);
-    let bits = |x: u64| (0..64).filter(move |b| x >> b & 1 != 0);
-    let ids = ids.flat_map(|(i, &x)| bits(x).map(move |b| (i * 64 + b) as u32));
-    acc.add(c.first, n, sum, ids);
-    bm.fill(0);
+    (n, sum)
 }
 
 /// Answers the queries in the chunk c: the BOOL queries whose trigger terms
@@ -511,7 +534,7 @@ fn boolean(q: &[(u8, u32)], plan: &Plan, c: &Chunk, s: &mut Scratch, acc: &Acc) 
 fn answer(c: &Chunk, plan: &Plan, acc: &[Acc], s: &mut Scratch) {
     for qi in 0..acc.len() {
         let trig = &plan.trig[plan.toff[qi] as usize..plan.toff[qi + 1] as usize];
-        let has = |&t: &u32| plan.role[t as usize] & BITMAP != 0 || !c.post(t as usize).is_empty();
+        let has = |&t: &u32| t as usize >= plan.nlist || !c.post(t as usize).is_empty();
         if trig.iter().any(has) {
             let q = &plan.terms[plan.qs[qi].1 as usize..plan.qs[qi + 1].1 as usize];
             boolean(q, plan, c, s, &acc[qi]);
@@ -525,8 +548,8 @@ fn answer(c: &Chunk, plan: &Plan, acc: &[Acc], s: &mut Scratch) {
 /// Per-thread buffers for answering queries.
 #[derive(Default)]
 struct Scratch {
-    list: Vec<u32>,
-    out: Vec<u32>,
+    list: Vec<u16>,
+    out: Vec<u16>,
     bm: Vec<u64>,
 }
 
